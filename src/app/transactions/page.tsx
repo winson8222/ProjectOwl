@@ -20,7 +20,10 @@ export default function TransactionsPage() {
 
   useEffect(() => {
     const currentUser = getSessionUser();
-    if (!currentUser) return;
+    if (!currentUser) {
+      setLoading(false);
+      return;
+    }
     setUser(currentUser);
     setPayees([currentUser.id]);
 

@@ -15,7 +15,10 @@ export default function FriendsPage() {
 
   useEffect(() => {
     const currentUser = getSessionUser();
-    if (!currentUser) return;
+    if (!currentUser) {
+      setLoading(false);
+      return;
+    }
     setUser(currentUser);
 
     // We fetch all users except current, with balances computed per friend

@@ -17,7 +17,10 @@ export default function SettleUpPage() {
 
   useEffect(() => {
     const currentUser = getSessionUser();
-    if (!currentUser) return;
+    if (!currentUser) {
+      setLoading(false);
+      return;
+    }
     setUser(currentUser);
 
     fetch(`/api/balances?userId=${currentUser.id}`)

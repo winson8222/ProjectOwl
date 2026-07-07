@@ -20,7 +20,10 @@ export default function TransactionDetailPage() {
 
   useEffect(() => {
     const currentUser = getSessionUser();
-    if (!currentUser) return;
+    if (!currentUser) {
+      setLoading(false);
+      return;
+    }
     setUser(currentUser);
 
     fetch(`/api/transactions?id=${params.id}&userId=${currentUser.id}`)

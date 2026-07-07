@@ -20,7 +20,10 @@ export default function HomePage() {
 
   useEffect(() => {
     const currentUser = getSessionUser();
-    if (!currentUser) return;
+    if (!currentUser) {
+      setLoading(false);
+      return;
+    }
     setUser(currentUser);
 
     // Fetch balance
@@ -180,6 +183,10 @@ function HighlightCard({
 /** Session picker — shown when no user is selected */
 function UserPickerPage() {
   const [users, setUsers] = useState<any[]>([]);
+  const [showCreate, setShowCreate] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     fetch("/api/users")
@@ -195,11 +202,32 @@ function UserPickerPage() {
     window.location.reload();
   };
 
+  const createUser = async () => {
+    if (!newName.trim() || !newEmail.trim()) return;
+    setCreating(true);
+    try {
+      const res = await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName.trim(), email: newEmail.trim() }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        selectUser(json.data);
+      }
+    } catch (err) {
+      console.error("Failed to create user:", err);
+    } finally {
+      setCreating(false);
+    }
+  };
+
   return (
     <main className="min-h-dvh flex flex-col items-center justify-center px-4">
       <div className="text-5xl mb-4">🦉</div>
       <h1 className="text-2xl font-bold text-gray-900 mb-2">ProjectOwl</h1>
       <p className="text-sm text-gray-500 mb-8">Who are you?</p>
+
       <div className="space-y-2 w-full max-w-xs">
         {users.map((user: any) => (
           <button
@@ -212,6 +240,40 @@ function UserPickerPage() {
           </button>
         ))}
       </div>
+
+      {/* Toggle create form */}
+      <button
+        onClick={() => setShowCreate(!showCreate)}
+        className="mt-4 text-sm text-[var(--primary)] font-medium hover:underline"
+      >
+        {showCreate ? "Cancel" : "+ Create new user"}
+      </button>
+
+      {showCreate && (
+        <div className="mt-3 w-full max-w-xs space-y-2">
+          <input
+            type="text"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="Name"
+            className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+          />
+          <input
+            type="email"
+            value={newEmail}
+            onChange={(e) => setNewEmail(e.target.value)}
+            placeholder="Email"
+            className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+          />
+          <button
+            onClick={createUser}
+            disabled={creating || !newName.trim() || !newEmail.trim()}
+            className="w-full px-4 py-2 text-sm font-semibold text-white bg-[var(--primary)] rounded-lg hover:bg-[var(--primary-hover)] disabled:opacity-50 transition-colors"
+          >
+            {creating ? "Creating..." : "Create & sign in"}
+          </button>
+        </div>
+      )}
     </main>
   );
 }
