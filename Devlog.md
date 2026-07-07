@@ -62,11 +62,61 @@ The 429 "quota exceeded" error on a fresh key is likely one of:
 **Fix**: Switched default model to `gemini-2.5-flash` (same free tier availability,
 often less contended). Made model configurable at construction for easy swapping.
 
+## 2026-07-06 — Full Splitwise-like app flows (feature/full-app-flow)
+
+### Done
+**Database layer:**
+- Created Drizzle ORM schema with 6 tables: `users`, `friendships`, `transactions`,
+  `transaction_items`, `item_assignments`, `settlements`
+- SQLite via `better-sqlite3` with auto-migration on startup
+- Seed data: 5 users (You, Alex, Ben, Chloe, Diana) + friendships + 2 demo transactions
+- Easy migration path to PostgreSQL (swap drizzle driver + schema dialect)
+
+**Backend actions + API routes:**
+- `users.ts` — CRUD, friend list, per-person balance computation
+- `transactions.ts` — create (with items + assignments), query (with filters), delete
+- `balances.ts` — net balance, owe/owed breakdown, top debtor/creditor (computed from raw data)
+- `settlements.ts` — optimized settlement plan, mark-as-paid
+- New API routes: `GET/POST/DELETE /api/transactions`, `POST /api/settlements/mark-paid`,
+  `GET /api/balances`, `GET /api/users`
+- Existing `/api/receipts/extract` integrated into transaction creation flow
+
+**Frontend pages:**
+| Page | Route | Key features |
+|---|---|---|
+| Home/Dashboard | `/` | Net balance card, owe/owed split, top debtor/creditor highlights, recent activity, quick actions. Also serves as session picker on first visit |
+| Transactions | `/transactions` | Filterable list (payer dropdown, payee multi-select), deep-link support |
+| New Transaction | `/transactions/new` | Choice between Scan receipt or Manual entry |
+| Scan & Review | `/transactions/new/scan` | Upload → extract → review form (edit items, pick participants, split evenly) → save |
+| Manual Entry | `/transactions/new/manual` | Description, total, date, participants, split toggle (even/custom with % or $ per-person), live remaining indicator |
+| Transaction Detail | `/transactions/[id]` | Itemized breakdown with avatars, per-person totals, paid-by badge, settled/pending, mark-as-settled, delete with confirmation |
+| Friends | `/friends` | Friend list with individual balances (owes you / you owe / settled) |
+| Settle Up | `/settle-up` | Personalized view: who pays you / you pay, with Mark Paid buttons |
+
+**Shared components:**
+- `BottomNav` — 3-tab bar (Home, Transactions, Friends), hides on sub-pages
+- `UserAvatar` — colored avatar circle with initials
+- `UserPicker` — multi-select participant picker with avatar toggles
+- `SplitInput` — even/custom split toggle, per-person $ and % inputs, live remaining indicator
+- `BalanceCard` — headline net balance + owe/owed breakdown
+- `TransactionCard` — summary row (title, amount, who paid, date, user share)
+- `ConfirmDialog` — reusable confirmation modal with danger variant
+
+**Architecture:**
+- Session stored in `sessionStorage` (simple user picker on first visit)
+- All balances computed from raw data (not stored), ensuring consistency on delete/edit
+- Splitwise-like settlement optimizer (greedy max-debtor → max-creditor matching)
+- Bottom nav with iOS safe-area padding
+- No global state store — each page fetches its own data
+
 ### Next steps (future iterations)
-- [ ] Image pre-processing (compress oversized images, HEIC→JPEG conversion)
-- [ ] Support for different receipt formats (grocery, gas station) via templated prompts
-- [ ] Post-processing pipeline (dedup items, detect currency, flag price anomalies)
-- [ ] Supabase integration for persisting receipts and user data
-- [ ] Split flow (friend selection, item assignment, per-person totals)
-- [ ] PWA manifest and service worker for offline capability
-- [ ] Camera capture via `navigator.mediaDevices`
+- [ ] PWA manifest + service worker for offline capability
+- [ ] Camera capture via `navigator.mediaDevices` for in-browser photo
+- [ ] Real auth (Clerk / Supabase Auth) instead of sessionStorage
+- [ ] Image pre-processing (compress oversized images, HEIC→JPEG)
+- [ ] Receipt format templates (grocery, gas station, itemized vs totals-only)
+- [ ] Equalize settlement flow (pay records actually persist in SQLite)
+- [ ] Edit transaction (modify items, reassign, recalc balances)
+- [ ] Real "Mark as paid" with persistent settlement records
+- [ ] Filter by date range on transactions page
+- [ ] Mobile-optimized touch interactions (swipe to delete, pull to refresh)

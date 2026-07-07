@@ -1,0 +1,106 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import Link from "next/link";
+import UserAvatar from "@/components/UserAvatar";
+import { getSessionUser } from "@/lib/session";
+
+/**
+ * Friends page — shows friend list with individual balances.
+ */
+export default function FriendsPage() {
+  const [friends, setFriends] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<any>(null);
+
+  useEffect(() => {
+    const currentUser = getSessionUser();
+    if (!currentUser) return;
+    setUser(currentUser);
+
+    // We fetch all users except current, with balances computed per friend
+    fetch("/api/users")
+      .then((r) => r.json())
+      .then(async (json) => {
+        if (!json.success) return;
+        const allUsers = json.data.filter((u: any) => u.id !== currentUser.id);
+
+        // Compute balance for each friend
+        const friendsWithBalance = await Promise.all(
+          allUsers.map(async (friend: any) => {
+            const balanceResp = await fetch(`/api/balances?userId=${currentUser.id}`);
+            const balanceJson = await balanceResp.json();
+            if (balanceJson.success) {
+              const perPerson = balanceJson.data.perPerson || [];
+              const match = perPerson.find((p: any) => p.user.id === friend.id);
+              return { ...friend, balance: match?.amount ?? 0 };
+            }
+            return { ...friend, balance: 0 };
+          })
+        );
+
+        setFriends(friendsWithBalance);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (!user) {
+    return (
+      <main className="min-h-dvh flex items-center justify-center p-4">
+        <p className="text-sm text-gray-500">Please select a user from the home page first.</p>
+      </main>
+    );
+  }
+
+  return (
+    <main className="min-h-dvh px-4 pt-6 pb-24 max-w-lg mx-auto">
+      <h1 className="text-xl font-bold text-gray-900 mb-6">Friends</h1>
+
+      {loading ? (
+        <div className="flex justify-center py-8">
+          <div className="animate-spin w-6 h-6 border-4 border-[var(--border)] border-t-[var(--primary)] rounded-full" />
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {friends.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-8">No friends yet</p>
+          ) : (
+            friends.map((friend) => {
+              const isPositive = friend.balance >= 0;
+              return (
+                <Link
+                  key={friend.id}
+                  href={`/transactions?with=${friend.id}`}
+                  className="flex items-center gap-3 px-4 py-3 bg-[var(--card)] border border-[var(--border)] rounded-xl hover:bg-gray-50 transition-colors"
+                >
+                  <UserAvatar name={friend.name} size="sm" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900">{friend.name}</p>
+                    <p className="text-xs text-gray-400">{friend.email}</p>
+                  </div>
+                  <div className="text-right">
+                    {friend.balance === 0 ? (
+                      <p className="text-xs text-gray-400">Settled</p>
+                    ) : (
+                      <>
+                        <p className={`text-sm font-semibold ${
+                          isPositive ? "text-[var(--success)]" : "text-[var(--danger)]"
+                        }`}>
+                          {isPositive ? "+" : "-"}${Math.abs(friend.balance).toFixed(2)}
+                        </p>
+                        <p className="text-[10px] text-gray-400">
+                          {isPositive ? "owes you" : "you owe"}
+                        </p>
+                      </>
+                    )}
+                  </div>
+                </Link>
+              );
+            })
+          )}
+        </div>
+      )}
+    </main>
+  );
+}

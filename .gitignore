@@ -44,3 +44,9 @@ next-env.d.ts
 # Claude Code local config
 .claude/
 
+# SQLite database files
+/data/
+*.db
+*.db-wal
+*.db-shm
+
