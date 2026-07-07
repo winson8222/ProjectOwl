@@ -16,6 +16,10 @@ A Splitwise-like PWA built with **Next.js 15**, **Tailwind v4**, and **SQLite** 
 | **Friends** | List with individual balances (owes you / you owe / settled) |
 | **Settle up** | Personalized "who pays who" view with Mark Paid buttons |
 
+## ✅ Status
+
+**Setup Complete** — All dependencies installed, database configured, and ready to run.
+
 ## Quick start
 
 ### Prerequisites
