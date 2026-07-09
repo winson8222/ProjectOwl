@@ -74,7 +74,8 @@ function computeBalanceWithUser(userId: string, friendId: string): number {
     .where(
       and(
         eq(schema.transactions.paidByUserId, userId),
-        eq(schema.itemAssignments.userId, friendId)
+        eq(schema.itemAssignments.userId, friendId),
+        eq(schema.transactions.isDeleted, false)
       )
     )
     .all();
@@ -96,7 +97,8 @@ function computeBalanceWithUser(userId: string, friendId: string): number {
     .where(
       and(
         eq(schema.transactions.paidByUserId, friendId),
-        eq(schema.itemAssignments.userId, userId)
+        eq(schema.itemAssignments.userId, userId),
+        eq(schema.transactions.isDeleted, false)
       )
     )
     .all();

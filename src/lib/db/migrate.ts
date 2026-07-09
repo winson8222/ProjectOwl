@@ -34,7 +34,8 @@ export function migrate(db: BetterSQLite3Database<typeof schema>) {
       notes TEXT,
       receipt_image TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      is_deleted INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS transaction_items (
@@ -83,4 +84,18 @@ export function migrate(db: BetterSQLite3Database<typeof schema>) {
   for (const stmt of statements) {
     db.run(stmt + ";");
   }
+
+  // Databases created before is_deleted existed need the column added —
+  // CREATE TABLE IF NOT EXISTS above is a no-op on an already-existing table.
+  // Check PRAGMA table_info rather than catching the ALTER TABLE error:
+  // drizzle's db.run() wraps the underlying SQLite error (the real
+  // "duplicate column name" message ends up on err.cause, not err.message),
+  // so a string match against the thrown error is unreliable.
+  const transactionColumns = db.all<{ name: string }>("PRAGMA table_info(transactions);");
+  const hasIsDeleted = transactionColumns.some((c) => c.name === "is_deleted");
+  if (!hasIsDeleted) {
+    db.run("ALTER TABLE transactions ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0;");
+  }
+
+  db.run("CREATE INDEX IF NOT EXISTS idx_transactions_is_deleted ON transactions(is_deleted);");
 }

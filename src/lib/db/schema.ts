@@ -28,6 +28,7 @@ export const transactions = sqliteTable("transactions", {
   receiptImage: text("receipt_image"), // base64 or path
   createdAt: text("created_at").default("CURRENT_TIMESTAMP").notNull(),
   updatedAt: text("updated_at").default("CURRENT_TIMESTAMP").notNull(),
+  isDeleted: integer("is_deleted", { mode: "boolean" }).notNull().default(false), // soft delete — row kept for ledger history
 });
 
 // ── Transaction Items (line items from scan or manual) ──────────────

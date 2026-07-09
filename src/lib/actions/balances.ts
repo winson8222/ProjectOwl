@@ -45,7 +45,8 @@ export function getBalance(userId: string): BalanceSummary {
       .where(
         and(
           eq(schema.transactions.paidByUserId, userId),
-          eq(schema.itemAssignments.userId, friendId)
+          eq(schema.itemAssignments.userId, friendId),
+          eq(schema.transactions.isDeleted, false)
         )
       )
       .all()
@@ -66,7 +67,8 @@ export function getBalance(userId: string): BalanceSummary {
       .where(
         and(
           eq(schema.transactions.paidByUserId, friendId),
-          eq(schema.itemAssignments.userId, userId)
+          eq(schema.itemAssignments.userId, userId),
+          eq(schema.transactions.isDeleted, false)
         )
       )
       .all()

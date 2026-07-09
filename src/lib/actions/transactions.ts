@@ -92,7 +92,11 @@ export function createTransaction(input: CreateTransactionInput): Transaction {
 export function getTransaction(id: string, currentUserId?: string): TransactionWithDetails | undefined {
   const db = getDb();
 
-  const tx = db.select().from(schema.transactions).where(eq(schema.transactions.id, id)).get();
+  const tx = db
+    .select()
+    .from(schema.transactions)
+    .where(and(eq(schema.transactions.id, id), eq(schema.transactions.isDeleted, false)))
+    .get();
   if (!tx) return undefined;
 
   const paidByUser = db.select().from(schema.users).where(eq(schema.users.id, tx.paidByUserId)).get();
@@ -179,6 +183,7 @@ export function getTransactions(params: {
     .where(
       and(
         inArray(schema.transactions.id, txIds),
+        eq(schema.transactions.isDeleted, false),
         payer ? eq(schema.transactions.paidByUserId, payer) : undefined,
       )
     )
@@ -230,9 +235,14 @@ export function getTransactions(params: {
   });
 }
 
-/** Delete a transaction and all related data (cascade handled by FK). */
+/** Soft-delete a transaction — the row (and its items/assignments) stays for
+ * ledger history but is excluded from balance and history queries. */
 export function deleteTransaction(id: string): boolean {
   const db = getDb();
-  const result = db.delete(schema.transactions).where(eq(schema.transactions.id, id)).run();
+  const result = db
+    .update(schema.transactions)
+    .set({ isDeleted: true, updatedAt: localTimestamp() })
+    .where(eq(schema.transactions.id, id))
+    .run();
   return result.changes > 0;
 }
