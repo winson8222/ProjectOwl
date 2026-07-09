@@ -1,39 +1,52 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createTransaction, getTransactions, getTransaction, deleteTransaction } from "@/lib/actions/transactions";
 import type { CreateTransactionInput } from "@/lib/actions/transactions";
-
-interface ApiError {
-  success: false;
-  error: string;
-  code: string;
-}
+import { CODES, ERROR_MESSAGES, apiError, type ApiErrorResponse } from "@/lib/constants";
 
 /**
  * POST /api/transactions
  * Create a new transaction with items and assignments.
+ *
+ * Validates required fields and split amounts before saving.
  */
 export async function POST(request: NextRequest) {
   try {
     const body: CreateTransactionInput = await request.json();
 
     if (!body.title || !body.totalAmount || !body.paidByUserId || !body.transactionDate) {
-      return NextResponse.json<ApiError>(
-        { success: false, error: "Missing required fields: title, totalAmount, paidByUserId, transactionDate", code: "MISSING_FIELDS" },
+      return NextResponse.json<ApiErrorResponse>(
+        apiError(ERROR_MESSAGES.TX_MISSING_FIELDS, CODES.MISSING_FIELDS),
         { status: 400 }
       );
     }
 
     if (!body.items || body.items.length === 0) {
-      return NextResponse.json<ApiError>(
-        { success: false, error: "Transaction must have at least one item", code: "NO_ITEMS" },
+      return NextResponse.json<ApiErrorResponse>(
+        apiError(ERROR_MESSAGES.TX_NO_ITEMS, CODES.NO_ITEMS),
         { status: 400 }
       );
     }
 
     for (const item of body.items) {
       if (!item.assignments || item.assignments.length === 0) {
-        return NextResponse.json<ApiError>(
-          { success: false, error: `Item "${item.name}" has no assignments`, code: "UNASSIGNED_ITEM" },
+        return NextResponse.json<ApiErrorResponse>(
+          apiError(ERROR_MESSAGES.TX_UNASSIGNED_ITEM(item.name), CODES.UNASSIGNED_ITEM),
+          { status: 400 }
+        );
+      }
+
+      // Validate: sum of assignments for this item must equal the item's price
+      const assignedTotal = item.assignments.reduce((sum, a) => sum + a.shareAmount, 0);
+      if (Math.abs(assignedTotal - item.price) > 0.01) {
+        return NextResponse.json<ApiErrorResponse>(
+          apiError(
+            ERROR_MESSAGES.TX_ITEM_SPLIT_MISMATCH(
+              item.name,
+              assignedTotal.toFixed(2),
+              item.price.toFixed(2)
+            ),
+            CODES.SPLIT_MISMATCH
+          ),
           { status: 400 }
         );
       }
@@ -42,10 +55,10 @@ export async function POST(request: NextRequest) {
     const transaction = createTransaction(body);
     return NextResponse.json({ success: true, data: transaction }, { status: 201 });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = err instanceof Error ? err.message : ERROR_MESSAGES.UNKNOWN;
     console.error("POST /api/transactions error:", err);
-    return NextResponse.json<ApiError>(
-      { success: false, error: message, code: "INTERNAL_ERROR" },
+    return NextResponse.json<ApiErrorResponse>(
+      apiError(message, CODES.INTERNAL_ERROR),
       { status: 500 }
     );
   }
@@ -53,37 +66,29 @@ export async function POST(request: NextRequest) {
 
 /**
  * GET /api/transactions
- * Query transactions with filters, or get a single transaction by id.
- *
- * Query params for list:
- * - userId (required), payer (optional), payees (optional, comma-separated)
- *
- * Query params for single:
- * - id (transaction id), userId (for user's share computation)
+ * Query transactions, or get a single transaction by id.
  */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const txId = searchParams.get("id");
 
-    // Single transaction fetch
     if (txId) {
       const userId = searchParams.get("userId") || undefined;
       const tx = getTransaction(txId, userId);
       if (!tx) {
-        return NextResponse.json<ApiError>(
-          { success: false, error: "Transaction not found", code: "NOT_FOUND" },
+        return NextResponse.json<ApiErrorResponse>(
+          apiError(ERROR_MESSAGES.TX_NOT_FOUND, CODES.NOT_FOUND),
           { status: 404 }
         );
       }
       return NextResponse.json({ success: true, data: tx });
     }
 
-    // List fetch
     const userId = searchParams.get("userId");
     if (!userId) {
-      return NextResponse.json<ApiError>(
-        { success: false, error: "userId is required for list query", code: "MISSING_USER_ID" },
+      return NextResponse.json<ApiErrorResponse>(
+        apiError(ERROR_MESSAGES.USER_ID_REQUIRED, CODES.MISSING_USER_ID),
         { status: 400 }
       );
     }
@@ -95,45 +100,54 @@ export async function GET(request: NextRequest) {
     const transactions = getTransactions({ userId, payer, payees, limit });
     return NextResponse.json({ success: true, data: transactions });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = err instanceof Error ? err.message : ERROR_MESSAGES.UNKNOWN;
     console.error("GET /api/transactions error:", err);
-    return NextResponse.json<ApiError>(
-      { success: false, error: message, code: "INTERNAL_ERROR" },
+    return NextResponse.json<ApiErrorResponse>(
+      apiError(message, CODES.INTERNAL_ERROR),
       { status: 500 }
     );
   }
 }
 
 /**
- * DELETE /api/transactions?id=xxx
- * Delete a transaction and all related data.
+ * DELETE /api/transactions?id=xxx  — delete a single transaction
+ * DELETE /api/transactions?all=true — delete ALL transactions (reset data)
  */
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const txId = searchParams.get("id");
 
+    // Delete ALL transactions
+    if (searchParams.get("all") === "true") {
+      const { getDb, schema } = await import("@/lib/db");
+      const db = getDb();
+      db.delete(schema.transactions).run();
+      return NextResponse.json({ success: true, message: "All transactions deleted" });
+    }
+
+    // Delete a single transaction
+    const txId = searchParams.get("id");
     if (!txId) {
-      return NextResponse.json<ApiError>(
-        { success: false, error: "Transaction id is required", code: "MISSING_ID" },
+      return NextResponse.json<ApiErrorResponse>(
+        apiError(ERROR_MESSAGES.TX_ID_REQUIRED, CODES.MISSING_ID),
         { status: 400 }
       );
     }
 
     const success = deleteTransaction(txId);
     if (!success) {
-      return NextResponse.json<ApiError>(
-        { success: false, error: "Transaction not found", code: "NOT_FOUND" },
+      return NextResponse.json<ApiErrorResponse>(
+        apiError(ERROR_MESSAGES.TX_NOT_FOUND, CODES.NOT_FOUND),
         { status: 404 }
       );
     }
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = err instanceof Error ? err.message : ERROR_MESSAGES.UNKNOWN;
     console.error("DELETE /api/transactions error:", err);
-    return NextResponse.json<ApiError>(
-      { success: false, error: message, code: "INTERNAL_ERROR" },
+    return NextResponse.json<ApiErrorResponse>(
+      apiError(message, CODES.INTERNAL_ERROR),
       { status: 500 }
     );
   }

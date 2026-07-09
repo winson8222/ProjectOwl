@@ -7,6 +7,7 @@ import LoadingOverlay from "@/components/LoadingOverlay";
 import ErrorAlert from "@/components/ErrorAlert";
 import UserPicker from "@/components/UserPicker";
 import { getSessionUser } from "@/lib/session";
+import { ERROR_MESSAGES } from "@/lib/constants";
 import type { ReceiptExtractionResult, ExtractApiResponse } from "@/lib/schemas/receipt";
 
 type PageStatus = "idle" | "uploading" | "extracted" | "assigning" | "saving" | "error";
@@ -46,7 +47,7 @@ export default function ScanTransactionPage() {
       const json: ExtractApiResponse = await response.json();
 
       if (!json.success) {
-        setError(json.error || "Unknown error");
+        setError(json.error || ERROR_MESSAGES.UNKNOWN);
         setStatus("error");
         return;
       }
@@ -57,7 +58,7 @@ export default function ScanTransactionPage() {
       if (user) setSelectedParticipants([user.id]);
       setStatus("extracted");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to connect");
+      setError(err instanceof Error ? err.message : ERROR_MESSAGES.FAILED_TO_CONNECT);
       setStatus("error");
     }
   }, [user]);
@@ -85,16 +86,21 @@ export default function ScanTransactionPage() {
     const totalAmount = items.reduce((sum, i) => sum + i.price, 0);
 
     // Build assignments: split each item among selected participants
+    // Handle rounding: last participant gets the penny difference
     const transactionItems = items.map((item) => {
-      const shareAmount = item.price / selectedParticipants.length;
+      const rawShare = item.price / selectedParticipants.length;
+      const rounded = Math.round(rawShare * 100) / 100;
+      const assignments = selectedParticipants.map((uid, idx) => ({
+        userId: uid,
+        shareAmount: idx === selectedParticipants.length - 1
+          ? Math.round((item.price - rounded * (selectedParticipants.length - 1)) * 100) / 100
+          : rounded,
+      }));
       return {
         name: item.nm,
         quantity: item.cnt ?? 1,
         price: item.price,
-        assignments: selectedParticipants.map((uid) => ({
-          userId: uid,
-          shareAmount: Math.round(shareAmount * 100) / 100,
-        })),
+        assignments,
       };
     });
 
@@ -113,13 +119,13 @@ export default function ScanTransactionPage() {
 
       const json = await response.json();
       if (json.success) {
-        router.push(`/transactions/${json.data.id}`);
+        window.location.href = "/transactions";
       } else {
-        setError(json.error || "Failed to save");
+        setError(json.error || ERROR_MESSAGES.FAILED_TO_SAVE);
         setStatus("error");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save");
+      setError(err instanceof Error ? err.message : ERROR_MESSAGES.UNKNOWN);
       setStatus("error");
     } finally {
       setSaving(false);

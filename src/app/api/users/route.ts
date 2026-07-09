@@ -1,16 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUsers, getUser, createUser } from "@/lib/actions/users";
-
-interface ApiError {
-  success: false;
-  error: string;
-  code: string;
-}
+import { CODES, ERROR_MESSAGES, apiError, type ApiErrorResponse } from "@/lib/constants";
 
 /**
  * GET /api/users
- * Returns all seed users (prototype: no real auth).
- * Query: ?id=xxx to get a single user.
+ * Returns all users. Query: ?id=xxx to get a single user.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -20,8 +14,8 @@ export async function GET(request: NextRequest) {
     if (id) {
       const user = getUser(id);
       if (!user) {
-        return NextResponse.json<ApiError>(
-          { success: false, error: "User not found", code: "NOT_FOUND" },
+        return NextResponse.json<ApiErrorResponse>(
+          apiError(ERROR_MESSAGES.USER_NOT_FOUND, CODES.NOT_FOUND),
           { status: 404 }
         );
       }
@@ -31,10 +25,10 @@ export async function GET(request: NextRequest) {
     const users = getUsers();
     return NextResponse.json({ success: true, data: users });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = err instanceof Error ? err.message : ERROR_MESSAGES.UNKNOWN;
     console.error("GET /api/users error:", err);
-    return NextResponse.json<ApiError>(
-      { success: false, error: message, code: "INTERNAL_ERROR" },
+    return NextResponse.json<ApiErrorResponse>(
+      apiError(message, CODES.INTERNAL_ERROR),
       { status: 500 }
     );
   }
@@ -51,8 +45,8 @@ export async function POST(request: NextRequest) {
     const { name, email } = body;
 
     if (!name || !email) {
-      return NextResponse.json<ApiError>(
-        { success: false, error: "name and email are required", code: "MISSING_FIELDS" },
+      return NextResponse.json<ApiErrorResponse>(
+        apiError(ERROR_MESSAGES.NAME_EMAIL_REQUIRED, CODES.MISSING_NAME_EMAIL),
         { status: 400 }
       );
     }
@@ -60,10 +54,10 @@ export async function POST(request: NextRequest) {
     const user = createUser(name, email);
     return NextResponse.json({ success: true, data: user }, { status: 201 });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = err instanceof Error ? err.message : ERROR_MESSAGES.UNKNOWN;
     console.error("POST /api/users error:", err);
-    return NextResponse.json<ApiError>(
-      { success: false, error: message, code: "INTERNAL_ERROR" },
+    return NextResponse.json<ApiErrorResponse>(
+      apiError(message, CODES.INTERNAL_ERROR),
       { status: 500 }
     );
   }

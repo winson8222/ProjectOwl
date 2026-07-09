@@ -109,6 +109,127 @@ often less contended). Made model configurable at construction for easy swapping
 - Bottom nav with iOS safe-area padding
 - No global state store — each page fetches its own data
 
+## 2026-07-06 — Bugfix: navigation, validation, and redirect
+
+### Fixed
+1. **BottomNav now persistent** — Removed the `return null` condition that hid the
+   navigation bar on `/transactions/new/*` and `/settle-up` sub-pages. Users can
+   now always navigate between Home, Transactions, and Friends regardless of
+   which flow they're in.
+
+2. **Custom split validation** — Added both frontend and backend checks that the
+   sum of all assignment amounts equals the item's total price:
+   - **Backend** (`POST /api/transactions`): validates every item's assignment
+     sums match its price within $0.01 tolerance. Returns `SPLIT_MISMATCH` error
+     with a clear message showing the difference.
+   - **Frontend manual** (`/transactions/new/manual`): validates split amounts
+     against total *before* sending the API call, shows inline error.
+   - **Frontend scan** (`/transactions/new/scan`): fixed a rounding bug where
+     splitting by N people could leave unassigned pennies (last participant now
+     gets the remainder).
+
+3. **Redirect after save** — Both scan and manual flows now redirect to
+   `/transactions` (transaction history list) instead of the individual
+   transaction detail page. This matches the expected flow: after creating a
+   transaction, see it in context with other transactions.
+
+### Why
+- Navigation bar was hidden on creation pages, leaving users with no way to
+  go back to the main page without using the browser back button.
+- Custom split amounts could be submitted without summing to the total,
+  causing the transaction to save with incorrect balances.
+- The rounding bug in the scan flow meant evenly-split items were off by
+  pennies, which also triggered the backend validation.
+- Redirecting to the detail page after creation was confusing — the user
+  expects to return to the list where they can see the new transaction.
+
+## 2026-07-06 — Bugfix: transactions not showing up, admin tools
+
+### Fixed
+1. **Transactions not appearing after save** — Two root causes:
+   - `getTransactions()` only looked for transactions where the user has item
+     *assignments*. If the user created a transaction but didn't assign any
+     items to themselves (e.g., paid for friends only), the transaction was
+     invisible to them. **Fix**: `getTransactions()` now also includes
+     transactions where the user is the *payer*, regardless of assignments.
+   - Manual entry didn't auto-include the current user in participants.
+     **Fix**: `setSelectedParticipants([currentUser.id])` on page mount.
+
+2. **Error messages centralized** — Created `src/lib/constants.ts` with all
+   error codes (`CODES`), user-facing messages (`ERROR_MESSAGES`), and a
+   helper function (`apiError()`). All 5 API routes and both transaction
+   creation pages now reference this file instead of hardcoded strings.
+
+### Added
+3. **Delete all transactions** — `DELETE /api/transactions?all=true` removes
+   all transactions, items, and assignments. Also accessible via
+   `POST /api/debug?action=delete-all-transactions`.
+
+4. **DB debug endpoint** — `GET /api/debug` returns counts and a listing of
+   all users and transactions in the database for quick inspection.
+
+5. **Full DB reset** — `POST /api/debug?action=reset` wipes everything and
+   re-runs the seed data.
+
+### Viewing SQLite data
+```bash
+# The database lives at: data/projectowl.db
+
+# View via the debug API:
+curl http://localhost:3000/api/debug
+
+# Or open with any SQLite browser:
+#   macOS:   brew install --cask db-browser-for-sqlite
+#   Windows: Download DB Browser for SQLite (sqlitebrowser.org)
+#   Then open: data/projectowl.db
+```
+
+## 2026-07-09 — Bugfix: transaction sort, persistent nav, validation, admin tools
+
+### Fixed
+1. **Transaction sort by creation time** — Changed from `transactionDate` (user-picked
+   date) to `createdAt` (actual server timestamp with localTimezone formatting).
+   `localTimestamp()` helper produces `YYYY-MM-DD HH:MM:SS` format matching SQLite's
+   `CURRENT_TIMESTAMP`, so string sort works correctly in DESC order.
+   Explicitly passes `createdAt: localTimestamp()` in `createTransaction` to guarantee
+   uniqueness per transaction.
+
+2. **BottomNav now persistent** — Removed the `return null` that hid navigation on
+   `/transactions/new/*` and `/settle-up` sub-pages.
+
+3. **Custom split validation** — Backend (`POST /api/transactions`): validates every
+   item's assignment sums match its price within $0.01. Returns `SPLIT_MISMATCH` error.
+   Frontend manual page: validates split totals against total *before* API call.
+   Scan page: fixed rounding bug (last participant gets remainder pennies).
+
+4. **Transaction not showing up after save** — Two causes fixed:
+   - `getTransactions()` now includes transactions where user is the *payer* (not just
+     assigned participant).
+   - Manual entry auto-includes `currentUser.id` in participants on mount.
+   - Redirect changed from `router.push` to `window.location.href` (forces full page
+     reload to bypass Next.js client-side cache).
+
+5. **Delete all transactions / full reset not working** — Switched from Drizzle's
+   `.delete().run()` (which silently failed) to raw SQL `db.run("DELETE FROM table")`
+   with `PRAGMA foreign_keys = OFF` to handle cascade constraints.
+
+### Added
+6. **Error messages centralized** — `src/lib/constants.ts` with `CODES` (error code
+   constants), `ERROR_MESSAGES` (user-facing messages with template functions),
+   `VALIDATION` (frontend validation messages), `apiError()` helper. All 5 API routes
+   and both transaction creation pages now reference this file.
+
+7. **Debug page** — `/debug` web UI showing DB counts, user list, transaction list
+   with `createdAt` timestamps and assignment counts. Includes Refresh, Delete all
+   transactions, and Full reset buttons.
+
+8. **Debug API** — `GET /api/debug` returns counts + full transaction listing with
+   `createdAt` and assignment counts. `POST /api/debug?action=reset` for full DB
+   wipe+re-seed. `POST /api/debug?action=delete-all-transactions` for transaction-only purge.
+
+9. **README updated** — All debug/admin API routes documented, SQLite viewing
+   instructions added.
+
 ### Next steps (future iterations)
 - [ ] PWA manifest + service worker for offline capability
 - [ ] Camera capture via `navigator.mediaDevices` for in-browser photo

@@ -1,6 +1,14 @@
 import { getDb, schema } from "@/lib/db";
 import { eq, desc, and, like, inArray, sql } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
+/** Return the current datetime as a local-time ISO string (no timezone suffix, sorts lexicographically). */
+function localTimestamp(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) +
+    " " + pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+}
+
 
 export type Transaction = typeof schema.transactions.$inferSelect;
 export type TransactionItem = typeof schema.transactions.$inferInsert &
@@ -52,6 +60,7 @@ export function createTransaction(input: CreateTransactionInput): Transaction {
       transactionDate: input.transactionDate,
       notes: input.notes ?? null,
       receiptImage: input.receiptImage ?? null,
+      createdAt: localTimestamp(),
     }).run();
 
     // Insert items and their assignments
@@ -138,7 +147,7 @@ export function getTransactions(params: {
   const db = getDb();
   const { userId, payer, payees, limit = 50, offset = 0 } = params;
 
-  // Get transaction IDs where this user has assignments
+  // Get transaction IDs where this user has assignments (as a participant)
   const involvement = db
     .select({ transactionId: schema.transactionItems.transactionId })
     .from(schema.itemAssignments)
@@ -149,7 +158,19 @@ export function getTransactions(params: {
     .where(eq(schema.itemAssignments.userId, userId))
     .all();
 
-  const txIds = [...new Set(involvement.map((r) => r.transactionId))];
+  // Also include transactions the user paid for (even if not in assignments)
+  const paidTxIds = db
+    .select({ id: schema.transactions.id })
+    .from(schema.transactions)
+    .where(eq(schema.transactions.paidByUserId, userId))
+    .all();
+
+  const txIds = [
+    ...new Set([
+      ...involvement.map((r) => r.transactionId),
+      ...paidTxIds.map((r) => r.id),
+    ]),
+  ];
   if (txIds.length === 0) return [];
 
   let query = db
@@ -161,7 +182,7 @@ export function getTransactions(params: {
         payer ? eq(schema.transactions.paidByUserId, payer) : undefined,
       )
     )
-    .orderBy(desc(schema.transactions.transactionDate))
+    .orderBy(desc(schema.transactions.createdAt))
     .limit(limit)
     .offset(offset);
 

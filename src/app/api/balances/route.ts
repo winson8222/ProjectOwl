@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBalance } from "@/lib/actions/balances";
+import { CODES, ERROR_MESSAGES, apiError, type ApiErrorResponse } from "@/lib/constants";
 
 /**
  * GET /api/balances?userId=xxx
@@ -11,8 +12,8 @@ export async function GET(request: NextRequest) {
     const userId = searchParams.get("userId");
 
     if (!userId) {
-      return NextResponse.json(
-        { success: false, error: "userId is required", code: "MISSING_USER_ID" },
+      return NextResponse.json<ApiErrorResponse>(
+        apiError(ERROR_MESSAGES.USER_ID_REQUIRED, CODES.MISSING_USER_ID),
         { status: 400 }
       );
     }
@@ -20,10 +21,10 @@ export async function GET(request: NextRequest) {
     const balance = getBalance(userId);
     return NextResponse.json({ success: true, data: balance });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = err instanceof Error ? err.message : ERROR_MESSAGES.UNKNOWN;
     console.error("GET /api/balances error:", err);
-    return NextResponse.json(
-      { success: false, error: message, code: "INTERNAL_ERROR" },
+    return NextResponse.json<ApiErrorResponse>(
+      apiError(message, CODES.INTERNAL_ERROR),
       { status: 500 }
     );
   }

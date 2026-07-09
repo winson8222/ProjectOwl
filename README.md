@@ -71,10 +71,29 @@ Delete `data/projectowl.db` and restart the server — the database is auto-crea
 | `POST` | `/api/transactions` | Create transaction with items + assignments |
 | `GET` | `/api/transactions?userId=` | List transactions (filter by `payer`, `payees`) |
 | `GET` | `/api/transactions?id=&userId=` | Single transaction with full details |
-| `DELETE` | `/api/transactions?id=` | Delete transaction |
+| `DELETE` | `/api/transactions?id=` | Delete single transaction |
+| `DELETE` | `/api/transactions?all=true` | **Delete ALL transactions** |
 | `GET` | `/api/balances?userId=` | Balance summary (net, owe/owed, per-person) |
 | `GET` | `/api/users` | List all users |
+| `POST` | `/api/users` | Create a new test user |
 | `POST` | `/api/settlements/mark-paid` | Mark a settlement as paid |
+| `GET` | `/api/debug` | View DB stats (counts, users, transactions) |
+| `POST` | `/api/debug?action=reset` | **Full DB reset** — wipes everything and re-seeds |
+| `POST` | `/api/debug?action=delete-all-transactions` | **Delete all transactions** (keeps users) |
+
+### Viewing SQLite Data
+
+The database is stored at `data/projectowl.db`. To inspect it:
+
+**Via the debug API** (no tools needed):
+```bash
+curl http://localhost:3000/api/debug
+```
+
+**Via a SQLite browser** (recommended for deep inspection):
+- **Windows**: Download [DB Browser for SQLite](https://sqlitebrowser.org)
+- **macOS**: `brew install --cask db-browser-for-sqlite`
+- Open `data/projectowl.db` in the browser
 
 ## Page Structure
 

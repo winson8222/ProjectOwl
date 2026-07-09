@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import UserPicker from "@/components/UserPicker";
 import SplitInput from "@/components/SplitInput";
 import { getSessionUser } from "@/lib/session";
+import { ERROR_MESSAGES } from "@/lib/constants";
 
 /**
  * Manual entry page — description, total, date, participants, split method.
@@ -28,6 +29,9 @@ export default function ManualTransactionPage() {
     if (!currentUser) return;
     setUser(currentUser);
     setPaidBy(currentUser.id);
+
+    // Auto-include the current user in the split
+    setSelectedParticipants([currentUser.id]);
 
     // Load participant names for SplitInput
     fetch("/api/users")
@@ -60,6 +64,16 @@ export default function ManualTransactionPage() {
     setSaving(true);
     setError(null);
 
+    // Validate custom split totals before sending
+    if (splitMode === "custom") {
+      const splitTotal = Object.values(splitValues).reduce((s, v) => s + v, 0);
+      if (Math.abs(splitTotal - totalAmount) > 0.01) {
+        setError(ERROR_MESSAGES.TX_SPLIT_MISMATCH(splitTotal.toFixed(2), totalAmount.toFixed(2)));
+        setSaving(false);
+        return;
+      }
+    }
+
     // Build the transaction payload
     const transactionItems = [
       {
@@ -88,16 +102,16 @@ export default function ManualTransactionPage() {
 
       const json = await response.json();
       if (json.success) {
-        router.push(`/transactions/${json.data.id}`);
+        window.location.href = "/transactions";
       } else {
-        setError(json.error || "Failed to save");
+        setError(json.error || ERROR_MESSAGES.FAILED_TO_SAVE);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save");
+      setError(err instanceof Error ? err.message : ERROR_MESSAGES.UNKNOWN);
     } finally {
       setSaving(false);
     }
-  }, [user, title, totalAmount, date, selectedParticipants, splitValues, paidBy, router]);
+  }, [user, title, totalAmount, date, selectedParticipants, splitValues, splitMode, paidBy, router]);
 
   if (!user) {
     return (
