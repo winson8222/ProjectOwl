@@ -68,18 +68,61 @@ Delete `data/projectowl.db` and restart the server — the database is auto-crea
 | Method | Route | Purpose |
 |---|---|---|
 | `POST` | `/api/receipts/extract` | Upload receipt image → returns structured JSON from Gemini |
-| `POST` | `/api/transactions` | Create transaction with items + assignments |
+| `POST` | `/api/transactions` | Create transaction with line items + participant split |
 | `GET` | `/api/transactions?userId=` | List transactions (filter by `payer`, `payees`) |
 | `GET` | `/api/transactions?id=&userId=` | Single transaction with full details |
-| `DELETE` | `/api/transactions?id=` | Delete single transaction |
+| `DELETE` | `/api/transactions?id=` | Soft-delete single transaction (kept for ledger history) |
 | `DELETE` | `/api/transactions?all=true` | **Delete ALL transactions** |
 | `GET` | `/api/balances?userId=` | Balance summary (net, owe/owed, per-person) |
+| `GET` | `/api/settlements/optimize` | Group-wide **minimum-transaction** settlement plan |
 | `GET` | `/api/users` | List all users |
 | `POST` | `/api/users` | Create a new test user |
 | `POST` | `/api/settlements/mark-paid` | Mark a settlement as paid |
 | `GET` | `/api/debug` | View DB stats (counts, users, transactions) |
+| `GET` | `/api/debug/simplify-tests` | Run the debt-simplification test suite (in-memory) |
 | `POST` | `/api/debug?action=reset` | **Full DB reset** — wipes everything and re-seeds |
 | `POST` | `/api/debug?action=delete-all-transactions` | **Delete all transactions** (keeps users) |
+
+## Debt simplification
+
+When several people owe each other in overlapping ways, the naive
+"everyone-pays-everyone" plan has far more payments than necessary. ProjectOwl
+collapses the whole group's debts into the **fewest possible transfers** using a
+greedy minimum-cash-flow algorithm (largest debtor pays largest creditor,
+repeat) — the same approach used by Splitwise and
+[oss-apps/split-pro](https://github.com/oss-apps/split-pro).
+
+The algorithm lives in [`src/lib/simplify.ts`](src/lib/simplify.ts) and is
+**pure** — it takes a list of transactions and returns a settlement plan, with
+no database or network involved:
+
+- `computeNetBalances(transactions)` → each user's net position (owed vs owes)
+- `minimizeTransfers(balances)` → the minimal list of `from → to` payments
+
+The live group plan is served by `GET /api/settlements/optimize`, which reads
+the current (non-deleted) transactions and runs the same function.
+
+### Running the tests
+
+The algorithm is covered by 10 scenarios in
+[`src/lib/test-data/simplify-fixtures.ts`](src/lib/test-data/simplify-fixtures.ts)
+(cycles, chains, star payments, mutual cancellations, dense webs, …). Each
+fixture is a plain in-memory list of transactions — **no data is ever written to
+the database, so there is nothing to clean up.** Every case is checked against
+these invariants: money is conserved, no one pays themselves, all amounts are
+positive, and the plan uses at most `n-1` payments (plus an exact expected count
+where known).
+
+**From the command line:**
+```bash
+npm run test:simplify
+```
+Prints a per-case report and exits non-zero if anything fails.
+
+**From the browser:** open `/debug` and click **Run tests** under
+"🧮 Debt-simplification tests" — the same suite runs via
+`GET /api/debug/simplify-tests` and renders each scenario's net balances and
+resulting plan.
 
 ### Viewing SQLite Data
 

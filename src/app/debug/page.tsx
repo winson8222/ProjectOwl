@@ -8,6 +8,8 @@ import { useState, useEffect } from "react";
 export default function DebugPage() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [tests, setTests] = useState<any>(null);
+  const [testsLoading, setTestsLoading] = useState(false);
 
   const fetchData = () => {
     setLoading(true);
@@ -18,6 +20,17 @@ export default function DebugPage() {
       })
       .catch(console.error)
       .finally(() => setLoading(false));
+  };
+
+  const runSimplifyTests = () => {
+    setTestsLoading(true);
+    fetch("/api/debug/simplify-tests")
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success) setTests(json.data);
+      })
+      .catch(console.error)
+      .finally(() => setTestsLoading(false));
   };
 
   useEffect(() => { fetchData(); }, []);
@@ -95,6 +108,93 @@ export default function DebugPage() {
           </div>
         </div>
       )}
+
+      {/* Debt-simplification test suite */}
+      <div className="mt-8 border-t border-gray-200 pt-6">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h2 className="text-sm font-semibold">🧮 Debt-simplification tests</h2>
+            <p className="text-[11px] text-gray-400">
+              Runs 10 in-memory scenarios through the minimal-transfer algorithm. No data is touched.
+            </p>
+          </div>
+          <button
+            onClick={runSimplifyTests}
+            disabled={testsLoading}
+            className="px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded-lg disabled:opacity-50"
+          >
+            {testsLoading ? "Running..." : "Run tests"}
+          </button>
+        </div>
+
+        {tests && (
+          <div className="space-y-2">
+            {/* Summary banner */}
+            <div
+              className={`text-sm font-semibold px-3 py-2 rounded-lg ${
+                tests.failed === 0 ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
+              }`}
+            >
+              {tests.passed}/{tests.total} passed
+              {tests.failed > 0 && ` · ${tests.failed} failed`}
+            </div>
+
+            {/* Per-case cards */}
+            {tests.cases.map((c: any) => (
+              <div
+                key={c.name}
+                className={`text-xs rounded-lg border px-3 py-2 ${
+                  c.passed ? "border-gray-100 bg-gray-50" : "border-red-200 bg-red-50"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-bold">
+                    <span className={c.passed ? "text-green-600" : "text-red-600"}>
+                      {c.passed ? "PASS" : "FAIL"}
+                    </span>{" "}
+                    {c.name}
+                  </span>
+                  <span className="text-gray-400">
+                    {c.transferCount} transfer{c.transferCount === 1 ? "" : "s"}
+                    {c.expectedTransfers !== undefined && ` / ${c.expectedTransfers} expected`}
+                  </span>
+                </div>
+                <p className="text-gray-500 mt-0.5">{c.description}</p>
+
+                {/* Net balances */}
+                <div className="mt-1 font-mono text-[11px] text-gray-500">
+                  net:{" "}
+                  {c.netBalances.length === 0
+                    ? "(all settled)"
+                    : c.netBalances
+                        .map((b: any) => `${b.userId}:${b.amount > 0 ? "+" : ""}${b.amount.toFixed(2)}`)
+                        .join("  ")}
+                </div>
+
+                {/* Settlement plan */}
+                <div className="mt-0.5 font-mono text-[11px] text-gray-700">
+                  plan:{" "}
+                  {c.transfers.length === 0
+                    ? "(no payments needed)"
+                    : c.transfers
+                        .map((t: any) => `${t.from}→${t.to} $${t.amount.toFixed(2)}`)
+                        .join("   ")}
+                </div>
+
+                {/* Failed checks */}
+                {c.checks
+                  .filter((ck: any) => !ck.passed)
+                  .map((ck: any, i: number) => (
+                    <div key={i} className="mt-1 text-red-600">
+                      ✗ {ck.name}
+                      {ck.detail ? ` — ${ck.detail}` : ""}
+                    </div>
+                  ))}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </main>
   );
 }

@@ -3,6 +3,7 @@ import { eq, and, isNull, desc } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 import type { User } from "./users";
 import { getBalance } from "./balances";
+import { computeNetBalances, minimizeTransfers, type SimpleTransaction } from "@/lib/simplify";
 
 export interface SettlementPlan {
   from: User;
@@ -100,6 +101,52 @@ export function getOptimizedPlan(userId: string): SettlementPlan[] {
   }
 
   return result;
+}
+
+/**
+ * Group-wide minimum-transaction settlement plan across ALL users.
+ *
+ * Reads every non-deleted transaction's participant shares, nets them into a
+ * per-user balance, then runs the same greedy simplification the test suite
+ * verifies. Returns the fewest payments that settle the whole group.
+ */
+export function getGroupSettlementPlan(): SettlementPlan[] {
+  const db = getDb();
+
+  // Pull every non-deleted transaction as a SimpleTransaction (payer + shares).
+  const txs = db
+    .select({ id: schema.transactions.id, paidBy: schema.transactions.paidByUserId })
+    .from(schema.transactions)
+    .where(eq(schema.transactions.isDeleted, false))
+    .all();
+
+  const simpleTxs: SimpleTransaction[] = txs.map((tx) => {
+    const parts = db
+      .select({ userId: schema.participants.userId, shareAmount: schema.participants.shareAmount })
+      .from(schema.participants)
+      .where(eq(schema.participants.transactionId, tx.id))
+      .all();
+    return { paidBy: tx.paidBy, participants: parts };
+  });
+
+  const transfers = minimizeTransfers(computeNetBalances(simpleTxs));
+
+  // Resolve user ids to full user rows for the UI.
+  const userCache = new Map<string, User | undefined>();
+  const resolve = (id: string): User | undefined => {
+    if (!userCache.has(id)) {
+      userCache.set(id, db.select().from(schema.users).where(eq(schema.users.id, id)).get());
+    }
+    return userCache.get(id);
+  };
+
+  return transfers
+    .map((t) => {
+      const from = resolve(t.from);
+      const to = resolve(t.to);
+      return from && to ? { from, to, amount: t.amount } : null;
+    })
+    .filter((p): p is SettlementPlan => p !== null);
 }
 
 /** Mark a settlement as paid. */
