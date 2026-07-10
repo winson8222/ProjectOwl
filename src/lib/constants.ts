@@ -30,8 +30,7 @@ export const CODES = {
   EMPTY_FILE: "EMPTY_FILE",
 
   // Transactions
-  NO_ITEMS: "NO_ITEMS",
-  UNASSIGNED_ITEM: "UNASSIGNED_ITEM",
+  NO_PARTICIPANTS: "NO_PARTICIPANTS",
   SPLIT_MISMATCH: "SPLIT_MISMATCH",
 
   // Settlements
@@ -67,14 +66,11 @@ export const ERROR_MESSAGES = {
 
   // Transactions
   TX_MISSING_FIELDS: "Missing required fields: title, totalAmount, paidByUserId, transactionDate",
-  TX_NO_ITEMS: "Transaction must have at least one item",
-  TX_UNASSIGNED_ITEM: (name: string) => `Item "${name}" has no assignments`,
+  TX_NO_PARTICIPANTS: "Transaction must have at least one participant",
   TX_NOT_FOUND: "Transaction not found",
   TX_ID_REQUIRED: "Transaction id is required",
   TX_SPLIT_MISMATCH: (assigned: string, price: string) =>
     `Split amounts ($${assigned}) don't equal total ($${price})`,
-  TX_ITEM_SPLIT_MISMATCH: (name: string, assigned: string, price: string) =>
-    `Item "${name}" assignments ($${assigned}) don't sum to its price ($${price})`,
 
   // Settlements
   SETTLEMENT_ID_REQUIRED: "settlementId is required",

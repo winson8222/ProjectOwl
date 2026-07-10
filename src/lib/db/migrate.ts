@@ -48,9 +48,9 @@ export function migrate(db: BetterSQLite3Database<typeof schema>) {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
     );
 
-    CREATE TABLE IF NOT EXISTS item_assignments (
+    CREATE TABLE IF NOT EXISTS participants (
       id TEXT PRIMARY KEY,
-      item_id TEXT NOT NULL REFERENCES transaction_items(id) ON DELETE CASCADE,
+      transaction_id TEXT NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
       user_id TEXT NOT NULL REFERENCES users(id),
       share_amount REAL NOT NULL,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
@@ -69,8 +69,8 @@ export function migrate(db: BetterSQLite3Database<typeof schema>) {
     CREATE INDEX IF NOT EXISTS idx_transactions_paid_by ON transactions(paid_by_user_id);
     CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(transaction_date);
     CREATE INDEX IF NOT EXISTS idx_items_transaction ON transaction_items(transaction_id);
-    CREATE INDEX IF NOT EXISTS idx_assignments_item ON item_assignments(item_id);
-    CREATE INDEX IF NOT EXISTS idx_assignments_user ON item_assignments(user_id);
+    CREATE INDEX IF NOT EXISTS idx_participants_transaction ON participants(transaction_id);
+    CREATE INDEX IF NOT EXISTS idx_participants_user ON participants(user_id);
     CREATE INDEX IF NOT EXISTS idx_settlements_from ON settlements(from_user_id);
     CREATE INDEX IF NOT EXISTS idx_settlements_to ON settlements(to_user_id);
   `;
@@ -98,4 +98,28 @@ export function migrate(db: BetterSQLite3Database<typeof schema>) {
   }
 
   db.run("CREATE INDEX IF NOT EXISTS idx_transactions_is_deleted ON transactions(is_deleted);");
+
+  // Databases created before the item_assignments -> participants move need
+  // their per-item shares aggregated up to per-transaction shares. Detect
+  // the legacy table via sqlite_master (it won't exist on a fresh DB, since
+  // the CREATE TABLE above only ever creates `participants`).
+  const legacyTable = db
+    .all<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'item_assignments';"
+    );
+  if (legacyTable.length > 0) {
+    db.run(`
+      INSERT INTO participants (id, transaction_id, user_id, share_amount, created_at)
+      SELECT
+        lower(hex(randomblob(16))),
+        ti.transaction_id,
+        ia.user_id,
+        SUM(ia.share_amount),
+        MIN(ia.created_at)
+      FROM item_assignments ia
+      JOIN transaction_items ti ON ia.item_id = ti.id
+      GROUP BY ti.transaction_id, ia.user_id;
+    `);
+    db.run("DROP TABLE item_assignments;");
+  }
 }

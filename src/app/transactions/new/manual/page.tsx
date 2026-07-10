@@ -74,18 +74,12 @@ export default function ManualTransactionPage() {
       }
     }
 
-    // Build the transaction payload
-    const transactionItems = [
-      {
-        name: title,
-        quantity: 1,
-        price: totalAmount,
-        assignments: selectedParticipants.map((pid) => ({
-          userId: pid,
-          shareAmount: splitValues[pid] ?? (totalAmount / selectedParticipants.length),
-        })),
-      },
-    ];
+    // Build the transaction payload — manual entry has no line items,
+    // just a title, total, and the participant split.
+    const transactionParticipants = selectedParticipants.map((pid) => ({
+      userId: pid,
+      shareAmount: splitValues[pid] ?? (totalAmount / selectedParticipants.length),
+    }));
 
     try {
       const response = await fetch("/api/transactions", {
@@ -96,7 +90,7 @@ export default function ManualTransactionPage() {
           totalAmount,
           paidByUserId: paidBy,
           transactionDate: date,
-          items: transactionItems,
+          participants: transactionParticipants,
         }),
       });
 

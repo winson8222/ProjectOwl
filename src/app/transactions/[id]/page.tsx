@@ -129,26 +129,12 @@ export default function TransactionDetailPage() {
           </div>
           <div className="divide-y divide-[var(--border)]">
             {tx.items.map((item: any, i: number) => (
-              <div key={i} className="px-4 py-3">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-900 font-medium">{item.name}</span>
-                  <span className="font-mono text-gray-700">${item.price.toFixed(2)}</span>
-                </div>
-                {item.assignments && item.assignments.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-1.5">
-                    {item.assignments.map((a: any, j: number) => {
-                      const assignee = tx.participants?.find((p: any) => p.user.id === a.userId);
-                      return (
-                        <span key={j} className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 rounded-full text-xs text-gray-500">
-                          {assignee?.user?.name ?? a.userId}
-                          {item.assignments.length > 1 && (
-                            <span className="font-mono">${a.shareAmount.toFixed(2)}</span>
-                          )}
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
+              <div key={i} className="px-4 py-3 flex justify-between text-sm">
+                <span className="text-gray-900 font-medium">
+                  {item.name}
+                  {item.quantity > 1 && <span className="text-gray-400"> ×{item.quantity}</span>}
+                </span>
+                <span className="font-mono text-gray-700">${item.price.toFixed(2)}</span>
               </div>
             ))}
           </div>

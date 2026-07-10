@@ -32,20 +32,16 @@ export function getBalance(userId: string): BalanceSummary {
 
     // Friend's share in transactions paid by user (friend owes user)
     const friendOwesUser = db
-      .select({ sum: schema.itemAssignments.shareAmount })
-      .from(schema.itemAssignments)
-      .innerJoin(
-        schema.transactionItems,
-        eq(schema.itemAssignments.itemId, schema.transactionItems.id)
-      )
+      .select({ sum: schema.participants.shareAmount })
+      .from(schema.participants)
       .innerJoin(
         schema.transactions,
-        eq(schema.transactionItems.transactionId, schema.transactions.id)
+        eq(schema.participants.transactionId, schema.transactions.id)
       )
       .where(
         and(
           eq(schema.transactions.paidByUserId, userId),
-          eq(schema.itemAssignments.userId, friendId),
+          eq(schema.participants.userId, friendId),
           eq(schema.transactions.isDeleted, false)
         )
       )
@@ -54,20 +50,16 @@ export function getBalance(userId: string): BalanceSummary {
 
     // User's share in transactions paid by friend (user owes friend)
     const userOwesFriend = db
-      .select({ sum: schema.itemAssignments.shareAmount })
-      .from(schema.itemAssignments)
-      .innerJoin(
-        schema.transactionItems,
-        eq(schema.itemAssignments.itemId, schema.transactionItems.id)
-      )
+      .select({ sum: schema.participants.shareAmount })
+      .from(schema.participants)
       .innerJoin(
         schema.transactions,
-        eq(schema.transactionItems.transactionId, schema.transactions.id)
+        eq(schema.participants.transactionId, schema.transactions.id)
       )
       .where(
         and(
           eq(schema.transactions.paidByUserId, friendId),
-          eq(schema.itemAssignments.userId, userId),
+          eq(schema.participants.userId, userId),
           eq(schema.transactions.isDeleted, false)
         )
       )

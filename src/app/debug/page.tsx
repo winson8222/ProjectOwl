@@ -76,7 +76,7 @@ export default function DebugPage() {
             <h2 className="text-sm font-semibold mb-2">Transactions (sorted by createdAt DESC)</h2>
             <div className="space-y-1">
               {data.transactions.map((tx: any) => {
-                const assignInfo = data.assignmentsPerTx?.find((a: any) => a.txId === tx.id);
+                const participantInfo = data.participantsPerTx?.find((p: any) => p.txId === tx.id);
                 return (
                   <div key={tx.id} className="text-xs font-mono bg-gray-50 px-2 py-1.5 rounded border border-gray-100">
                     <div className="flex justify-between">
@@ -84,7 +84,7 @@ export default function DebugPage() {
                       <span>${tx.totalAmount.toFixed(2)}</span>
                     </div>
                     <div className="text-gray-500 flex justify-between mt-0.5">
-                      <span>Paid by: {tx.paidByUserId} · Assignments: {assignInfo?.assignmentCount ?? "?"}</span>
+                      <span>Paid by: {tx.paidByUserId} · Participants: {participantInfo?.participantCount ?? "?"}</span>
                       <span className="text-[10px]">{tx.createdAt}</span>
                     </div>
                   </div>

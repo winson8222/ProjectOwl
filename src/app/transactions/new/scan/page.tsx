@@ -85,24 +85,23 @@ export default function ScanTransactionPage() {
 
     const totalAmount = items.reduce((sum, i) => sum + i.price, 0);
 
-    // Build assignments: split each item among selected participants
-    // Handle rounding: last participant gets the penny difference
-    const transactionItems = items.map((item) => {
-      const rawShare = item.price / selectedParticipants.length;
-      const rounded = Math.round(rawShare * 100) / 100;
-      const assignments = selectedParticipants.map((uid, idx) => ({
-        userId: uid,
-        shareAmount: idx === selectedParticipants.length - 1
-          ? Math.round((item.price - rounded * (selectedParticipants.length - 1)) * 100) / 100
-          : rounded,
-      }));
-      return {
-        name: item.nm,
-        quantity: item.cnt ?? 1,
-        price: item.price,
-        assignments,
-      };
-    });
+    // Items are just the receipt line items now — descriptive only.
+    const transactionItems = items.map((item) => ({
+      name: item.nm,
+      quantity: item.cnt ?? 1,
+      price: item.price,
+    }));
+
+    // Split the whole receipt evenly among participants.
+    // Handle rounding: last participant gets the penny difference.
+    const rawShare = totalAmount / selectedParticipants.length;
+    const rounded = Math.round(rawShare * 100) / 100;
+    const transactionParticipants = selectedParticipants.map((uid, idx) => ({
+      userId: uid,
+      shareAmount: idx === selectedParticipants.length - 1
+        ? Math.round((totalAmount - rounded * (selectedParticipants.length - 1)) * 100) / 100
+        : rounded,
+    }));
 
     try {
       const response = await fetch("/api/transactions", {
@@ -114,6 +113,7 @@ export default function ScanTransactionPage() {
           paidByUserId: paidBy,
           transactionDate: new Date().toISOString().split("T")[0],
           items: transactionItems,
+          participants: transactionParticipants,
         }),
       });
 

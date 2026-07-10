@@ -5,7 +5,8 @@ import { CODES, ERROR_MESSAGES, apiError, type ApiErrorResponse } from "@/lib/co
 
 /**
  * POST /api/transactions
- * Create a new transaction with items and assignments.
+ * Create a new transaction with (optional, descriptive) items and its
+ * participant split.
  *
  * Validates required fields and split amounts before saving.
  */
@@ -20,36 +21,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!body.items || body.items.length === 0) {
+    if (!body.participants || body.participants.length === 0) {
       return NextResponse.json<ApiErrorResponse>(
-        apiError(ERROR_MESSAGES.TX_NO_ITEMS, CODES.NO_ITEMS),
+        apiError(ERROR_MESSAGES.TX_NO_PARTICIPANTS, CODES.NO_PARTICIPANTS),
         { status: 400 }
       );
     }
 
-    for (const item of body.items) {
-      if (!item.assignments || item.assignments.length === 0) {
-        return NextResponse.json<ApiErrorResponse>(
-          apiError(ERROR_MESSAGES.TX_UNASSIGNED_ITEM(item.name), CODES.UNASSIGNED_ITEM),
-          { status: 400 }
-        );
-      }
-
-      // Validate: sum of assignments for this item must equal the item's price
-      const assignedTotal = item.assignments.reduce((sum, a) => sum + a.shareAmount, 0);
-      if (Math.abs(assignedTotal - item.price) > 0.01) {
-        return NextResponse.json<ApiErrorResponse>(
-          apiError(
-            ERROR_MESSAGES.TX_ITEM_SPLIT_MISMATCH(
-              item.name,
-              assignedTotal.toFixed(2),
-              item.price.toFixed(2)
-            ),
-            CODES.SPLIT_MISMATCH
-          ),
-          { status: 400 }
-        );
-      }
+    // Validate: sum of participant shares must equal the transaction total
+    const assignedTotal = body.participants.reduce((sum, p) => sum + p.shareAmount, 0);
+    if (Math.abs(assignedTotal - body.totalAmount) > 0.01) {
+      return NextResponse.json<ApiErrorResponse>(
+        apiError(
+          ERROR_MESSAGES.TX_SPLIT_MISMATCH(assignedTotal.toFixed(2), body.totalAmount.toFixed(2)),
+          CODES.SPLIT_MISMATCH
+        ),
+        { status: 400 }
+      );
     }
 
     const transaction = createTransaction(body);
