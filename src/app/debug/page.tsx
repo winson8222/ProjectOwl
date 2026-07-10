@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import SimplifyTestViz from "@/components/SimplifyTestViz";
 
 /**
  * Debug page — view database contents in the browser.
@@ -33,7 +34,10 @@ export default function DebugPage() {
       .finally(() => setTestsLoading(false));
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData();
+    runSimplifyTests();
+  }, []);
 
   const handleDeleteAll = async () => {
     if (!confirm("Delete ALL transactions?")) return;
@@ -161,25 +165,8 @@ export default function DebugPage() {
                 </div>
                 <p className="text-gray-500 mt-0.5">{c.description}</p>
 
-                {/* Net balances */}
-                <div className="mt-1 font-mono text-[11px] text-gray-500">
-                  net:{" "}
-                  {c.netBalances.length === 0
-                    ? "(all settled)"
-                    : c.netBalances
-                        .map((b: any) => `${b.userId}:${b.amount > 0 ? "+" : ""}${b.amount.toFixed(2)}`)
-                        .join("  ")}
-                </div>
-
-                {/* Settlement plan */}
-                <div className="mt-0.5 font-mono text-[11px] text-gray-700">
-                  plan:{" "}
-                  {c.transfers.length === 0
-                    ? "(no payments needed)"
-                    : c.transfers
-                        .map((t: any) => `${t.from}→${t.to} $${t.amount.toFixed(2)}`)
-                        .join("   ")}
-                </div>
+                {/* Visualization: balance bars + settlement flow */}
+                <SimplifyTestViz netBalances={c.netBalances} transfers={c.transfers} />
 
                 {/* Failed checks */}
                 {c.checks
