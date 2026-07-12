@@ -6,20 +6,28 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:simplify": "tsx scripts/run-simplify-tests.ts"
   },
   "dependencies": {
+    "better-sqlite3": "^12.11.1",
+    "drizzle-orm": "^0.45.2",
     "next": "^15.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "uuid": "^14.0.1",
     "zod": "^3.24.0"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.0",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "typescript": "^5.7.0",
-    "@tailwindcss/postcss": "^4.0.0",
-    "tailwindcss": "^4.0.0"
+    "@types/uuid": "^10.0.0",
+    "drizzle-kit": "^0.31.10",
+    "tailwindcss": "^4.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.0"
   }
 }

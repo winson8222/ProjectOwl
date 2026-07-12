@@ -62,11 +62,182 @@ The 429 "quota exceeded" error on a fresh key is likely one of:
 **Fix**: Switched default model to `gemini-2.5-flash` (same free tier availability,
 often less contended). Made model configurable at construction for easy swapping.
 
+## 2026-07-06 — Full Splitwise-like app flows (feature/full-app-flow)
+
+### Done
+**Database layer:**
+- Created Drizzle ORM schema with 6 tables: `users`, `friendships`, `transactions`,
+  `transaction_items`, `item_assignments`, `settlements`
+- SQLite via `better-sqlite3` with auto-migration on startup
+- Seed data: 5 users (You, Alex, Ben, Chloe, Diana) + friendships + 2 demo transactions
+- Easy migration path to PostgreSQL (swap drizzle driver + schema dialect)
+
+**Backend actions + API routes:**
+- `users.ts` — CRUD, friend list, per-person balance computation
+- `transactions.ts` — create (with items + assignments), query (with filters), delete
+- `balances.ts` — net balance, owe/owed breakdown, top debtor/creditor (computed from raw data)
+- `settlements.ts` — optimized settlement plan, mark-as-paid
+- New API routes: `GET/POST/DELETE /api/transactions`, `POST /api/settlements/mark-paid`,
+  `GET /api/balances`, `GET /api/users`
+- Existing `/api/receipts/extract` integrated into transaction creation flow
+
+**Frontend pages:**
+| Page | Route | Key features |
+|---|---|---|
+| Home/Dashboard | `/` | Net balance card, owe/owed split, top debtor/creditor highlights, recent activity, quick actions. Also serves as session picker on first visit |
+| Transactions | `/transactions` | Filterable list (payer dropdown, payee multi-select), deep-link support |
+| New Transaction | `/transactions/new` | Choice between Scan receipt or Manual entry |
+| Scan & Review | `/transactions/new/scan` | Upload → extract → review form (edit items, pick participants, split evenly) → save |
+| Manual Entry | `/transactions/new/manual` | Description, total, date, participants, split toggle (even/custom with % or $ per-person), live remaining indicator |
+| Transaction Detail | `/transactions/[id]` | Itemized breakdown with avatars, per-person totals, paid-by badge, settled/pending, mark-as-settled, delete with confirmation |
+| Friends | `/friends` | Friend list with individual balances (owes you / you owe / settled) |
+| Settle Up | `/settle-up` | Personalized view: who pays you / you pay, with Mark Paid buttons |
+
+**Shared components:**
+- `BottomNav` — 3-tab bar (Home, Transactions, Friends), hides on sub-pages
+- `UserAvatar` — colored avatar circle with initials
+- `UserPicker` — multi-select participant picker with avatar toggles
+- `SplitInput` — even/custom split toggle, per-person $ and % inputs, live remaining indicator
+- `BalanceCard` — headline net balance + owe/owed breakdown
+- `TransactionCard` — summary row (title, amount, who paid, date, user share)
+- `ConfirmDialog` — reusable confirmation modal with danger variant
+
+**Architecture:**
+- Session stored in `sessionStorage` (simple user picker on first visit)
+- All balances computed from raw data (not stored), ensuring consistency on delete/edit
+- Splitwise-like settlement optimizer (greedy max-debtor → max-creditor matching)
+- Bottom nav with iOS safe-area padding
+- No global state store — each page fetches its own data
+
+## 2026-07-06 — Bugfix: navigation, validation, and redirect
+
+### Fixed
+1. **BottomNav now persistent** — Removed the `return null` condition that hid the
+   navigation bar on `/transactions/new/*` and `/settle-up` sub-pages. Users can
+   now always navigate between Home, Transactions, and Friends regardless of
+   which flow they're in.
+
+2. **Custom split validation** — Added both frontend and backend checks that the
+   sum of all assignment amounts equals the item's total price:
+   - **Backend** (`POST /api/transactions`): validates every item's assignment
+     sums match its price within $0.01 tolerance. Returns `SPLIT_MISMATCH` error
+     with a clear message showing the difference.
+   - **Frontend manual** (`/transactions/new/manual`): validates split amounts
+     against total *before* sending the API call, shows inline error.
+   - **Frontend scan** (`/transactions/new/scan`): fixed a rounding bug where
+     splitting by N people could leave unassigned pennies (last participant now
+     gets the remainder).
+
+3. **Redirect after save** — Both scan and manual flows now redirect to
+   `/transactions` (transaction history list) instead of the individual
+   transaction detail page. This matches the expected flow: after creating a
+   transaction, see it in context with other transactions.
+
+### Why
+- Navigation bar was hidden on creation pages, leaving users with no way to
+  go back to the main page without using the browser back button.
+- Custom split amounts could be submitted without summing to the total,
+  causing the transaction to save with incorrect balances.
+- The rounding bug in the scan flow meant evenly-split items were off by
+  pennies, which also triggered the backend validation.
+- Redirecting to the detail page after creation was confusing — the user
+  expects to return to the list where they can see the new transaction.
+
+## 2026-07-06 — Bugfix: transactions not showing up, admin tools
+
+### Fixed
+1. **Transactions not appearing after save** — Two root causes:
+   - `getTransactions()` only looked for transactions where the user has item
+     *assignments*. If the user created a transaction but didn't assign any
+     items to themselves (e.g., paid for friends only), the transaction was
+     invisible to them. **Fix**: `getTransactions()` now also includes
+     transactions where the user is the *payer*, regardless of assignments.
+   - Manual entry didn't auto-include the current user in participants.
+     **Fix**: `setSelectedParticipants([currentUser.id])` on page mount.
+
+2. **Error messages centralized** — Created `src/lib/constants.ts` with all
+   error codes (`CODES`), user-facing messages (`ERROR_MESSAGES`), and a
+   helper function (`apiError()`). All 5 API routes and both transaction
+   creation pages now reference this file instead of hardcoded strings.
+
+### Added
+3. **Delete all transactions** — `DELETE /api/transactions?all=true` removes
+   all transactions, items, and assignments. Also accessible via
+   `POST /api/debug?action=delete-all-transactions`.
+
+4. **DB debug endpoint** — `GET /api/debug` returns counts and a listing of
+   all users and transactions in the database for quick inspection.
+
+5. **Full DB reset** — `POST /api/debug?action=reset` wipes everything and
+   re-runs the seed data.
+
+### Viewing SQLite data
+```bash
+# The database lives at: data/projectowl.db
+
+# View via the debug API:
+curl http://localhost:3000/api/debug
+
+# Or open with any SQLite browser:
+#   macOS:   brew install --cask db-browser-for-sqlite
+#   Windows: Download DB Browser for SQLite (sqlitebrowser.org)
+#   Then open: data/projectowl.db
+```
+
+## 2026-07-09 — Bugfix: transaction sort, persistent nav, validation, admin tools
+
+### Fixed
+1. **Transaction sort by creation time** — Changed from `transactionDate` (user-picked
+   date) to `createdAt` (actual server timestamp with localTimezone formatting).
+   `localTimestamp()` helper produces `YYYY-MM-DD HH:MM:SS` format matching SQLite's
+   `CURRENT_TIMESTAMP`, so string sort works correctly in DESC order.
+   Explicitly passes `createdAt: localTimestamp()` in `createTransaction` to guarantee
+   uniqueness per transaction.
+
+2. **BottomNav now persistent** — Removed the `return null` that hid navigation on
+   `/transactions/new/*` and `/settle-up` sub-pages.
+
+3. **Custom split validation** — Backend (`POST /api/transactions`): validates every
+   item's assignment sums match its price within $0.01. Returns `SPLIT_MISMATCH` error.
+   Frontend manual page: validates split totals against total *before* API call.
+   Scan page: fixed rounding bug (last participant gets remainder pennies).
+
+4. **Transaction not showing up after save** — Two causes fixed:
+   - `getTransactions()` now includes transactions where user is the *payer* (not just
+     assigned participant).
+   - Manual entry auto-includes `currentUser.id` in participants on mount.
+   - Redirect changed from `router.push` to `window.location.href` (forces full page
+     reload to bypass Next.js client-side cache).
+
+5. **Delete all transactions / full reset not working** — Switched from Drizzle's
+   `.delete().run()` (which silently failed) to raw SQL `db.run("DELETE FROM table")`
+   with `PRAGMA foreign_keys = OFF` to handle cascade constraints.
+
+### Added
+6. **Error messages centralized** — `src/lib/constants.ts` with `CODES` (error code
+   constants), `ERROR_MESSAGES` (user-facing messages with template functions),
+   `VALIDATION` (frontend validation messages), `apiError()` helper. All 5 API routes
+   and both transaction creation pages now reference this file.
+
+7. **Debug page** — `/debug` web UI showing DB counts, user list, transaction list
+   with `createdAt` timestamps and assignment counts. Includes Refresh, Delete all
+   transactions, and Full reset buttons.
+
+8. **Debug API** — `GET /api/debug` returns counts + full transaction listing with
+   `createdAt` and assignment counts. `POST /api/debug?action=reset` for full DB
+   wipe+re-seed. `POST /api/debug?action=delete-all-transactions` for transaction-only purge.
+
+9. **README updated** — All debug/admin API routes documented, SQLite viewing
+   instructions added.
+
 ### Next steps (future iterations)
-- [ ] Image pre-processing (compress oversized images, HEIC→JPEG conversion)
-- [ ] Support for different receipt formats (grocery, gas station) via templated prompts
-- [ ] Post-processing pipeline (dedup items, detect currency, flag price anomalies)
-- [ ] Supabase integration for persisting receipts and user data
-- [ ] Split flow (friend selection, item assignment, per-person totals)
-- [ ] PWA manifest and service worker for offline capability
-- [ ] Camera capture via `navigator.mediaDevices`
+- [ ] PWA manifest + service worker for offline capability
+- [ ] Camera capture via `navigator.mediaDevices` for in-browser photo
+- [ ] Real auth (Clerk / Supabase Auth) instead of sessionStorage
+- [ ] Image pre-processing (compress oversized images, HEIC→JPEG)
+- [ ] Receipt format templates (grocery, gas station, itemized vs totals-only)
+- [ ] Equalize settlement flow (pay records actually persist in SQLite)
+- [ ] Edit transaction (modify items, reassign, recalc balances)
+- [ ] Real "Mark as paid" with persistent settlement records
+- [ ] Filter by date range on transactions page
+- [ ] Mobile-optimized touch interactions (swipe to delete, pull to refresh)
