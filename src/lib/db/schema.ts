@@ -53,6 +53,18 @@ export const participants = sqliteTable("participants", {
   createdAt: text("created_at").default("CURRENT_TIMESTAMP").notNull(),
 });
 
+// ── Item Assignments (scan-based: which user gets which item) ──────
+// Links a transaction line item to the users who share it, and how much
+// of that item's price each user owes. This is the *raw* scan allocation,
+// stored separately from participants so the final edited split can differ.
+export const itemAssignments = sqliteTable("item_assignments", {
+  id: text("id").primaryKey(),
+  itemId: text("item_id").notNull().references(() => transactionItems.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id),
+  shareAmount: real("share_amount").notNull(), // this user's portion of this item's price
+  createdAt: text("created_at").default("CURRENT_TIMESTAMP").notNull(),
+});
+
 // ── Settlements ─────────────────────────────────────────────────────
 export const settlements = sqliteTable("settlements", {
   id: text("id").primaryKey(),

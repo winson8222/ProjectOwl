@@ -89,7 +89,7 @@ export default function SplitInput({
           Even split
         </button>
         <button
-          onClick={() => { onModeChange("custom"); splitEven(); }}
+          onClick={() => { onModeChange("custom"); }}
           className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
             mode === "custom" ? "bg-white shadow-sm text-gray-900" : "text-gray-500"
           }`}
