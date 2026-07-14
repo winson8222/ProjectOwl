@@ -1,5 +1,5 @@
 import { getDb, schema } from "@/lib/db";
-import { eq, desc, and, like, inArray, sql } from "drizzle-orm";
+import { eq, desc, and, inArray } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 /** Return the current datetime as a local-time ISO string (no timezone suffix, sorts lexicographically). */
 function localTimestamp(): string {
@@ -11,17 +11,12 @@ function localTimestamp(): string {
 
 
 export type Transaction = typeof schema.transactions.$inferSelect;
-export type TransactionItem = typeof schema.transactions.$inferInsert &
-  { items: (typeof schema.transactionItems.$inferSelect & {
-    assignments: typeof schema.itemAssignments.$inferSelect[]
-  })[] };
 
 export interface TransactionWithDetails extends Transaction {
-  items: (typeof schema.transactionItems.$inferSelect & {
-    assignments: typeof schema.itemAssignments.$inferSelect[];
-  })[];
+  items: (typeof schema.transactionItems.$inferSelect)[];
   paidByUser: typeof schema.users.$inferSelect | undefined;
   participants: { user: typeof schema.users.$inferSelect; shareAmount: number }[];
+  itemAssignments: (typeof schema.itemAssignments.$inferSelect & { userName: string })[];
   userShare: number; // current user's share
 }
 
@@ -32,20 +27,21 @@ export interface CreateTransactionInput {
   transactionDate: string;
   notes?: string;
   receiptImage?: string;
-  items: {
+  items?: {
     name: string;
     quantity: number;
     price: number;
-    assignments: { userId: string; shareAmount: number }[];
   }[];
+  participants: { userId: string; shareAmount: number }[];
+  /** Optional item-level assignments from receipt scanning.
+   *  Each entry ties a user to a specific item and their share of that item's price. */
+  itemAssignments?: {
+    userId: string;
+    shareAmount: number;
+  }[][]; // index matches items[] — array of assignments per item
 }
 
-export enum TransactionStatus {
-  Pending = "pending",
-  Settled = "settled",
-}
-
-/** Create a full transaction with items and assignments. */
+/** Create a full transaction with its (unsplit) line items, item-level assignments, and participant shares. */
 export function createTransaction(input: CreateTransactionInput): Transaction {
   const db = getDb();
   const txId = `tx-${uuid().slice(0, 12)}`;
@@ -63,9 +59,11 @@ export function createTransaction(input: CreateTransactionInput): Transaction {
       createdAt: localTimestamp(),
     }).run();
 
-    // Insert items and their assignments
-    for (const item of input.items) {
+    // Insert items — descriptive line items only, no split data attached
+    const insertedItemIds: string[] = [];
+    for (const item of input.items ?? []) {
       const itemId = `item-${uuid().slice(0, 8)}`;
+      insertedItemIds.push(itemId);
       db.insert(schema.transactionItems).values({
         id: itemId,
         transactionId: txId,
@@ -73,15 +71,32 @@ export function createTransaction(input: CreateTransactionInput): Transaction {
         quantity: item.quantity,
         price: item.price,
       }).run();
+    }
 
-      for (const assignment of item.assignments) {
+    // Insert item-level assignments (from scan allocation)
+    for (let i = 0; i < (input.itemAssignments?.length ?? 0); i++) {
+      const assignments = input.itemAssignments![i];
+      if (!assignments || assignments.length === 0) continue;
+      const itemId = insertedItemIds[i];
+      if (!itemId) continue;
+      for (const assignment of assignments) {
         db.insert(schema.itemAssignments).values({
-          id: uuid(),
+          id: `ia-${uuid().slice(0, 8)}`,
           itemId,
           userId: assignment.userId,
           shareAmount: assignment.shareAmount,
         }).run();
       }
+    }
+
+    // Insert participants — the split, once, for the whole transaction
+    for (const participant of input.participants) {
+      db.insert(schema.participants).values({
+        id: uuid(),
+        transactionId: txId,
+        userId: participant.userId,
+        shareAmount: participant.shareAmount,
+      }).run();
     }
   });
 
@@ -92,7 +107,11 @@ export function createTransaction(input: CreateTransactionInput): Transaction {
 export function getTransaction(id: string, currentUserId?: string): TransactionWithDetails | undefined {
   const db = getDb();
 
-  const tx = db.select().from(schema.transactions).where(eq(schema.transactions.id, id)).get();
+  const tx = db
+    .select()
+    .from(schema.transactions)
+    .where(and(eq(schema.transactions.id, id), eq(schema.transactions.isDeleted, false)))
+    .get();
   if (!tx) return undefined;
 
   const paidByUser = db.select().from(schema.users).where(eq(schema.users.id, tx.paidByUserId)).get();
@@ -103,35 +122,44 @@ export function getTransaction(id: string, currentUserId?: string): TransactionW
     .where(eq(schema.transactionItems.transactionId, id))
     .all();
 
-  const itemsWithAssignments = items.map((item) => {
-    const assignments = db
-      .select()
-      .from(schema.itemAssignments)
-      .where(eq(schema.itemAssignments.itemId, item.id))
-      .all();
-    return { ...item, assignments };
+  const participantRows = db
+    .select()
+    .from(schema.participants)
+    .where(eq(schema.participants.transactionId, id))
+    .all();
+
+  const userShares = participantRows.map((p) => {
+    const user = db.select().from(schema.users).where(eq(schema.users.id, p.userId)).get();
+    return { user: user!, shareAmount: p.shareAmount };
   });
 
-  // Compute per-participant totals
-  const participantMap = new Map<string, number>();
-  for (const item of itemsWithAssignments) {
-    for (const a of item.assignments) {
-      participantMap.set(a.userId, (participantMap.get(a.userId) ?? 0) + a.shareAmount);
-    }
-  }
+  // Load item-level assignments with user names
+  const rawAssignments = db
+    .select()
+    .from(schema.itemAssignments)
+    .where(
+      inArray(
+        schema.itemAssignments.itemId,
+        items.map((i) => i.id)
+      )
+    )
+    .all();
 
-  const userShares = Array.from(participantMap.entries()).map(([userId, shareAmount]) => {
-    const user = db.select().from(schema.users).where(eq(schema.users.id, userId)).get();
-    return { user: user!, shareAmount };
+  const itemAssignments = rawAssignments.map((a) => {
+    const u = db.select().from(schema.users).where(eq(schema.users.id, a.userId)).get();
+    return { ...a, userName: u?.name ?? "Unknown" };
   });
 
-  const userShare = currentUserId ? (participantMap.get(currentUserId) ?? 0) : 0;
+  const userShare = currentUserId
+    ? (participantRows.find((p) => p.userId === currentUserId)?.shareAmount ?? 0)
+    : 0;
 
   return {
     ...tx,
-    items: itemsWithAssignments,
+    items,
     paidByUser,
     participants: userShares,
+    itemAssignments,
     userShare,
   };
 }
@@ -147,18 +175,14 @@ export function getTransactions(params: {
   const db = getDb();
   const { userId, payer, payees, limit = 50, offset = 0 } = params;
 
-  // Get transaction IDs where this user has assignments (as a participant)
+  // Get transaction IDs where this user is a participant
   const involvement = db
-    .select({ transactionId: schema.transactionItems.transactionId })
-    .from(schema.itemAssignments)
-    .innerJoin(
-      schema.transactionItems,
-      eq(schema.itemAssignments.itemId, schema.transactionItems.id)
-    )
-    .where(eq(schema.itemAssignments.userId, userId))
+    .select({ transactionId: schema.participants.transactionId })
+    .from(schema.participants)
+    .where(eq(schema.participants.userId, userId))
     .all();
 
-  // Also include transactions the user paid for (even if not in assignments)
+  // Also include transactions the user paid for (even if not a participant)
   const paidTxIds = db
     .select({ id: schema.transactions.id })
     .from(schema.transactions)
@@ -173,20 +197,20 @@ export function getTransactions(params: {
   ];
   if (txIds.length === 0) return [];
 
-  let query = db
+  const txs = db
     .select()
     .from(schema.transactions)
     .where(
       and(
         inArray(schema.transactions.id, txIds),
+        eq(schema.transactions.isDeleted, false),
         payer ? eq(schema.transactions.paidByUserId, payer) : undefined,
       )
     )
     .orderBy(desc(schema.transactions.createdAt))
     .limit(limit)
-    .offset(offset);
-
-  const txs = query.all();
+    .offset(offset)
+    .all();
 
   return txs.map((tx) => {
     const items = db
@@ -195,44 +219,57 @@ export function getTransactions(params: {
       .where(eq(schema.transactionItems.transactionId, tx.id))
       .all();
 
-    const itemsWithAssignments = items.map((item) => {
-      const assignments = db
-        .select()
-        .from(schema.itemAssignments)
-        .where(eq(schema.itemAssignments.itemId, item.id))
-        .all();
-      return { ...item, assignments };
-    });
+    const participantRows = db
+      .select()
+      .from(schema.participants)
+      .where(eq(schema.participants.transactionId, tx.id))
+      .all();
 
     const paidByUser = db.select().from(schema.users).where(eq(schema.users.id, tx.paidByUserId)).get();
 
-    const participantMap = new Map<string, number>();
-    for (const item of itemsWithAssignments) {
-      for (const a of item.assignments) {
-        participantMap.set(a.userId, (participantMap.get(a.userId) ?? 0) + a.shareAmount);
-      }
-    }
-
-    const userShares = Array.from(participantMap.entries()).map(([uid, shareAmount]) => {
-      const user = db.select().from(schema.users).where(eq(schema.users.id, uid)).get();
-      return { user: user!, shareAmount };
+    const userShares = participantRows.map((p) => {
+      const user = db.select().from(schema.users).where(eq(schema.users.id, p.userId)).get();
+      return { user: user!, shareAmount: p.shareAmount };
     });
 
-    const userShare = participantMap.get(userId) ?? 0;
+    // Load item-level assignments
+    const rawAssignments = db
+      .select()
+      .from(schema.itemAssignments)
+      .where(
+        inArray(
+          schema.itemAssignments.itemId,
+          items.map((i) => i.id)
+        )
+      )
+      .all();
+
+    const itemAssignments = rawAssignments.map((a) => {
+      const u = db.select().from(schema.users).where(eq(schema.users.id, a.userId)).get();
+      return { ...a, userName: u?.name ?? "Unknown" };
+    });
+
+    const userShare = participantRows.find((p) => p.userId === userId)?.shareAmount ?? 0;
 
     return {
       ...tx,
-      items: itemsWithAssignments,
+      items,
       paidByUser,
       participants: userShares,
+      itemAssignments,
       userShare,
     };
   });
 }
 
-/** Delete a transaction and all related data (cascade handled by FK). */
+/** Soft-delete a transaction — the row (and its items/participants) stays for
+ * ledger history but is excluded from balance and history queries. */
 export function deleteTransaction(id: string): boolean {
   const db = getDb();
-  const result = db.delete(schema.transactions).where(eq(schema.transactions.id, id)).run();
+  const result = db
+    .update(schema.transactions)
+    .set({ isDeleted: true, updatedAt: localTimestamp() })
+    .where(eq(schema.transactions.id, id))
+    .run();
   return result.changes > 0;
 }

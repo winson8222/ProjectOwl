@@ -4,9 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "testmode": "cross-env NEXT_PUBLIC_DEBUG_UI=true NEXT_PUBLIC_MOCK_SCAN=true next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:simplify": "tsx scripts/run-simplify-tests.ts",
+    "test:allocation": "tsx scripts/run-allocation-tests.ts"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",
@@ -24,8 +27,10 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/uuid": "^10.0.0",
+    "cross-env": "^10.1.0",
     "drizzle-kit": "^0.31.10",
     "tailwindcss": "^4.0.0",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.0"
   }
 }

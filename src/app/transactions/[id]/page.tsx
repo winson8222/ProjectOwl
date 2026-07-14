@@ -121,36 +121,51 @@ export default function TransactionDetailPage() {
         </div>
       </div>
 
-      {/* Itemized breakdown */}
+      {/* Itemized breakdown (with scan assignments if available) */}
       {tx.items && tx.items.length > 0 && (
         <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl overflow-hidden mb-4">
           <div className="px-4 py-2.5 border-b border-[var(--border)] bg-gray-50">
             <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Items</h2>
           </div>
           <div className="divide-y divide-[var(--border)]">
-            {tx.items.map((item: any, i: number) => (
-              <div key={i} className="px-4 py-3">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-900 font-medium">{item.name}</span>
-                  <span className="font-mono text-gray-700">${item.price.toFixed(2)}</span>
-                </div>
-                {item.assignments && item.assignments.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-1.5">
-                    {item.assignments.map((a: any, j: number) => {
-                      const assignee = tx.participants?.find((p: any) => p.user.id === a.userId);
-                      return (
-                        <span key={j} className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 rounded-full text-xs text-gray-500">
-                          {assignee?.user?.name ?? a.userId}
-                          {item.assignments.length > 1 && (
-                            <span className="font-mono">${a.shareAmount.toFixed(2)}</span>
-                          )}
-                        </span>
-                      );
-                    })}
+            {tx.items.map((item: any, i: number) => {
+              // Find assignments for this item
+              const itemAssignments = (tx.itemAssignments ?? []).filter(
+                (a: any) => a.itemId === item.id
+              );
+              return (
+                <div key={i} className="px-4 py-3">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-900 font-medium">
+                      {item.name}
+                      {item.quantity > 1 && (
+                        <span className="text-gray-400"> ×{item.quantity}</span>
+                      )}
+                    </span>
+                    <span className="font-mono text-gray-700">
+                      ${item.price.toFixed(2)}
+                    </span>
                   </div>
-                )}
-              </div>
-            ))}
+                  {/* Show item assignments */}
+                  {itemAssignments.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                      {itemAssignments.map((a: any) => (
+                        <span
+                          key={a.id}
+                          className="inline-flex items-center gap-1 text-[11px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full"
+                        >
+                          <UserAvatar name={a.userName} size="sm" />
+                          {a.userName.split(" ")[0]}
+                          <span className="font-mono text-gray-400">
+                            ${a.shareAmount.toFixed(2)}
+                          </span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

@@ -7,6 +7,20 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "10mb",
     },
   },
+  async redirects() {
+    return [
+      {
+        source: "/transactions/new/scan",
+        destination: "/transactions/new",
+        permanent: true,
+      },
+      {
+        source: "/transactions/new/manual",
+        destination: "/transactions/new",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

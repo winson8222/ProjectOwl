@@ -13,7 +13,7 @@ export async function GET() {
     const userCount = db.select({ count: count() }).from(schema.users).get()?.count ?? 0;
     const txCount = db.select({ count: count() }).from(schema.transactions).get()?.count ?? 0;
     const itemCount = db.select({ count: count() }).from(schema.transactionItems).get()?.count ?? 0;
-    const assignmentCount = db.select({ count: count() }).from(schema.itemAssignments).get()?.count ?? 0;
+    const participantCount = db.select({ count: count() }).from(schema.participants).get()?.count ?? 0;
     const settlementCount = db.select({ count: count() }).from(schema.settlements).get()?.count ?? 0;
     const dbSize = sql`page_count * page_size`.as<number>();
 
@@ -30,18 +30,14 @@ export async function GET() {
       .orderBy(sql`created_at DESC`)
       .all();
 
-    // Check assignments per transaction
-    const assignmentsPerTx = transactions.map((tx) => {
+    // Check participants per transaction
+    const participantsPerTx = transactions.map((tx) => {
       const result = db
         .select({ total: count() })
-        .from(schema.itemAssignments)
-        .innerJoin(
-          schema.transactionItems,
-          eq(schema.itemAssignments.itemId, schema.transactionItems.id)
-        )
-        .where(eq(schema.transactionItems.transactionId, tx.id))
+        .from(schema.participants)
+        .where(eq(schema.participants.transactionId, tx.id))
         .get();
-      return { txId: tx.id, assignmentCount: result?.total ?? 0 };
+      return { txId: tx.id, participantCount: result?.total ?? 0 };
     });
 
     return NextResponse.json({
@@ -51,12 +47,12 @@ export async function GET() {
           users: userCount,
           transactions: txCount,
           transactionItems: itemCount,
-          assignments: assignmentCount,
+          participants: participantCount,
           settlements: settlementCount,
         },
         users,
         transactions,
-        assignmentsPerTx,
+        participantsPerTx,
       },
     });
   } catch (err) {
@@ -80,7 +76,7 @@ export async function POST(request: Request) {
     if (action === "reset") {
       // Raw SQL to bypass any Drizzle query issues
       db.run("PRAGMA foreign_keys = OFF");
-      db.run("DELETE FROM item_assignments");
+      db.run("DELETE FROM participants");
       db.run("DELETE FROM transaction_items");
       db.run("DELETE FROM transactions");
       db.run("DELETE FROM settlements");
@@ -97,7 +93,7 @@ export async function POST(request: Request) {
 
     if (action === "delete-all-transactions") {
       db.run("PRAGMA foreign_keys = OFF");
-      db.run("DELETE FROM item_assignments");
+      db.run("DELETE FROM participants");
       db.run("DELETE FROM transaction_items");
       db.run("DELETE FROM transactions");
       db.run("PRAGMA foreign_keys = ON");

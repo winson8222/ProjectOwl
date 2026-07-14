@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import SimplifyTestViz from "@/components/SimplifyTestViz";
 
 /**
  * Debug page — view database contents in the browser.
@@ -8,6 +9,10 @@ import { useState, useEffect } from "react";
 export default function DebugPage() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [tests, setTests] = useState<any>(null);
+  const [testsLoading, setTestsLoading] = useState(false);
+  const [allocTests, setAllocTests] = useState<any>(null);
+  const [allocLoading, setAllocLoading] = useState(false);
 
   const fetchData = () => {
     setLoading(true);
@@ -20,7 +25,33 @@ export default function DebugPage() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { fetchData(); }, []);
+  const runSimplifyTests = () => {
+    setTestsLoading(true);
+    fetch("/api/debug/simplify-tests")
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success) setTests(json.data);
+      })
+      .catch(console.error)
+      .finally(() => setTestsLoading(false));
+  };
+
+  const runAllocationTests = () => {
+    setAllocLoading(true);
+    fetch("/api/debug/allocation-tests")
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success) setAllocTests(json.data);
+      })
+      .catch(console.error)
+      .finally(() => setAllocLoading(false));
+  };
+
+  useEffect(() => {
+    fetchData();
+    runSimplifyTests();
+    runAllocationTests();
+  }, []);
 
   const handleDeleteAll = async () => {
     if (!confirm("Delete ALL transactions?")) return;
@@ -76,7 +107,7 @@ export default function DebugPage() {
             <h2 className="text-sm font-semibold mb-2">Transactions (sorted by createdAt DESC)</h2>
             <div className="space-y-1">
               {data.transactions.map((tx: any) => {
-                const assignInfo = data.assignmentsPerTx?.find((a: any) => a.txId === tx.id);
+                const participantInfo = data.participantsPerTx?.find((p: any) => p.txId === tx.id);
                 return (
                   <div key={tx.id} className="text-xs font-mono bg-gray-50 px-2 py-1.5 rounded border border-gray-100">
                     <div className="flex justify-between">
@@ -84,7 +115,7 @@ export default function DebugPage() {
                       <span>${tx.totalAmount.toFixed(2)}</span>
                     </div>
                     <div className="text-gray-500 flex justify-between mt-0.5">
-                      <span>Paid by: {tx.paidByUserId} · Assignments: {assignInfo?.assignmentCount ?? "?"}</span>
+                      <span>Paid by: {tx.paidByUserId} · Participants: {participantInfo?.participantCount ?? "?"}</span>
                       <span className="text-[10px]">{tx.createdAt}</span>
                     </div>
                   </div>
@@ -95,6 +126,162 @@ export default function DebugPage() {
           </div>
         </div>
       )}
+
+      {/* Debt-simplification test suite */}
+      <div className="mt-8 border-t border-gray-200 pt-6">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h2 className="text-sm font-semibold">🧮 Debt-simplification tests</h2>
+            <p className="text-[11px] text-gray-400">
+              Runs 10 in-memory scenarios through the minimal-transfer algorithm. No data is touched.
+            </p>
+          </div>
+          <button
+            onClick={runSimplifyTests}
+            disabled={testsLoading}
+            className="px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded-lg disabled:opacity-50"
+          >
+            {testsLoading ? "Running..." : "Run tests"}
+          </button>
+        </div>
+
+        {tests && (
+          <div className="space-y-2">
+            {/* Summary banner */}
+            <div
+              className={`text-sm font-semibold px-3 py-2 rounded-lg ${
+                tests.failed === 0 ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
+              }`}
+            >
+              {tests.passed}/{tests.total} passed
+              {tests.failed > 0 && ` · ${tests.failed} failed`}
+            </div>
+
+            {/* Per-case cards */}
+            {tests.cases.map((c: any) => (
+              <div
+                key={c.name}
+                className={`text-xs rounded-lg border px-3 py-2 ${
+                  c.passed ? "border-gray-100 bg-gray-50" : "border-red-200 bg-red-50"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-bold">
+                    <span className={c.passed ? "text-green-600" : "text-red-600"}>
+                      {c.passed ? "PASS" : "FAIL"}
+                    </span>{" "}
+                    {c.name}
+                  </span>
+                  <span className="text-gray-400">
+                    {c.transferCount} transfer{c.transferCount === 1 ? "" : "s"}
+                    {c.expectedTransfers !== undefined && ` / ${c.expectedTransfers} expected`}
+                  </span>
+                </div>
+                <p className="text-gray-500 mt-0.5">{c.description}</p>
+
+                {/* Visualization: balance bars + settlement flow */}
+                <SimplifyTestViz netBalances={c.netBalances} transfers={c.transfers} />
+
+                {/* Failed checks */}
+                {c.checks
+                  .filter((ck: any) => !ck.passed)
+                  .map((ck: any, i: number) => (
+                    <div key={i} className="mt-1 text-red-600">
+                      ✗ {ck.name}
+                      {ck.detail ? ` — ${ck.detail}` : ""}
+                    </div>
+                  ))}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Receipt-allocation test suite */}
+      <div className="mt-8 border-t border-gray-200 pt-6">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h2 className="text-sm font-semibold">🧾 Item-allocation tests</h2>
+            <p className="text-[11px] text-gray-400">
+              Verifies the prefilled split produced after item allocation. Pure &amp; in-memory.
+            </p>
+          </div>
+          <button
+            onClick={runAllocationTests}
+            disabled={allocLoading}
+            className="px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded-lg disabled:opacity-50"
+          >
+            {allocLoading ? "Running..." : "Run tests"}
+          </button>
+        </div>
+
+        {allocTests && (
+          <div className="space-y-2">
+            {/* Summary banner */}
+            <div
+              className={`text-sm font-semibold px-3 py-2 rounded-lg ${
+                allocTests.failed === 0 ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
+              }`}
+            >
+              {allocTests.passed}/{allocTests.total} passed
+              {allocTests.failed > 0 && ` · ${allocTests.failed} failed`}
+            </div>
+
+            {/* Per-case cards */}
+            {allocTests.cases.map((c: any) => (
+              <div
+                key={c.name}
+                className={`text-xs rounded-lg border px-3 py-2 ${
+                  c.passed ? "border-gray-100 bg-gray-50" : "border-red-200 bg-red-50"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-bold">
+                    <span className={c.passed ? "text-green-600" : "text-red-600"}>
+                      {c.passed ? "PASS" : "FAIL"}
+                    </span>{" "}
+                    {c.name}
+                  </span>
+                  <span className="text-gray-400">
+                    {c.itemCount} item{c.itemCount === 1 ? "" : "s"}
+                  </span>
+                </div>
+                <p className="text-gray-500 mt-0.5">{c.description}</p>
+
+                {/* Computed vs expected totals */}
+                <div className="mt-1.5 grid grid-cols-2 gap-2">
+                  <div>
+                    <div className="text-[10px] text-gray-400 uppercase tracking-wider">Computed</div>
+                    <div className="font-mono">
+                      {Object.entries(c.totals).map(([uid, amt]: any) => (
+                        <div key={uid}>{uid}: ${amt.toFixed(2)}</div>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-gray-400 uppercase tracking-wider">Expected</div>
+                    <div className="font-mono">
+                      {Object.entries(c.expectedTotals).map(([uid, amt]: any) => (
+                        <div key={uid}>{uid}: ${amt.toFixed(2)}</div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Failed checks */}
+                {c.checks
+                  .filter((ck: any) => !ck.passed)
+                  .map((ck: any, i: number) => (
+                    <div key={i} className="mt-1 text-red-600">
+                      ✗ {ck.name}
+                      {ck.detail ? ` — ${ck.detail}` : ""}
+                    </div>
+                  ))}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </main>
   );
 }
