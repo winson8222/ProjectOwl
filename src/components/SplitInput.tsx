@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import UserAvatar from "./UserAvatar";
+import CalculatorKeypad from "./CalculatorKeypad";
 
 interface Participant {
   id: string;
@@ -31,6 +32,7 @@ export default function SplitInput({
 }: SplitInputProps) {
   const [splitType, setSplitType] = useState<"amount" | "percent">("amount");
   const [percentValues, setPercentValues] = useState<Record<string, number>>({});
+  const [keypadUserId, setKeypadUserId] = useState<string | null>(null);
 
   const splitEven = useCallback(() => {
     const evenAmount = Math.round((totalAmount / participants.length) * 100) / 100;
@@ -77,105 +79,119 @@ export default function SplitInput({
   const isBalanced = Math.abs(remaining) < 0.01;
 
   return (
-    <div className="space-y-3">
-      {/* Toggle */}
-      <div className="flex gap-2 bg-gray-100 rounded-lg p-1 w-fit">
-        <button
-          onClick={() => { onModeChange("even"); splitEven(); }}
-          className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
-            mode === "even" ? "bg-white shadow-sm text-gray-900" : "text-gray-500"
-          }`}
-        >
-          Even split
-        </button>
-        <button
-          onClick={() => { onModeChange("custom"); splitEven(); }}
-          className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
-            mode === "custom" ? "bg-white shadow-sm text-gray-900" : "text-gray-500"
-          }`}
-        >
-          Custom split
-        </button>
+    <>
+      <div className="space-y-3">
+        {/* Toggle */}
+        <div className="flex gap-2 bg-gray-100 rounded-lg p-1 w-fit">
+          <button
+            onClick={() => { onModeChange("even"); splitEven(); }}
+            className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+              mode === "even" ? "bg-white shadow-sm text-gray-900" : "text-gray-500"
+            }`}
+          >
+            Even split
+          </button>
+          <button
+            onClick={() => { onModeChange("custom"); splitEven(); }}
+            className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+              mode === "custom" ? "bg-white shadow-sm text-gray-900" : "text-gray-500"
+            }`}
+          >
+            Custom split
+          </button>
+        </div>
+
+        {/* Per-person fields */}
+        {mode === "custom" && (
+          <>
+            {/* Amount/Percent toggle */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setSplitType("amount")}
+                className={`px-3 py-1 text-xs font-medium rounded ${
+                  splitType === "amount" ? "bg-[var(--primary)] text-white" : "bg-gray-100 text-gray-500"
+                }`}
+              >
+                $
+              </button>
+              <button
+                onClick={() => setSplitType("percent")}
+                className={`px-3 py-1 text-xs font-medium rounded ${
+                  splitType === "percent" ? "bg-[var(--primary)] text-white" : "bg-gray-100 text-gray-500"
+                }`}
+              >
+                %
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {participants.map((p) => (
+                <div key={p.id} className="flex items-center gap-3">
+                  <UserAvatar name={p.name} size="sm" />
+                  <span className="text-sm font-medium text-gray-700 flex-1">{p.name}</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs text-gray-400">
+                      {splitType === "amount" ? "$" : ""}
+                    </span>
+                    <input
+                      type="text"
+                      readOnly
+                      value={splitType === "amount"
+                        ? (values[p.id] ?? 0).toFixed(2)
+                        : (percentValues[p.id] ?? 0).toFixed(0)
+                      }
+                      onClick={() => setKeypadUserId(p.id)}
+                      className="w-20 px-2 py-1.5 text-right text-sm border border-[var(--border)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--primary)] cursor-pointer bg-white"
+                    />
+                    <span className="text-xs text-gray-400">
+                      {splitType === "percent" ? "%" : ""}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Remaining indicator */}
+            <div className={`text-sm font-medium ${
+              isBalanced ? "text-[var(--success)]" : remaining < 0 ? "text-[var(--danger)]" : "text-amber-500"
+            }`}>
+              {isBalanced
+                ? "✓ Fully allocated"
+                : `${remaining > 0 ? "Remaining" : "Over by"}: $${Math.abs(remaining).toFixed(2)}`
+              }
+            </div>
+          </>
+        )}
+
+        {/* Even split summary */}
+        {mode === "even" && (
+          <div className="text-sm text-gray-500">
+            ${(totalAmount / participants.length).toFixed(2)} each
+            {participants.length > 0 && (
+              <span className="text-xs text-gray-400 ml-2">
+                ({participants.length} people)
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Per-person fields */}
-      {mode === "custom" && (
-        <>
-          {/* Amount/Percent toggle */}
-          <div className="flex gap-2">
-            <button
-              onClick={() => setSplitType("amount")}
-              className={`px-3 py-1 text-xs font-medium rounded ${
-                splitType === "amount" ? "bg-[var(--primary)] text-white" : "bg-gray-100 text-gray-500"
-              }`}
-            >
-              $
-            </button>
-            <button
-              onClick={() => setSplitType("percent")}
-              className={`px-3 py-1 text-xs font-medium rounded ${
-                splitType === "percent" ? "bg-[var(--primary)] text-white" : "bg-gray-100 text-gray-500"
-              }`}
-            >
-              %
-            </button>
-          </div>
-
-          <div className="space-y-2">
-            {participants.map((p) => (
-              <div key={p.id} className="flex items-center gap-3">
-                <UserAvatar name={p.name} size="sm" />
-                <span className="text-sm font-medium text-gray-700 flex-1">{p.name}</span>
-                <div className="flex items-center gap-1">
-                  <span className="text-xs text-gray-400">
-                    {splitType === "amount" ? "$" : ""}
-                  </span>
-                  <input
-                    type="number"
-                    min="0"
-                    step={splitType === "amount" ? "0.01" : "1"}
-                    value={splitType === "amount" ? values[p.id] ?? 0 : percentValues[p.id] ?? 0}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value) || 0;
-                      if (splitType === "amount") {
-                        updateAmount(p.id, val);
-                      } else {
-                        updatePercent(p.id, val);
-                      }
-                    }}
-                    className="w-20 px-2 py-1.5 text-right text-sm border border-[var(--border)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
-                  />
-                  <span className="text-xs text-gray-400">
-                    {splitType === "percent" ? "%" : ""}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Remaining indicator */}
-          <div className={`text-sm font-medium ${
-            isBalanced ? "text-[var(--success)]" : remaining < 0 ? "text-[var(--danger)]" : "text-amber-500"
-          }`}>
-            {isBalanced
-              ? "✓ Fully allocated"
-              : `${remaining > 0 ? "Remaining" : "Over by"}: $${Math.abs(remaining).toFixed(2)}`
+      {/* Calculator Keypad */}
+      {keypadUserId && (
+        <CalculatorKeypad
+          open={keypadUserId !== null}
+          initialValue={splitType === "amount" ? values[keypadUserId] ?? 0 : (percentValues[keypadUserId] ?? 0)}
+          onConfirm={(value) => {
+            if (splitType === "amount") {
+              updateAmount(keypadUserId, value);
+            } else {
+              updatePercent(keypadUserId, value);
             }
-          </div>
-        </>
+            setKeypadUserId(null);
+          }}
+          title={`Enter amount for ${participants.find(p => p.id === keypadUserId)?.name || 'participant'}`}
+        />
       )}
-
-      {/* Even split summary */}
-      {mode === "even" && (
-        <div className="text-sm text-gray-500">
-          ${(totalAmount / participants.length).toFixed(2)} each
-          {participants.length > 0 && (
-            <span className="text-xs text-gray-400 ml-2">
-              ({participants.length} people)
-            </span>
-          )}
-        </div>
-      )}
-    </div>
+    </>
   );
 }
