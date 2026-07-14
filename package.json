@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:simplify": "tsx scripts/run-simplify-tests.ts"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",
@@ -26,6 +27,7 @@
     "@types/uuid": "^10.0.0",
     "drizzle-kit": "^0.31.10",
     "tailwindcss": "^4.0.0",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.0"
   }
 }

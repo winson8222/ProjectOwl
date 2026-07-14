@@ -15,11 +15,6 @@ const tabs = [
 export default function BottomNav() {
   const pathname = usePathname();
 
-  // Don't show on the new transaction flow sub-pages (they have their own flow)
-  if (pathname.startsWith("/transactions/new") || pathname.startsWith("/settle-up")) {
-    return null;
-  }
-
   return (
     <nav className="fixed bottom-0 left-0 right-0 border-t border-[var(--border)] bg-white z-40 safe-area-bottom">
       <div className="flex justify-around items-center h-16 max-w-lg mx-auto">

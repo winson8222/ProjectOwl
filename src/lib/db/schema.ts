@@ -28,6 +28,7 @@ export const transactions = sqliteTable("transactions", {
   receiptImage: text("receipt_image"), // base64 or path
   createdAt: text("created_at").default("CURRENT_TIMESTAMP").notNull(),
   updatedAt: text("updated_at").default("CURRENT_TIMESTAMP").notNull(),
+  isDeleted: integer("is_deleted", { mode: "boolean" }).notNull().default(false), // soft delete — row kept for ledger history
 });
 
 // ── Transaction Items (line items from scan or manual) ──────────────
@@ -41,11 +42,12 @@ export const transactionItems = sqliteTable("transaction_items", {
   createdAt: text("created_at").default("CURRENT_TIMESTAMP").notNull(),
 });
 
-// ── Item Assignments (who gets how much of an item) ─────────────────
-// One row = one user's share of one item. Multiple rows per item = shared item.
-export const itemAssignments = sqliteTable("item_assignments", {
+// ── Participants (who owes how much of a transaction) ────────────────
+// One row = one user's share of a transaction's total. Items are descriptive
+// line items only — splitting happens once, at the transaction level.
+export const participants = sqliteTable("participants", {
   id: text("id").primaryKey(),
-  itemId: text("item_id").notNull().references(() => transactionItems.id, { onDelete: "cascade" }),
+  transactionId: text("transaction_id").notNull().references(() => transactions.id, { onDelete: "cascade" }),
   userId: text("user_id").notNull().references(() => users.id),
   shareAmount: real("share_amount").notNull(), // dollar amount of this share
   createdAt: text("created_at").default("CURRENT_TIMESTAMP").notNull(),

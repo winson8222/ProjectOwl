@@ -62,13 +62,13 @@ export function seed(db: BetterSQLite3Database<typeof schema>) {
   db.insert(schema.transactions).values({
     id: txId,
     title: "Dinner at Sakura",
-    totalAmount: 126.50,
+    totalAmount: 116.50,
     paidByUserId: "user-you",
     transactionDate: new Date(Date.now() - 86400000 * 2).toISOString().split("T")[0], // 2 days ago
     notes: "Great Japanese food!",
   }).run();
 
-  // Items
+  // Items — descriptive line items only, the split lives on `participants` below
   const items = [
     { id: "item-1", name: "Sushi Platter", quantity: 1, price: 42.00 },
     { id: "item-2", name: "Ramen", quantity: 2, price: 28.00 },
@@ -87,34 +87,20 @@ export function seed(db: BetterSQLite3Database<typeof schema>) {
     }).run();
   }
 
-  // Assign items to people
-  const assignments = [
-    // Sushi Platter: shared by You + Alex
-    { itemId: "item-1", userId: "user-you", amount: 21.00 },
-    { itemId: "item-1", userId: "user-alex", amount: 21.00 },
-    // Ramen x2: one each for You and Ben
-    { itemId: "item-2", userId: "user-you", amount: 14.00 },
-    { itemId: "item-2", userId: "user-ben", amount: 14.00 },
-    // Gyoza: Chloe
-    { itemId: "item-3", userId: "user-chloe", amount: 12.50 },
-    // Green Tea x4: one each
-    { itemId: "item-4", userId: "user-you", amount: 4.00 },
-    { itemId: "item-4", userId: "user-alex", amount: 4.00 },
-    { itemId: "item-4", userId: "user-ben", amount: 4.00 },
-    { itemId: "item-4", userId: "user-chloe", amount: 4.00 },
-    // Service Charge: split evenly among all four
-    { itemId: "item-5", userId: "user-you", amount: 4.50 },
-    { itemId: "item-5", userId: "user-alex", amount: 4.50 },
-    { itemId: "item-5", userId: "user-ben", amount: 4.50 },
-    { itemId: "item-5", userId: "user-chloe", amount: 4.50 },
+  // Split the whole dinner among the four people who shared it
+  const sakuraParticipants = [
+    { userId: "user-you", amount: 43.50 },
+    { userId: "user-alex", amount: 29.50 },
+    { userId: "user-ben", amount: 22.50 },
+    { userId: "user-chloe", amount: 21.00 },
   ];
 
-  for (const a of assignments) {
-    db.insert(schema.itemAssignments).values({
+  for (const p of sakuraParticipants) {
+    db.insert(schema.participants).values({
       id: uuid(),
-      itemId: a.itemId,
-      userId: a.userId,
-      shareAmount: a.amount,
+      transactionId: txId,
+      userId: p.userId,
+      shareAmount: p.amount,
     }).run();
   }
 
@@ -138,9 +124,9 @@ export function seed(db: BetterSQLite3Database<typeof schema>) {
 
   // Split evenly among You, Alex, Ben
   for (const uid of ["user-you", "user-alex", "user-ben"]) {
-    db.insert(schema.itemAssignments).values({
+    db.insert(schema.participants).values({
       id: uuid(),
-      itemId: "item-coffee-1",
+      transactionId: txId2,
       userId: uid,
       shareAmount: 6.17,
     }).run();

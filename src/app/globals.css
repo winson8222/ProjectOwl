@@ -22,6 +22,12 @@ body {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+/* Clear the fixed bottom nav (h-16 = 4rem) + iOS home indicator, so page
+   content is never hidden behind it when scrolled to the bottom. */
+.content-with-nav {
+  padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px) + 1rem);
+}
+
 /* Hide scrollbar but keep scrollable */
 .no-scrollbar::-webkit-scrollbar {
   display: none;

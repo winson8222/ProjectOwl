@@ -22,7 +22,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      {children}
+      <div className="content-with-nav">{children}</div>
       <BottomNav />
     </>
   );

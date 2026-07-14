@@ -57,46 +57,40 @@ export function getFriends(userId: string): FriendWithBalance[] {
 function computeBalanceWithUser(userId: string, friendId: string): number {
   const db = getDb();
 
-  // Get all items where this friend was assigned, paid by userId
+  // Get all shares where this friend participated, paid by userId
   const paidByUser = db
     .select({
-      shareAmount: schema.itemAssignments.shareAmount,
+      shareAmount: schema.participants.shareAmount,
     })
-    .from(schema.itemAssignments)
-    .innerJoin(
-      schema.transactionItems,
-      eq(schema.itemAssignments.itemId, schema.transactionItems.id)
-    )
+    .from(schema.participants)
     .innerJoin(
       schema.transactions,
-      eq(schema.transactionItems.transactionId, schema.transactions.id)
+      eq(schema.participants.transactionId, schema.transactions.id)
     )
     .where(
       and(
         eq(schema.transactions.paidByUserId, userId),
-        eq(schema.itemAssignments.userId, friendId)
+        eq(schema.participants.userId, friendId),
+        eq(schema.transactions.isDeleted, false)
       )
     )
     .all();
 
-  // Get all items where user was assigned, paid by friend
+  // Get all shares where user participated, paid by friend
   const paidByFriend = db
     .select({
-      shareAmount: schema.itemAssignments.shareAmount,
+      shareAmount: schema.participants.shareAmount,
     })
-    .from(schema.itemAssignments)
-    .innerJoin(
-      schema.transactionItems,
-      eq(schema.itemAssignments.itemId, schema.transactionItems.id)
-    )
+    .from(schema.participants)
     .innerJoin(
       schema.transactions,
-      eq(schema.transactionItems.transactionId, schema.transactions.id)
+      eq(schema.participants.transactionId, schema.transactions.id)
     )
     .where(
       and(
         eq(schema.transactions.paidByUserId, friendId),
-        eq(schema.itemAssignments.userId, userId)
+        eq(schema.participants.userId, userId),
+        eq(schema.transactions.isDeleted, false)
       )
     )
     .all();
