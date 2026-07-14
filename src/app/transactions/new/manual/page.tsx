@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import UserPicker from "@/components/UserPicker";
 import SplitInput from "@/components/SplitInput";
+import CalculatorKeypad from "@/components/CalculatorKeypad";
 import { getSessionUser } from "@/lib/session";
 
 /**
@@ -22,6 +23,7 @@ export default function ManualTransactionPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [participantsMeta, setParticipantsMeta] = useState<{ id: string; name: string }[]>([]);
+  const [showKeypad, setShowKeypad] = useState(false);
 
   useEffect(() => {
     const currentUser = getSessionUser();
@@ -139,13 +141,12 @@ export default function ManualTransactionPage() {
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">$</span>
             <input
-              type="number"
-              value={totalAmount || ""}
-              onChange={(e) => setTotalAmount(parseFloat(e.target.value) || 0)}
-              step="0.01"
-              min="0"
+              type="text"
+              readOnly
+              value={totalAmount > 0 ? totalAmount.toFixed(2) : "0.00"}
+              onClick={() => setShowKeypad(true)}
               placeholder="0.00"
-              className="w-full pl-7 pr-3 py-2 text-sm border border-[var(--border)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+              className="w-full pl-7 pr-3 py-2 text-sm border border-[var(--border)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--primary)] cursor-pointer bg-white"
             />
           </div>
         </div>
@@ -209,6 +210,19 @@ export default function ManualTransactionPage() {
           {saving ? "Saving..." : "Save transaction"}
         </button>
       </div>
+
+      {/* Calculator Keypad */}
+      {showKeypad && (
+        <CalculatorKeypad
+          open={showKeypad}
+          initialValue={totalAmount}
+          onConfirm={(value) => {
+            setTotalAmount(value);
+            setShowKeypad(false);
+          }}
+          title="Enter total amount"
+        />
+      )}
     </main>
   );
 }

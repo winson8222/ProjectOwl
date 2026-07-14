@@ -6,6 +6,7 @@ import ReceiptUploader from "@/components/ReceiptUploader";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import ErrorAlert from "@/components/ErrorAlert";
 import UserPicker from "@/components/UserPicker";
+import CalculatorKeypad from "@/components/CalculatorKeypad";
 import { getSessionUser } from "@/lib/session";
 import type { ReceiptExtractionResult, ExtractApiResponse } from "@/lib/schemas/receipt";
 
@@ -29,6 +30,7 @@ export default function ScanTransactionPage() {
   const [title, setTitle] = useState("");
   const [items, setItems] = useState<{ nm: string; price: number; cnt?: number }[]>([]);
   const [paidBy, setPaidBy] = useState(user?.id ?? "");
+  const [keypadItemIndex, setKeypadItemIndex] = useState<number | null>(null);
 
   const handleUpload = useCallback(async (file: File) => {
     setStatus("uploading");
@@ -196,12 +198,11 @@ export default function ScanTransactionPage() {
                   className="flex-1 px-2 py-1.5 text-sm border border-[var(--border)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
                 />
                 <input
-                  type="number"
-                  value={item.price}
-                  onChange={(e) => updateItem(i, "price", parseFloat(e.target.value) || 0)}
-                  step="0.01"
-                  min="0"
-                  className="w-20 px-2 py-1.5 text-sm text-right border border-[var(--border)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                  type="text"
+                  readOnly
+                  value={`$${item.price.toFixed(2)}`}
+                  onClick={() => setKeypadItemIndex(i)}
+                  className="w-24 px-2 py-1.5 text-sm text-right border border-[var(--border)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--primary)] cursor-pointer bg-white"
                 />
                 <button
                   onClick={() => deleteItem(i)}
@@ -266,6 +267,19 @@ export default function ScanTransactionPage() {
       {/* Loading */}
       {status === "uploading" && <LoadingOverlay />}
       {saving && <LoadingOverlay />}
+
+      {/* Calculator Keypad */}
+      {keypadItemIndex !== null && (
+        <CalculatorKeypad
+          open={keypadItemIndex !== null}
+          initialValue={items[keypadItemIndex]?.price ?? 0}
+          onConfirm={(value) => {
+            updateItem(keypadItemIndex, "price", value);
+            setKeypadItemIndex(null);
+          }}
+          title="Enter item price"
+        />
+      )}
     </main>
   );
 }
