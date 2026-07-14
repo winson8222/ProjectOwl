@@ -56,6 +56,14 @@ export function migrate(db: BetterSQLite3Database<typeof schema>) {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS item_assignments (
+      id TEXT PRIMARY KEY,
+      item_id TEXT NOT NULL REFERENCES transaction_items(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id),
+      share_amount REAL NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS settlements (
       id TEXT PRIMARY KEY,
       from_user_id TEXT NOT NULL REFERENCES users(id),
@@ -69,6 +77,8 @@ export function migrate(db: BetterSQLite3Database<typeof schema>) {
     CREATE INDEX IF NOT EXISTS idx_transactions_paid_by ON transactions(paid_by_user_id);
     CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(transaction_date);
     CREATE INDEX IF NOT EXISTS idx_items_transaction ON transaction_items(transaction_id);
+    CREATE INDEX IF NOT EXISTS idx_item_assignments_item ON item_assignments(item_id);
+    CREATE INDEX IF NOT EXISTS idx_item_assignments_user ON item_assignments(user_id);
     CREATE INDEX IF NOT EXISTS idx_participants_transaction ON participants(transaction_id);
     CREATE INDEX IF NOT EXISTS idx_participants_user ON participants(user_id);
     CREATE INDEX IF NOT EXISTS idx_settlements_from ON settlements(from_user_id);
@@ -99,15 +109,18 @@ export function migrate(db: BetterSQLite3Database<typeof schema>) {
 
   db.run("CREATE INDEX IF NOT EXISTS idx_transactions_is_deleted ON transactions(is_deleted);");
 
-  // Databases created before the item_assignments -> participants move need
-  // their per-item shares aggregated up to per-transaction shares. Detect
-  // the legacy table via sqlite_master (it won't exist on a fresh DB, since
-  // the CREATE TABLE above only ever creates `participants`).
-  const legacyTable = db
-    .all<{ name: string }>(
-      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'item_assignments';"
-    );
-  if (legacyTable.length > 0) {
+  // The legacy item_assignments -> participants migration was a one-time
+  // transition from the old per-item-split schema to the current one.
+  // That migration is complete for all databases in use. We now re-introduce
+  // item_assignments as a NEW table (created above) that stores the raw
+  // scan allocation data alongside the (potentially edited) participant
+  // split. To prevent the old migration logic from dropping the new table,
+  // we only run it if the table has a `transaction_id` column (old schema
+  // used `transaction_id`, new schema uses `item_id`).
+  const legacyColumns = db
+    .all<{ name: string }>("PRAGMA table_info(item_assignments);")
+    .some((c) => c.name === "transaction_id");
+  if (legacyColumns) {
     db.run(`
       INSERT INTO participants (id, transaction_id, user_id, share_amount, created_at)
       SELECT

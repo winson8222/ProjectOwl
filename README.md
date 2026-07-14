@@ -54,10 +54,15 @@ The setup script will:
 ### Start
 
 ```bash
-npm run dev
+npm run dev       # normal development server
+npm run testmode  # dev server with the debug UI + mock scan enabled
 ```
 
 Open [http://localhost:3000](http://localhost:3000). On first visit, pick your name from the seeded users.
+
+`npm run testmode` turns on the in-app debug tools — notably the "🐛 Mock scan"
+option, which loads canned receipts instead of calling the LLM so you can
+exercise item allocation for free. See [Test mode](#test-mode-mock-scan-no-llm-api).
 
 ### Reset data
 
@@ -80,6 +85,7 @@ Delete `data/projectowl.db` and restart the server — the database is auto-crea
 | `POST` | `/api/settlements/mark-paid` | Mark a settlement as paid |
 | `GET` | `/api/debug` | View DB stats (counts, users, transactions) |
 | `GET` | `/api/debug/simplify-tests` | Run the debt-simplification test suite (in-memory) |
+| `GET` | `/api/debug/allocation-tests` | Run the receipt item-allocation test suite (in-memory) |
 | `POST` | `/api/debug?action=reset` | **Full DB reset** — wipes everything and re-seeds |
 | `POST` | `/api/debug?action=delete-all-transactions` | **Delete all transactions** (keeps users) |
 
@@ -123,6 +129,53 @@ Prints a per-case report and exits non-zero if anything fails.
 "🧮 Debt-simplification tests" — the same suite runs via
 `GET /api/debug/simplify-tests` and renders each scenario's net balances and
 resulting plan.
+
+## Receipt item allocation
+
+After a receipt is scanned, items are assigned to people ("pass the phone":
+each person taps the items they shared, including individual units of a
+multi-quantity item). The resulting **prefilled split** is computed by the pure
+function [`computeAllocation`](src/lib/allocation.ts) — the same function the
+[`ItemAssigner`](src/components/ItemAssigner.tsx) UI uses live, so what you see
+on screen is exactly what the tests verify.
+
+### Test mode (mock scan, no LLM API)
+
+To exercise the allocation flow without burning LLM quota, run the app in
+**test mode**:
+
+```bash
+npm run testmode
+```
+
+This launches the dev server with `NEXT_PUBLIC_DEBUG_UI=true` and
+`NEXT_PUBLIC_MOCK_SCAN=true`. The New Transaction page then shows a
+"🐛 Mock scan" checkbox — tick it and pick a fixture from `MOCK_RECEIPTS` to
+load a canned receipt instead of calling `/api/receipts/extract`. Mock receipts
+are shaped exactly like a real extraction response, so the rest of the flow is
+unchanged.
+
+A normal `npm run dev` leaves all of this off — the debug toggle and mock-scan
+path only appear in test mode (or if you set the env vars by hand in
+`.env.local`). See [`src/lib/debug-config.ts`](src/lib/debug-config.ts).
+
+### Running the allocation tests
+
+Nine scenarios in
+[`src/lib/test-data/allocation-fixtures.ts`](src/lib/test-data/allocation-fixtures.ts)
+(shared items, solo items, multi-quantity even/uneven splits, three-way rounding,
+partially-unassigned receipts) assert the exact prefilled per-user totals, plus
+invariants: item shares are conserved, no negative shares, and the unassigned-unit
+count is correct. Pure and in-memory — nothing is persisted.
+
+**From the command line:**
+```bash
+npm run test:allocation
+```
+
+**From the browser:** open `/debug` and click **Run tests** under
+"🧾 Item-allocation tests" — the same suite runs via
+`GET /api/debug/allocation-tests` and shows computed-vs-expected totals per case.
 
 ### Viewing SQLite Data
 

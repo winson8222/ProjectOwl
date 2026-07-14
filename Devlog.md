@@ -230,6 +230,71 @@ curl http://localhost:3000/api/debug
 9. **README updated** — All debug/admin API routes documented, SQLite viewing
    instructions added.
 
+## 2026-07-13 — Unified scan + manual flow with item allocation (feature/unified-scan-and-manual-flow)
+
+### Done
+**Unified create flow:**
+- Merged the separate `/transactions/new/scan` and `/transactions/new/manual`
+  pages into a single `/transactions/new` page. Manual entry is the default;
+  "Scan a receipt" is an optional action within the same form. The old routes
+  now redirect (client redirect + `next.config.ts` redirects).
+- After scanning, a full-screen **"pass the phone" item assigner**: an
+  active-user selector sits at the top; each person taps their name, then taps
+  the items they shared. All items start unassigned. Item prices stay editable.
+- **Multi-quantity items** expand into a main row + one sub-row per unit.
+  Tapping the main row assigns the active user to *all* units; tapping a
+  sub-row toggles just that unit — so a "Ramen ×2" can go to two different
+  people. Shares are therefore uneven-capable.
+- After confirming, the receipt + allocation becomes a **read-only reference**
+  card (items with their per-person assigned amounts). Buttons: **✎ Edit**
+  (re-opens the assigner with prior per-unit state restored exactly) and
+  **↺ Reset split to allocation** (re-applies the allocation to the custom
+  split fields). The prefilled split stays editable.
+- **Even split now resets** custom amounts; switching to Custom preserves them.
+- **Paid by** can be any user, not only those in the split.
+
+**Database:**
+- Re-introduced the `item_assignments` table (item ↔ user ↔ shareAmount) to
+  store the *raw* scan allocation alongside the (possibly-edited) participant
+  split. The legacy one-time `item_assignments → participants` migration now
+  only fires on the *old* schema shape (detected via a `transaction_id`
+  column), so it no longer drops the new table.
+- `createTransaction` persists item assignments; `getTransaction` /
+  `getTransactions` return them with user names. The detail page shows the
+  per-item assignment breakdown.
+
+**Allocation math (pure + tested):**
+- Extracted the allocation logic into a pure `computeAllocation()`
+  (`src/lib/allocation.ts`) so the `ItemAssigner` UI and the tests share one
+  code path — what the UI prefills is exactly what the tests verify.
+- Test suite: 10 fixtures (`src/lib/test-data/allocation-fixtures.ts`), a
+  runner, CLI `npm run test:allocation`, `GET /api/debug/allocation-tests`, and
+  a viz section on `/debug` showing computed-vs-expected totals.
+
+**Test mode (mock scan):**
+- `npm run testmode` runs the dev server with `NEXT_PUBLIC_DEBUG_UI=true` and
+  `NEXT_PUBLIC_MOCK_SCAN=true` (via `cross-env`). This unlocks a "🐛 Mock scan"
+  toggle that loads canned receipts (`MOCK_RECEIPTS`) instead of calling the
+  LLM, so the allocation flow can be exercised for free. Normal `npm run dev`
+  leaves all debug tooling off. Toggles live in `src/lib/debug-config.ts`.
+
+### Fixed
+1. **Penny drift in allocation rounding (save-breaking).** Per-person shares
+   were rounded independently, so they didn't sum back to the item price
+   (e.g. $10 split 6 ways → $10.02). The prefilled split then failed the
+   backend's `SPLIT_MISMATCH` check, making some receipts **unsaveable**.
+   Fixed with **largest-remainder (Hamilton) rounding** so shares sum to the
+   exact cent, with a per-item rotating tie-break so leftover pennies spread
+   fairly across the receipt instead of always hitting the same person.
+2. **Frontend split validation used the wrong participant set.** It summed all
+   of `splitValues` but sent only `selectedParticipants`; removing someone from
+   the picker after allocation could pass the frontend check then get rejected
+   by the backend. Now validates over the same set it sends.
+3. **Test hardening** — tightened the runner's conservation tolerance
+   (0.02 → 0.005, which had *allowed* the drift bug), added a receipt-wide
+   "total conserved (saveable)" check mirroring the backend validation, and
+   added regression fixtures (`rounding-sixths`, corrected `rounding-thirds`).
+
 ### Next steps (future iterations)
 - [ ] PWA manifest + service worker for offline capability
 - [ ] Camera capture via `navigator.mediaDevices` for in-browser photo

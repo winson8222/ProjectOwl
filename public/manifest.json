@@ -1,0 +1,10 @@
+{
+  "name": "ProjectOwl — Split receipts with friends",
+  "short_name": "ProjectOwl",
+  "description": "Scan, split, and settle receipts with friends — effortlessly.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#4361ee"
+}
