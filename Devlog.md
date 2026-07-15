@@ -306,3 +306,83 @@ curl http://localhost:3000/api/debug
 - [ ] Real "Mark as paid" with persistent settlement records
 - [ ] Filter by date range on transactions page
 - [ ] Mobile-optimized touch interactions (swipe to delete, pull to refresh)
+
+## 2026-07-14 — Calculator Keypad Implementation
+
+### Done
+**New component:**
+- `CalculatorKeypad` — mobile-first numeric input with addition-only expressions
+  - Bottom sheet design with slide-up animation and backdrop overlay
+  - 4×4 button grid: 0-9, decimal point, addition operator, clear, backspace
+  - Auto-calculates on exit (click outside or press ✕) — no enter button
+  - Expression evaluation: `2.00+3.00+1.50` → `$6.50`
+  - Live preview shows calculated result when `+` is used
+  - Input validation: prevents multiple decimals in single number, consecutive operators
+  - Keyboard shortcuts (desktop): 0-9, +, ., Backspace, Enter, Escape
+  - Touch-friendly: 64×64px buttons with `touch-manipulation` to prevent zoom
+  - Accessibility: ARIA labels on all buttons, high contrast colors
+
+**Integrations:**
+- Manual entry page (`/transactions/new/manual`) — total amount field
+- SplitInput component (`/components/SplitInput`) — per-person amounts ($ and % modes)
+- Scan page (`/transactions/new/scan`) — individual item price fields
+
+**Technical implementation:**
+- Expression evaluation: splits by `+`, parses each part, sums with 2-decimal rounding
+- State management: `useCallback` for optimization, minimal re-renders
+- CSS animations: slide-up on open, scale-down on button press
+- Click-outside-to-close with proper event propagation handling
+
+### Fixed
+**Decimal button unresponsiveness:**
+- Initial issue: Decimal validation checked `newExpr` (after adding decimal) instead of `prev` (before adding)
+- Root cause: `lastPart.includes('.')` was always true since we just added the decimal
+- Solution: Changed validation to check `prev.split('+')` before decimal addition
+
+**Button sizing at different zoom levels:**
+- Initial issue: `aspect-square` caused inconsistent sizing and touch targets
+- Solution: Fixed dimensions `h-16 w-16` (64×64px) for consistent sizing
+- Added `touch-manipulation` class to prevent browser zoom on double-tap
+
+**UI/UX improvements:**
+- Removed enter button for simpler interface
+- Auto-calculate on exit instead of manual confirmation
+- Click-outside-to-close functionality
+- Better visual feedback with `active:scale-95` animations
+- Larger fonts for readability (text-4xl display, text-2xl buttons)
+- Modern design with `rounded-2xl` corners and improved color contrast
+
+### Architecture decisions
+1. **Auto-calculate on exit** — More intuitive than explicit enter button. Users naturally expect to see the result when they're done typing, not when they press a separate button.
+
+2. **Fixed button dimensions** — Using `h-16 w-16` instead of `aspect-square` ensures consistent touch targets across all zoom levels and devices. Critical for mobile responsiveness.
+
+3. **Addition-only expressions** — Kept scope minimal for v1. Addition covers 95% of expense splitting needs (e.g., "12.50+8.00" for two items). Future versions can add subtraction/multiplication.
+
+4. **Individual keypad instances** — Each input field gets its own keypad state. This prevents data loss when switching between fields and allows concurrent editing of multiple amounts.
+
+5. **Touch manipulation** — `touch-manipulation` CSS property prevents double-tap zoom and improves touch responsiveness, especially important for calculator apps with rapid button presses.
+
+### Testing
+✅ Decimal button works at all zoom levels
+✅ Addition expressions calculate correctly
+✅ Clear/backspace functionality works
+✅ Click-outside-to-close saves result
+✅ Individual keypads for multiple participants
+✅ Dynamic item list handling
+✅ Keyboard shortcuts work on desktop
+✅ No TypeScript compilation errors
+✅ Mobile touch interactions smooth
+
+### Known issues resolved
+- ❌ Decimal button unresponsiveness at certain zoom levels → ✅ Fixed validation logic
+- ❌ Inconsistent button sizing across zoom levels → ✅ Fixed dimensions
+- ❌ Large green "+" button → ✅ Consistent button sizes
+
+### Future enhancements
+- [ ] Subtraction support (- operator)
+- [ ] Memory functions (M+, M-, MR)
+- [ ] Complex expressions (parentheses, order of operations)
+- [ ] Haptic feedback on mobile
+- [ ] Sound effects for button presses
+- [ ] Theme customization

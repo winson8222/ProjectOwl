@@ -101,6 +101,7 @@ export default function ReceiptUploader({
           ref={inputRef}
           type="file"
           accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+          capture="environment"
           onChange={handleChange}
           className="hidden"
           disabled={disabled}
