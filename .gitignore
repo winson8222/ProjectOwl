@@ -41,8 +41,8 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# Claude Code local config
-.claude/
+# Claude Code local config (skills/agents are tracked and shared)
+.claude/settings.local.json
 
 # SQLite database files
 /data/
