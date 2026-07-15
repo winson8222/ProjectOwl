@@ -386,3 +386,37 @@ curl http://localhost:3000/api/debug
 - [ ] Haptic feedback on mobile
 - [ ] Sound effects for button presses
 - [ ] Theme customization
+
+## 2026-07-15 — UI Responsive Design & Transaction Sorting Fixes
+
+### Fixed
+1. **ItemAssigner responsive design for desktop** — The full-screen item assignment
+   interface was taking up the entire screen width on desktop, making it hard to use.
+   Added `md:max-w-3xl md:mx-auto` to constrain width to 768px on medium+ screens while
+   maintaining full-screen mobile experience.
+
+2. **Transaction sorting order on home page** — Recent transactions were sorted by
+   `createdAt` (system entry time) instead of `transactionDate` (actual transaction date),
+   causing confusing ordering. Changed `.orderBy(desc(schema.transactions.createdAt))`
+   to `.orderBy(desc(schema.transactions.transactionDate))` so latest transactions by
+   actual date appear at the top.
+
+3. **Integrated calculator keypad from yf-feature-1 branch** — Merged the complete
+   calculator keypad implementation with all expense entry flows, providing mobile-
+   friendly numeric input with addition expression support.
+
+### Technical Implementation
+- **ItemAssigner.tsx**: Added responsive constraints with `md:max-w-3xl md:mx-auto`
+- **transactions.ts**: Changed sort field from `createdAt` to `transactionDate`
+- **CalculatorKeypad.tsx**: Full integration with auto-calculate on exit behavior
+
+### Testing
+✅ Desktop ItemAssigner now constrained to reasonable width
+✅ Mobile ItemAssigner remains full screen (as intended)
+✅ Home page transactions sorted by actual transaction date (newest first)
+✅ Calculator keypad functional across all entry points
+
+### Files Modified
+- `src/components/ItemAssigner.tsx` - Responsive design fix
+- `src/lib/actions/transactions.ts` - Transaction sorting fix
+- `DEVLOG.md` - Implementation notes
