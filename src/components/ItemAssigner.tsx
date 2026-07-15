@@ -176,7 +176,7 @@ export default function ItemAssigner({
     });
 
   return (
-    <div className="fixed inset-0 z-50 bg-white flex flex-col overscroll-none">
+    <div className="fixed inset-0 z-50 bg-white md:max-w-3xl md:mx-auto flex flex-col overscroll-none">
       {/* ── Header (safe-area aware) ───────────────────────────── */}
       <div
         className="px-4 pb-3 border-b border-[var(--border)] shrink-0"

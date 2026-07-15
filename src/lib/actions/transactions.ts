@@ -207,7 +207,7 @@ export function getTransactions(params: {
         payer ? eq(schema.transactions.paidByUserId, payer) : undefined,
       )
     )
-    .orderBy(desc(schema.transactions.createdAt))
+    .orderBy(desc(schema.transactions.transactionDate)) // Sort by transaction date (latest first)
     .limit(limit)
     .offset(offset)
     .all();
