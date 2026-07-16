@@ -13,9 +13,12 @@ export interface BalanceSummary {
 /**
  * Compute the full balance summary for a user.
  * Balances are computed from raw data (not stored) to stay consistent.
+ *
+ * @param userId The user to compute balances for.
+ * @param _db Optional database instance (for testing with in-memory DBs).
  */
-export function getBalance(userId: string): BalanceSummary {
-  const db = getDb();
+export function getBalance(userId: string, _db?: ReturnType<typeof getDb>): BalanceSummary {
+  const db = _db ?? getDb();
 
   // Get all friends
   const friendRows = db
@@ -95,7 +98,7 @@ export function getBalance(userId: string): BalanceSummary {
       .reduce((sum, r) => sum + r.sum, 0);
 
     // Net: positive = friend owes user
-    const net = friendOwesUser - userOwesFriend + friendPaidUser - userPaidFriend;
+    const net = friendOwesUser - userOwesFriend - friendPaidUser + userPaidFriend;
     perPerson.push({ user: friend, amount: net });
   }
 

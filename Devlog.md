@@ -530,3 +530,34 @@ a GET request fails, instead of silently swallowing the error in `console.error`
 - `src/lib/actions/settlements.ts` — Added `createAndMarkPaid()`, fixed `markSettled()` to use `"PAID"` constant
 - `src/app/api/settlements/mark-paid/route.ts` — Accepts `{ fromUserId, toUserId, amount }` instead of fake `settlementId`
 - `src/app/settle-up/page.tsx` — Sends proper body instead of made-up settlement ID
+
+## 2026-07-16 — Fix: Balance formula sign error, "Mark as settled" removal, settlement tests
+
+### Fixed
+1. **Balance formula sign error in both `balances.ts` and `users.ts`.** The settlement amounts for "friend already paid user" were being **added** to the net balance instead of subtracted. When Alex paid you $50 via settle-up, the formula `friendOwesUser - userOwesFriend + friendPaidUser - userPaidFriend` made it look like Alex owed you MORE, not less. Fixed both to use `- friendPaidUser + userPaidFriend`, so a settlement payment correctly reduces the outstanding debt.
+
+2. **Removed "Mark as settled" button from transaction detail page.** Transaction-level settling was conceptually wrong — settling should be user-to-user only (paying off the net balance between two people, not marking individual line items as paid). Removed the `handleMarkSettled` function and its button.
+
+### Added
+3. **Settlement-balance test suite** — 8 in-memory test fixtures covering:
+   - Simple debt + full settlement → net zero
+   - Partial settlement → correct remaining balance
+   - Over-payment → flips the balance direction
+   - Multi-person with one settling
+   - Transactions in both directions + settlement
+   - User paying friend (settlement from user to friend)
+   - No transactions → net zero
+   - Multiple settlement payments accumulating to full payment
+
+   Run: `npm run test:settlement` (CLI) or visit `/debug` (browser). Pure in-memory — no server needed, no data touched.
+
+### Files changed
+- `src/lib/actions/balances.ts` — Fixed balance formula: `+ friendPaidUser` → `- friendPaidUser`; added optional `_db` param for test injection
+- `src/lib/actions/users.ts` — Same sign fix: `+ friendAlreadyPaid` → `- friendAlreadyPaid`
+- `src/app/transactions/[id]/page.tsx` — Removed `handleMarkSettled` function and "Mark as settled" button
+- `src/lib/test-data/settlement-fixtures.ts` — 8 test scenarios (new file)
+- `src/lib/test-data/run-settlement-tests.ts` — In-memory test runner (new file)
+- `scripts/run-settlement-tests.ts` — CLI runner (new file)
+- `src/app/api/debug/settlement-tests/route.ts` — Debug API endpoint (new file)
+- `src/app/debug/page.tsx` — Settlement test suite viz section
+- `package.json` — Added `test:settlement` script

@@ -68,43 +68,6 @@ export default function TransactionDetailPage() {
     setShowDeleteDialog(false);
   }, [params.id, router]);
 
-  const handleMarkSettled = useCallback(async () => {
-    // For now, create a settlement record for each participant who owes
-    if (!user || !tx) return;
-
-    try {
-      for (const participant of tx.participants || []) {
-        if (participant.user.id === tx.paidByUserId) continue; // skip payer
-        const amount = participant.shareAmount;
-        if (amount <= 0) continue;
-
-        const response = await fetch("/api/settlements/mark-paid", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            settlementId: `settlement-${params.id}-${participant.user.id}`,
-          }),
-        });
-        const json = await response.json();
-        if (!json.success) {
-          setDialogError({
-            title: "Mark settled failed",
-            message: json.error || "Failed to mark as settled.",
-          });
-          return;
-        }
-      }
-
-      // Reload
-      window.location.reload();
-    } catch (err) {
-      setDialogError({
-        title: "Mark settled failed",
-        message: "Failed to connect to the server.",
-      });
-    }
-  }, [user, tx, params.id]);
-
   if (loading) {
     return (
       <main className="min-h-dvh flex items-center justify-center">
@@ -241,12 +204,6 @@ export default function TransactionDetailPage() {
 
       {/* Actions */}
       <div className="space-y-2">
-        <button
-          onClick={handleMarkSettled}
-          className="w-full px-4 py-2.5 text-sm font-semibold text-white bg-[var(--success)] rounded-xl hover:opacity-90 transition-opacity"
-        >
-          Mark as settled
-        </button>
         <button
           onClick={() => setShowDeleteDialog(true)}
           className="w-full px-4 py-2.5 text-sm font-medium text-[var(--danger)] border border-[var(--danger)] rounded-xl hover:bg-red-50 transition-colors"
