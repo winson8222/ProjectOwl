@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createLLMClient } from "@/lib/llm";
 import { AppError } from "@/lib/errors";
-import { CODES, ERROR_MESSAGES, apiError, type ApiErrorResponse } from "@/lib/constants";
+import { CODES, ERROR_MESSAGES, apiError, mapErrorMessage, type ApiErrorResponse } from "@/lib/constants";
 import type { ExtractApiResponse } from "@/lib/schemas/receipt";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -80,10 +80,9 @@ export async function POST(
       );
     }
 
-    const message = err instanceof Error ? err.message : ERROR_MESSAGES.UNKNOWN;
     console.error("Unexpected error in /api/receipts/extract:", err);
     return NextResponse.json<ApiErrorResponse>(
-      apiError(message, CODES.INTERNAL_ERROR),
+      apiError(mapErrorMessage(err), CODES.INTERNAL_ERROR),
       { status: 500 }
     );
   }

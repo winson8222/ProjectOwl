@@ -57,7 +57,7 @@ export default function UserPicker({
   if (loading) {
     return (
       <div className="space-y-2">
-        <p className="text-sm font-medium text-gray-700">{label}</p>
+        {label && <p className="text-sm font-medium text-gray-700">{label}</p>}
         <div className="flex gap-2 animate-pulse">
           {[1, 2, 3].map((i) => (
             <div key={i} className="w-16 h-16 bg-gray-200 rounded-xl" />
@@ -69,7 +69,7 @@ export default function UserPicker({
 
   return (
     <div className="space-y-2">
-      <p className="text-sm font-medium text-gray-700">{label}</p>
+      {label && <p className="text-sm font-medium text-gray-700">{label}</p>}
       <div className="flex flex-wrap gap-2">
         {users.map((user) => {
           const isSelected = selectedUserIds.includes(user.id);

@@ -420,3 +420,113 @@ curl http://localhost:3000/api/debug
 - `src/components/ItemAssigner.tsx` - Responsive design fix
 - `src/lib/actions/transactions.ts` - Transaction sorting fix
 - `DEVLOG.md` - Implementation notes
+
+## 2026-07-16 — User-friendly error messages across all API routes and frontend pages
+
+### Done
+**Centralized error pattern mapping:**
+- Added `MAPPED_ERRORS` to `src/lib/constants.ts` — 15 pattern-to-message mappings covering:
+  - SQLite `NOT NULL constraint failed` for transactions, users, and settlements
+  - `FOREIGN KEY constraint failed` (invalid user references)
+  - `UNIQUE constraint failed`
+  - Generic database errors (connection, missing tables, corrupted DB)
+  - Network/fetch errors (connection refused, JSON parse failures)
+- Added `mapErrorMessage(err)` helper that checks a caught error against all patterns
+  and returns a user-friendly string. Falls back to `"An unexpected error occurred"` when
+  no pattern matches, so users never see raw SQL or internal error text.
+
+**API routes — all 8 routes now use `mapErrorMessage()` in catch blocks:**
+- `GET/POST/DELETE /api/transactions`
+- `GET/POST /api/users`
+- `GET /api/balances`
+- `POST /api/settlements/mark-paid`
+- `GET /api/settlements/optimize`
+- `POST /api/receipts/extract`
+- `GET/POST /api/debug`
+
+Previously, a missing title would send `"NOT NULL constraint failed: transactions.title"`
+to the frontend. Now it sends `"Transaction description is required."`
+(The raw error is still logged server-side via `console.error`.)
+
+**Frontend pages — error display for GET failures:**
+Every page that fetches data from the API now shows an inline red error banner when
+a GET request fails, instead of silently swallowing the error in `console.error`:
+
+| Page | What fails | User sees |
+|---|---|---|
+| Home (`/`) | Balance or recent transactions | ⚠ error banner below greeting |
+| Transactions (`/transactions`) | Transaction list + user filters | ⚠ error banner below header |
+| Friends (`/friends`) | User list | ⚠ error banner below title |
+| Settle Up (`/settle-up`) | Balance data | ⚠ error banner above summary |
+| Transaction Detail (`/transactions/[id]`) | Single transaction load | Error text + "Try again" button |
+| New Transaction (`/transactions/new`) | User list for pickers | Error shown in existing error slot |
+| New Transaction (scan upload) | Network error during scan | Uses `mapErrorMessage()` instead of raw error |
+
+**Files changed:**
+- `src/lib/constants.ts` — Added `MAPPED_ERRORS`, `mapErrorMessage()`, import of `AppError`
+- `src/app/api/transactions/route.ts` — 3 catch blocks updated
+- `src/app/api/users/route.ts` — 2 catch blocks updated
+- `src/app/api/balances/route.ts` — 1 catch block updated
+- `src/app/api/settlements/mark-paid/route.ts` — 1 catch block updated
+- `src/app/api/settlements/optimize/route.ts` — 1 catch block updated
+- `src/app/api/receipts/extract/route.ts` — 1 catch block updated
+- `src/app/api/debug/route.ts` — 2 catch blocks updated
+- `src/app/page.tsx` — Error state + banner for GET failures
+- `src/app/transactions/page.tsx` — Error state + banner for GET failures
+- `src/app/friends/page.tsx` — Error state + banner for GET failures
+- `src/app/settle-up/page.tsx` — Error state + banner for GET failures
+- `src/app/transactions/[id]/page.tsx` — Error state + banner for GET/DELETE failures
+- `src/app/transactions/new/page.tsx` — `mapErrorMessage()` for scan/save catch blocks
+
+**ErrorDialog component:**
+- Created `src/components/ErrorDialog.tsx` — modal overlay for POST action failures (save, delete, mark-paid)
+- Matches the existing `ConfirmDialog` style: dimmed backdrop, centered white card, ⚠️ icon, single dismiss button
+- Used on 3 pages for POST error display instead of inline `<p>` text
+
+**Generic LLM error messages:**
+- Added 8 LLM-specific patterns to `MAPPED_ERRORS` that convert provider-specific messages into generic text:
+  - `"Gemini API returned 429: ..."` → `"Failed to scan receipt. Please try again."`
+  - `"Gemini returned no text (finishReason: SAFETY)"` → `"Receipt scan returned no data. The image may be invalid or blurry."`
+  - `"GEMINI_API_KEY is not set"` → `"Scan is unavailable. The API key has not been configured."`
+  - `"You've exceeded the daily quota"` → `"Scan is temporarily unavailable. Please try again later."`
+- Reordered `mapErrorMessage()` to check patterns FIRST before falling back to `AppError.message`
+- This means LLMError messages get caught by the pattern matcher, while normal AppErrors (like "Transaction not found") still pass through unchanged
+
+**Debug menu:**
+- Created `src/components/DebugMenu.tsx` — floating 🐛 button when `DEBUG_UI=true` (appears at bottom-left)
+- Page-aware: shows different error simulator buttons depending on the current route
+- DB actions: "Delete all transactions" and "Full database reset" directly from any page
+- Error simulators trigger the ErrorDialog with realistic messages — no need to cause real errors
+- Integrated into `AppShell.tsx` so it appears on every page
+
+**Error reference doc:**
+- Created `docs/error-test-cases.md` — 23 error conditions with trigger steps and expected results
+
+**New files added:**
+- `src/components/ErrorDialog.tsx` — error modal overlay
+- `src/components/DebugMenu.tsx` — floating debug panel with DB actions + error simulators
+- `docs/error-test-cases.md` — error conditions reference
+
+**Files modified:**
+- `src/lib/constants.ts` — Added LLM patterns to MAPPED_ERRORS; reordered mapErrorMessage logic
+- `src/app/AppShell.tsx` — Import and render DebugMenu
+- `src/app/transactions/new/page.tsx` — ErrorDialog for POST save errors
+- `src/app/transactions/[id]/page.tsx` — ErrorDialog for delete + mark-settled errors
+- `src/app/settle-up/page.tsx` — ErrorDialog for mark-paid errors
+
+## 2026-07-16 — Fix: Settle-up "Mark paid" never worked
+
+### Fixed
+1. **"Mark paid" flow was broken end-to-end.** Three interacting bugs:
+   - **Frontend generated a fake settlement ID** (`settlement-${from}-${to}-${Date.now()}`) and sent it to the API, but never created a settlement record first. The backend's `markSettled()` tried to UPDATE a non-existent row, so `result.changes` was always 0 and it returned 404.
+   - **`markSettled()` set `settledAt` to an ISO date string** (`new Date().toISOString()`), but every balance query checked for the literal string `"PAID"` — so even the seed settlement would never affect displayed balances if it were marked.
+   - **No API route existed to create a settlement.** The `createSettlement()` action existed in `settlements.ts` but had no corresponding API endpoint.
+
+2. **Consolidated into a single action** `createAndMarkPaid(fromUserId, toUserId, amount)` that creates the settlement record and marks it paid in one step. The API route now accepts `{ fromUserId, toUserId, amount }` directly.
+
+3. **Fixed `markSettled()` to set `settledAt: "PAID"`** instead of an ISO timestamp, matching what all balance queries expect.
+
+### Files changed
+- `src/lib/actions/settlements.ts` — Added `createAndMarkPaid()`, fixed `markSettled()` to use `"PAID"` constant
+- `src/app/api/settlements/mark-paid/route.ts` — Accepts `{ fromUserId, toUserId, amount }` instead of fake `settlementId`
+- `src/app/settle-up/page.tsx` — Sends proper body instead of made-up settlement ID

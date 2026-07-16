@@ -11,6 +11,7 @@ import { getSessionUser } from "@/lib/session";
 export default function FriendsPage() {
   const [friends, setFriends] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
@@ -25,7 +26,10 @@ export default function FriendsPage() {
     fetch("/api/users")
       .then((r) => r.json())
       .then(async (json) => {
-        if (!json.success) return;
+        if (!json.success) {
+          setError(json.error || "Failed to load friends");
+          return;
+        }
         const allUsers = json.data.filter((u: any) => u.id !== currentUser.id);
 
         // Compute balance for each friend
@@ -44,7 +48,7 @@ export default function FriendsPage() {
 
         setFriends(friendsWithBalance);
       })
-      .catch(console.error)
+      .catch(() => setError("Failed to connect to the server"))
       .finally(() => setLoading(false));
   }, []);
 
@@ -59,6 +63,13 @@ export default function FriendsPage() {
   return (
     <main className="min-h-dvh px-4 pt-6 pb-24 max-w-lg mx-auto">
       <h1 className="text-xl font-bold text-gray-900 mb-6">Friends</h1>
+
+      {/* Error banner */}
+      {error && (
+        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+          ⚠ {error}
+        </div>
+      )}
 
       {loading ? (
         <div className="flex justify-center py-8">

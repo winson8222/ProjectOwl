@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import UserAvatar from "@/components/UserAvatar";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import ErrorDialog from "@/components/ErrorDialog";
 import { getSessionUser } from "@/lib/session";
 
 /**
@@ -15,7 +16,9 @@ export default function TransactionDetailPage() {
   const params = useParams();
   const [tx, setTx] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [dialogError, setDialogError] = useState<{ title: string; message: string } | null>(null);
   const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
@@ -34,9 +37,11 @@ export default function TransactionDetailPage() {
           setTx(json.data);
         } else if (json.data) {
           setTx(json.data);
+        } else {
+          setError(json.error || "Failed to load transaction");
         }
       })
-      .catch(console.error)
+      .catch(() => setError("Failed to connect to the server"))
       .finally(() => setLoading(false));
   }, [params.id]);
 
@@ -48,9 +53,17 @@ export default function TransactionDetailPage() {
       const json = await response.json();
       if (json.success) {
         router.push("/transactions");
+        return;
       }
+      setDialogError({
+        title: "Delete failed",
+        message: json.error || "Failed to delete transaction.",
+      });
     } catch (err) {
-      console.error("Delete failed:", err);
+      setDialogError({
+        title: "Delete failed",
+        message: "Failed to connect to the server.",
+      });
     }
     setShowDeleteDialog(false);
   }, [params.id, router]);
@@ -59,22 +72,37 @@ export default function TransactionDetailPage() {
     // For now, create a settlement record for each participant who owes
     if (!user || !tx) return;
 
-    for (const participant of tx.participants || []) {
-      if (participant.user.id === tx.paidByUserId) continue; // skip payer
-      const amount = participant.shareAmount;
-      if (amount <= 0) continue;
+    try {
+      for (const participant of tx.participants || []) {
+        if (participant.user.id === tx.paidByUserId) continue; // skip payer
+        const amount = participant.shareAmount;
+        if (amount <= 0) continue;
 
-      await fetch("/api/settlements/mark-paid", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          settlementId: `settlement-${params.id}-${participant.user.id}`,
-        }),
+        const response = await fetch("/api/settlements/mark-paid", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            settlementId: `settlement-${params.id}-${participant.user.id}`,
+          }),
+        });
+        const json = await response.json();
+        if (!json.success) {
+          setDialogError({
+            title: "Mark settled failed",
+            message: json.error || "Failed to mark as settled.",
+          });
+          return;
+        }
+      }
+
+      // Reload
+      window.location.reload();
+    } catch (err) {
+      setDialogError({
+        title: "Mark settled failed",
+        message: "Failed to connect to the server.",
       });
     }
-
-    // Reload
-    window.location.reload();
   }, [user, tx, params.id]);
 
   if (loading) {
@@ -88,7 +116,15 @@ export default function TransactionDetailPage() {
   if (!tx) {
     return (
       <main className="min-h-dvh flex items-center justify-center p-4">
-        <p className="text-sm text-gray-500">Transaction not found</p>
+        <p className="text-sm text-red-600">{error || "Transaction not found"}</p>
+        {error && (
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-3 px-4 py-2 text-sm font-medium text-[var(--primary)] border border-[var(--primary)] rounded-lg hover:bg-blue-50"
+          >
+            Try again
+          </button>
+        )}
       </main>
     );
   }
@@ -228,6 +264,14 @@ export default function TransactionDetailPage() {
         variant="danger"
         onConfirm={handleDelete}
         onCancel={() => setShowDeleteDialog(false)}
+      />
+
+      {/* Error dialog (POST action failures) */}
+      <ErrorDialog
+        open={!!dialogError}
+        title={dialogError?.title || "Error"}
+        message={dialogError?.message || ""}
+        onDismiss={() => setDialogError(null)}
       />
     </main>
   );
