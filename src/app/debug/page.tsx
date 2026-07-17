@@ -13,6 +13,8 @@ export default function DebugPage() {
   const [testsLoading, setTestsLoading] = useState(false);
   const [allocTests, setAllocTests] = useState<any>(null);
   const [allocLoading, setAllocLoading] = useState(false);
+  const [settleTests, setSettleTests] = useState<any>(null);
+  const [settleLoading, setSettleLoading] = useState(false);
 
   const fetchData = () => {
     setLoading(true);
@@ -47,10 +49,22 @@ export default function DebugPage() {
       .finally(() => setAllocLoading(false));
   };
 
+  const runSettlementTests = () => {
+    setSettleLoading(true);
+    fetch("/api/debug/settlement-tests")
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success) setSettleTests(json.data);
+      })
+      .catch(console.error)
+      .finally(() => setSettleLoading(false));
+  };
+
   useEffect(() => {
     fetchData();
     runSimplifyTests();
     runAllocationTests();
+    runSettlementTests();
   }, []);
 
   const handleDeleteAll = async () => {
@@ -266,6 +280,78 @@ export default function DebugPage() {
                       ))}
                     </div>
                   </div>
+                </div>
+
+                {/* Failed checks */}
+                {c.checks
+                  .filter((ck: any) => !ck.passed)
+                  .map((ck: any, i: number) => (
+                    <div key={i} className="mt-1 text-red-600">
+                      ✗ {ck.name}
+                      {ck.detail ? ` — ${ck.detail}` : ""}
+                    </div>
+                  ))}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Settlement-balance test suite */}
+      <div className="mt-8 border-t border-gray-200 pt-6">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h2 className="text-sm font-semibold">💰 Settlement-balance tests</h2>
+            <p className="text-[11px] text-gray-400">
+              Verifies that settlements correctly reduce per-person balances. Runs 8 scenarios against an in-memory database.
+            </p>
+          </div>
+          <button
+            onClick={runSettlementTests}
+            disabled={settleLoading}
+            className="px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded-lg disabled:opacity-50"
+          >
+            {settleLoading ? "Running..." : "Run tests"}
+          </button>
+        </div>
+
+        {settleTests && (
+          <div className="space-y-2">
+            {/* Summary banner */}
+            <div
+              className={`text-sm font-semibold px-3 py-2 rounded-lg ${
+                settleTests.failed === 0 ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
+              }`}
+            >
+              {settleTests.passed}/{settleTests.total} passed
+              {settleTests.failed > 0 && ` · ${settleTests.failed} failed`}
+            </div>
+
+            {/* Per-case cards */}
+            {settleTests.cases.map((c: any) => (
+              <div
+                key={c.name}
+                className={`text-xs rounded-lg border px-3 py-2 ${
+                  c.passed ? "border-gray-100 bg-gray-50" : "border-red-200 bg-red-50"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-bold">
+                    <span className={c.passed ? "text-green-600" : "text-red-600"}>
+                      {c.passed ? "PASS" : "FAIL"}
+                    </span>{" "}
+                    {c.name}
+                  </span>
+                </div>
+                <p className="text-gray-500 mt-0.5">{c.description}</p>
+
+                {/* Per-person balances */}
+                <div className="mt-1.5 font-mono text-[11px]">
+                  {c.balances.map((b: any) => (
+                    <div key={b.friendId} className={b.actual === b.expected ? "text-gray-600" : "text-red-600"}>
+                      {b.friendId}: actual ${b.actual.toFixed(2)} (expected ${b.expected.toFixed(2)})
+                    </div>
+                  ))}
                 </div>
 
                 {/* Failed checks */}

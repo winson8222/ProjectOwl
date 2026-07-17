@@ -17,6 +17,7 @@ export default function TransactionsPage() {
   const [payer, setPayer] = useState<string>("");
   const [payees, setPayees] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const currentUser = getSessionUser();
@@ -32,8 +33,9 @@ export default function TransactionsPage() {
       .then((r) => r.json())
       .then((json) => {
         if (json.success) setUsers(json.data);
+        else setError(json.error || "Failed to load users");
       })
-      .catch(console.error);
+      .catch(() => setError("Failed to connect to the server"));
   }, []);
 
   useEffect(() => {
@@ -47,8 +49,9 @@ export default function TransactionsPage() {
       .then((r) => r.json())
       .then((json) => {
         if (json.success) setTransactions(json.data);
+        else setError(json.error || "Failed to load transactions");
       })
-      .catch(console.error)
+      .catch(() => setError("Failed to connect to the server"))
       .finally(() => setLoading(false));
   }, [user, payer, payees]);
 
@@ -82,6 +85,13 @@ export default function TransactionsPage() {
           + New
         </Link>
       </div>
+
+      {/* Error banner */}
+      {error && (
+        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+          ⚠ {error}
+        </div>
+      )}
 
       {/* Filters */}
       <div className="space-y-3 mb-4">

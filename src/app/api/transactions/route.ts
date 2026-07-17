@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createTransaction, getTransactions, getTransaction, deleteTransaction } from "@/lib/actions/transactions";
 import type { CreateTransactionInput } from "@/lib/actions/transactions";
-import { CODES, ERROR_MESSAGES, apiError, type ApiErrorResponse } from "@/lib/constants";
+import { CODES, ERROR_MESSAGES, apiError, mapErrorMessage, type ApiErrorResponse } from "@/lib/constants";
 
 /**
  * POST /api/transactions
@@ -40,13 +40,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate: ensure all items have non-empty names
+    if (body.items && body.items.some(item => !item.name || item.name.trim() === '')) {
+      return NextResponse.json<ApiErrorResponse>(
+        apiError("All items must have non-empty names", CODES.MISSING_FIELDS),
+        { status: 400 }
+      );
+    }
+
     const transaction = createTransaction(body);
     return NextResponse.json({ success: true, data: transaction }, { status: 201 });
   } catch (err) {
-    const message = err instanceof Error ? err.message : ERROR_MESSAGES.UNKNOWN;
     console.error("POST /api/transactions error:", err);
     return NextResponse.json<ApiErrorResponse>(
-      apiError(message, CODES.INTERNAL_ERROR),
+      apiError(mapErrorMessage(err), CODES.INTERNAL_ERROR),
       { status: 500 }
     );
   }
@@ -88,10 +95,9 @@ export async function GET(request: NextRequest) {
     const transactions = getTransactions({ userId, payer, payees, limit });
     return NextResponse.json({ success: true, data: transactions });
   } catch (err) {
-    const message = err instanceof Error ? err.message : ERROR_MESSAGES.UNKNOWN;
     console.error("GET /api/transactions error:", err);
     return NextResponse.json<ApiErrorResponse>(
-      apiError(message, CODES.INTERNAL_ERROR),
+      apiError(mapErrorMessage(err), CODES.INTERNAL_ERROR),
       { status: 500 }
     );
   }
@@ -132,10 +138,9 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    const message = err instanceof Error ? err.message : ERROR_MESSAGES.UNKNOWN;
     console.error("DELETE /api/transactions error:", err);
     return NextResponse.json<ApiErrorResponse>(
-      apiError(message, CODES.INTERNAL_ERROR),
+      apiError(mapErrorMessage(err), CODES.INTERNAL_ERROR),
       { status: 500 }
     );
   }

@@ -16,6 +16,7 @@ export default function HomePage() {
   const [balance, setBalance] = useState<BalanceSummary | null>(null);
   const [recentTransactions, setRecentTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
@@ -31,16 +32,18 @@ export default function HomePage() {
       .then((r) => r.json())
       .then((json) => {
         if (json.success) setBalance(json.data);
+        else setError(json.error || "Failed to load balance");
       })
-      .catch(console.error);
+      .catch(() => setError("Failed to connect to the server"));
 
     // Fetch recent transactions
     fetch(`/api/transactions?userId=${currentUser.id}&limit=5`)
       .then((r) => r.json())
       .then((json) => {
         if (json.success) setRecentTransactions(json.data);
+        else setError((prev) => prev || json.error || "Failed to load transactions");
       })
-      .catch(console.error)
+      .catch(() => setError((prev) => prev || "Failed to connect to the server"))
       .finally(() => setLoading(false));
   }, []);
 
@@ -66,6 +69,13 @@ export default function HomePage() {
         </div>
         <UserAvatar name={user.name} size="md" />
       </div>
+
+      {/* Error banner */}
+      {error && (
+        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+          ⚠ {error}
+        </div>
+      )}
 
       {/* Balance card */}
       {balance && (

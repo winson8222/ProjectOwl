@@ -62,12 +62,18 @@ export function createTransaction(input: CreateTransactionInput): Transaction {
     // Insert items — descriptive line items only, no split data attached
     const insertedItemIds: string[] = [];
     for (const item of input.items ?? []) {
+      // Skip items with empty names to prevent NOT NULL constraint failures
+      if (!item.name || item.name.trim() === '') {
+        console.warn('Skipping item with empty name:', item);
+        continue;
+      }
+
       const itemId = `item-${uuid().slice(0, 8)}`;
       insertedItemIds.push(itemId);
       db.insert(schema.transactionItems).values({
         id: itemId,
         transactionId: txId,
-        name: item.name,
+        name: item.name.trim(), // Trim whitespace from item names
         quantity: item.quantity,
         price: item.price,
       }).run();
@@ -207,7 +213,7 @@ export function getTransactions(params: {
         payer ? eq(schema.transactions.paidByUserId, payer) : undefined,
       )
     )
-    .orderBy(desc(schema.transactions.transactionDate)) // Sort by transaction date (latest first)
+    .orderBy(desc(schema.transactions.createdAt)) // Sort by creation timestamp (latest first)
     .limit(limit)
     .offset(offset)
     .all();

@@ -1,38 +1,45 @@
 import { NextRequest, NextResponse } from "next/server";
-import { markSettled } from "@/lib/actions/settlements";
-import { CODES, ERROR_MESSAGES, apiError, type ApiErrorResponse } from "@/lib/constants";
+import { createAndMarkPaid } from "@/lib/actions/settlements";
+import { CODES, ERROR_MESSAGES, apiError, mapErrorMessage, type ApiErrorResponse } from "@/lib/constants";
 
 /**
  * POST /api/settlements/mark-paid
- * Mark a settlement as paid.
+ * Create a settlement and mark it as paid.
  *
- * Body: { settlementId: string }
+ * Body: { fromUserId: string, toUserId: string, amount: number }
  */
 export async function POST(request: NextRequest) {
   try {
-    const body: { settlementId?: string } = await request.json();
+    const body: { fromUserId?: string; toUserId?: string; amount?: number } =
+      await request.json();
 
-    if (!body.settlementId) {
+    if (!body.fromUserId || !body.toUserId) {
       return NextResponse.json<ApiErrorResponse>(
-        apiError(ERROR_MESSAGES.SETTLEMENT_ID_REQUIRED, CODES.MISSING_SETTLEMENT_ID),
+        apiError("Both fromUserId and toUserId are required.", CODES.MISSING_SETTLEMENT_ID),
         { status: 400 }
       );
     }
 
-    const success = markSettled(body.settlementId);
-    if (!success) {
+    if (!body.amount || body.amount <= 0) {
       return NextResponse.json<ApiErrorResponse>(
-        apiError(ERROR_MESSAGES.SETTLEMENT_NOT_FOUND, CODES.NOT_FOUND),
-        { status: 404 }
+        apiError("Settlement amount must be greater than 0.", CODES.MISSING_SETTLEMENT_ID),
+        { status: 400 }
       );
     }
 
-    return NextResponse.json({ success: true });
+    const settlement = createAndMarkPaid(body.fromUserId, body.toUserId, body.amount);
+    if (!settlement) {
+      return NextResponse.json<ApiErrorResponse>(
+        apiError("Could not create settlement record.", CODES.INTERNAL_ERROR),
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ success: true, data: settlement });
   } catch (err) {
-    const message = err instanceof Error ? err.message : ERROR_MESSAGES.UNKNOWN;
     console.error("POST /api/settlements/mark-paid error:", err);
     return NextResponse.json<ApiErrorResponse>(
-      apiError(message, CODES.INTERNAL_ERROR),
+      apiError(mapErrorMessage(err), CODES.INTERNAL_ERROR),
       { status: 500 }
     );
   }

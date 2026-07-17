@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBalance } from "@/lib/actions/balances";
-import { CODES, ERROR_MESSAGES, apiError, type ApiErrorResponse } from "@/lib/constants";
+import { CODES, ERROR_MESSAGES, apiError, mapErrorMessage, type ApiErrorResponse } from "@/lib/constants";
 
 /**
  * GET /api/balances?userId=xxx
@@ -21,10 +21,9 @@ export async function GET(request: NextRequest) {
     const balance = getBalance(userId);
     return NextResponse.json({ success: true, data: balance });
   } catch (err) {
-    const message = err instanceof Error ? err.message : ERROR_MESSAGES.UNKNOWN;
     console.error("GET /api/balances error:", err);
     return NextResponse.json<ApiErrorResponse>(
-      apiError(message, CODES.INTERNAL_ERROR),
+      apiError(mapErrorMessage(err), CODES.INTERNAL_ERROR),
       { status: 500 }
     );
   }

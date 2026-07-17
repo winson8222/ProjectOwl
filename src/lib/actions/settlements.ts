@@ -154,10 +154,27 @@ export function markSettled(settlementId: string): boolean {
   const db = getDb();
   const result = db
     .update(schema.settlements)
-    .set({ settledAt: new Date().toISOString() })
+    .set({ settledAt: "PAID" })
     .where(eq(schema.settlements.id, settlementId))
     .run();
   return result.changes > 0;
+}
+
+/**
+ * Create a settlement record AND mark it as paid in one step.
+ * This is the main path for the "Mark paid" / "Pay" button on the settle-up page.
+ */
+export function createAndMarkPaid(
+  fromUserId: string,
+  toUserId: string,
+  amount: number
+): Settlement | null {
+  const rounded = Math.round(amount * 100) / 100;
+  if (rounded <= 0) return null;
+
+  const settlement = createSettlement(fromUserId, toUserId, rounded);
+  markSettled(settlement.id);
+  return { ...settlement, settledAt: "PAID" };
 }
 
 /** Create a settlement record. */

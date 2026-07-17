@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb, schema } from "@/lib/db";
 import { count, sql, eq } from "drizzle-orm";
+import { mapErrorMessage } from "@/lib/constants";
 
 /**
  * GET /api/debug
@@ -58,7 +59,7 @@ export async function GET() {
   } catch (err) {
     return NextResponse.json({
       success: false,
-      error: err instanceof Error ? err.message : "Unknown error",
+      error: mapErrorMessage(err),
     }, { status: 500 });
   }
 }
@@ -103,11 +104,10 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: false, error: "Unknown action" }, { status: 400 });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
     console.error("POST /api/debug error:", err);
     return NextResponse.json({
       success: false,
-      error: message,
+      error: mapErrorMessage(err),
     }, { status: 500 });
   }
 }

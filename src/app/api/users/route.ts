@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUsers, getUser, createUser } from "@/lib/actions/users";
-import { CODES, ERROR_MESSAGES, apiError, type ApiErrorResponse } from "@/lib/constants";
+import { CODES, ERROR_MESSAGES, apiError, mapErrorMessage, type ApiErrorResponse } from "@/lib/constants";
 
 /**
  * GET /api/users
@@ -25,10 +25,9 @@ export async function GET(request: NextRequest) {
     const users = getUsers();
     return NextResponse.json({ success: true, data: users });
   } catch (err) {
-    const message = err instanceof Error ? err.message : ERROR_MESSAGES.UNKNOWN;
     console.error("GET /api/users error:", err);
     return NextResponse.json<ApiErrorResponse>(
-      apiError(message, CODES.INTERNAL_ERROR),
+      apiError(mapErrorMessage(err), CODES.INTERNAL_ERROR),
       { status: 500 }
     );
   }
@@ -54,10 +53,9 @@ export async function POST(request: NextRequest) {
     const user = createUser(name, email);
     return NextResponse.json({ success: true, data: user }, { status: 201 });
   } catch (err) {
-    const message = err instanceof Error ? err.message : ERROR_MESSAGES.UNKNOWN;
     console.error("POST /api/users error:", err);
     return NextResponse.json<ApiErrorResponse>(
-      apiError(message, CODES.INTERNAL_ERROR),
+      apiError(mapErrorMessage(err), CODES.INTERNAL_ERROR),
       { status: 500 }
     );
   }

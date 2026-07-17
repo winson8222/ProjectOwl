@@ -1,13 +1,16 @@
+import { AppError } from "@/lib/errors";
+
 /**
- * Centralized error codes and messages for the application.
+ * Centralized error codes, messages, and error-pattern mappings for the app.
  *
- * All API routes and frontend validation should reference these constants
- * instead of hardcoding strings. This makes it easy to update error messages
- * or add i18n later.
+ * - CODES / ERROR_MESSAGES: structured error responses for API routes.
+ * - MAPPED_ERRORS + mapErrorMessage(): catch-all conversion of raw backend/SQLite
+ *   errors into user-friendly messages so users never see "NOT NULL constraint failed".
+ * - VALIDATION: frontend-side validation strings.
  *
  * Usage:
- *   import { ERRORS } from "@/lib/constants";
- *   throw new ImageError(ERRORS.FILE.MISSING, "MISSING_FILE", 400);
+ *   import { mapErrorMessage, apiError, CODES } from "@/lib/constants";
+ *   catch (err) { return apiError(mapErrorMessage(err), CODES.INTERNAL_ERROR); }
  */
 
 // ── API Error Codes ─────────────────────────────────────────────────
@@ -85,6 +88,107 @@ export const ERROR_MESSAGES = {
   LLM_INVALID_JSON: (preview: string) =>
     `Gemini response was not valid JSON: ${preview}`,
 } as const;
+
+// ── Error Pattern Mappings ──────────────────────────────────────────
+// Maps raw backend / SQLite error messages to user-friendly strings.
+// Used by mapErrorMessage() as a catch-all for errors that slip past
+// explicit validation in API routes.
+export const MAPPED_ERRORS: { pattern: RegExp; message: string }[] = [
+  // Transaction NOT NULL violations (DB-level safety net for
+  // anything the frontend+API validation misses)
+  { pattern: /NOT NULL constraint failed:\s+transactions\.title/i,
+    message: "Transaction description is required." },
+  { pattern: /NOT NULL constraint failed:\s+transactions\.paidByUserId/i,
+    message: "A payer must be selected." },
+  { pattern: /NOT NULL constraint failed:\s+transactions\.totalAmount/i,
+    message: "A total amount is required." },
+  { pattern: /NOT NULL constraint failed:\s+transactions\.transactionDate/i,
+    message: "A transaction date is required." },
+  { pattern: /NOT NULL constraint failed:\s+users\.name/i,
+    message: "User name is required." },
+  { pattern: /NOT NULL constraint failed:\s+users\.email/i,
+    message: "User email is required." },
+  { pattern: /NOT NULL constraint failed:\s+settlements\.fromUserId/i,
+    message: "The payer for this settlement is missing." },
+  { pattern: /NOT NULL constraint failed:\s+settlements\.toUserId/i,
+    message: "The recipient for this settlement is missing." },
+  { pattern: /NOT NULL constraint failed:\s+settlements\.amount/i,
+    message: "A settlement amount is required." },
+
+  // Foreign key violations
+  { pattern: /FOREIGN KEY constraint failed/i,
+    message: "Invalid user reference — the selected user may not exist." },
+  { pattern: /violates foreign key constraint/i,
+    message: "Invalid user reference — the selected user may not exist." },
+
+  // Unique constraint
+  { pattern: /UNIQUE constraint failed/i,
+    message: "A duplicate entry was found. Please use different values." },
+
+  // Generic database errors
+  { pattern: /cannot open database/i,
+    message: "Database connection failed. Please try again." },
+  { pattern: /no such table/i,
+    message: "Database is missing required tables. Try resetting the database." },
+  { pattern: /SQLITE_ERROR/i,
+    message: "A database error occurred. Please try again." },
+  { pattern: /database disk image is malformed/i,
+    message: "The database file is corrupted. Try resetting from the debug page." },
+
+  // Network / fetch errors
+  { pattern: /fetch failed/i,
+    message: "Failed to connect to the server. Is it running?" },
+  { pattern: /networkerror/i,
+    message: "A network error occurred. Check your connection and try again." },
+  { pattern: /aborted/i,
+    message: "The request was cancelled. Please try again." },
+  { pattern: /json.*parse/i,
+    message: "Received an unexpected response from the server." },
+
+  // LLM / Gemini errors — never expose provider details to the user
+  { pattern: /Gemini API returned/i,
+    message: "Failed to scan receipt. Please try again." },
+  { pattern: /Gemini returned no text|finishReason|blocked|safety filter/i,
+    message: "Receipt scan returned no data. The image may be invalid or blurry." },
+  { pattern: /GEMINI_API_KEY is not set/i,
+    message: "Scan is unavailable. The API key has not been configured." },
+  { pattern: /LLM_FAILED/i,
+    message: "Failed to scan receipt. Please try again." },
+  { pattern: /VALIDATION_FAILED|schema validation/i,
+    message: "Receipt data could not be interpreted. Please try a clearer image." },
+  { pattern: /LLM_INVALID_RESPONSE|was not valid JSON/i,
+    message: "Received an unexpected response from the scan service. Please try again." },
+  { pattern: /quota|exceeded/i,
+    message: "Scan is temporarily unavailable. Please try again later." },
+];
+
+/**
+ * Map a raw caught error (DB, network, or Error instance) to a user-friendly
+ * message. Falls back to a generic message when no pattern matches.
+ *
+ * Use this in every API route's catch block so users never see raw SQL or
+ * internal error text.
+ */
+export function mapErrorMessage(err: unknown): string {
+  const message =
+    err instanceof Error
+      ? err.message
+      : typeof err === "string"
+        ? err
+        : String(err);
+
+  // Check known error patterns FIRST — catches LLM errors, SQLite errors,
+  // network errors, etc., even when they come through an AppError wrapper.
+  for (const mapping of MAPPED_ERRORS) {
+    if (mapping.pattern.test(message)) return mapping.message;
+  }
+
+  // AppError with no pattern match — return as-is.
+  // These are intentionally user-friendly messages like "Transaction not found".
+  if (err instanceof AppError) return err.message;
+
+  return ERROR_MESSAGES.UNKNOWN;
+}
 
 // ── Frontend Validation Messages ────────────────────────────────────
 export const VALIDATION = {

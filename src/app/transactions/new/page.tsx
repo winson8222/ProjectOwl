@@ -8,9 +8,11 @@ import ItemAssigner from "@/components/ItemAssigner";
 import ReceiptUploader from "@/components/ReceiptUploader";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import ErrorAlert from "@/components/ErrorAlert";
+import ErrorDialog from "@/components/ErrorDialog";
+import FormField from "@/components/FormField";
 import UserAvatar from "@/components/UserAvatar";
 import { getSessionUser } from "@/lib/session";
-import { ERROR_MESSAGES } from "@/lib/constants";
+import { ERROR_MESSAGES, mapErrorMessage } from "@/lib/constants";
 import { DEBUG_UI, MOCK_SCAN_ENABLED } from "@/lib/debug-config";
 import { MOCK_RECEIPTS } from "@/lib/test-data/allocation-fixtures";
 import type { AssignmentResult } from "@/components/ItemAssigner";
@@ -43,6 +45,8 @@ export default function NewTransactionPage() {
   const [splitValues, setSplitValues] = useState<Record<string, number>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dialogError, setDialogError] = useState<{ title: string; message: string } | null>(null);
+  const [showAllErrors, setShowAllErrors] = useState(false);
 
   // ── Scan state ─────────────────────────────────────────────────────
   const [scanStatus, setScanStatus] = useState<ScanStatus>("idle");
@@ -75,9 +79,11 @@ export default function NewTransactionPage() {
       .then((json) => {
         if (json.success) {
           setParticipantsMeta(json.data);
+        } else {
+          setError(json.error || "Failed to load users");
         }
       })
-      .catch(console.error);
+      .catch(() => setError("Failed to connect to the server"));
   }, []);
 
   // Auto-split when participants or total changes (even mode only)
@@ -141,7 +147,7 @@ export default function NewTransactionPage() {
 
         loadReceiptData(json.data);
       } catch (err) {
-        setError(err instanceof Error ? err.message : ERROR_MESSAGES.FAILED_TO_CONNECT);
+        setError(mapErrorMessage(err));
         setScanStatus("error");
       }
     },
@@ -221,13 +227,21 @@ export default function NewTransactionPage() {
   };
 
   const addItem = () => {
-    setScanItems((prev) => [...prev, { nm: "", price: 0, cnt: 1 }]);
+    setScanItems((prev) => [...prev, { nm: "Item", price: 0, cnt: 1 }]);
   };
 
   // ── Save ───────────────────────────────────────────────────────────
 
   const handleSave = useCallback(async () => {
-    if (!user || !title || totalAmount <= 0 || selectedParticipants.length === 0) return;
+    setShowAllErrors(true);
+    if (!user || !title.trim() || totalAmount <= 0 || selectedParticipants.length === 0) return;
+
+    // Validate items have non-empty names
+    if (scanItems.some(item => !item.nm || item.nm.trim() === '')) {
+      setError("All items must have names");
+      return;
+    }
+
     setSaving(true);
     setError(null);
 
@@ -279,7 +293,11 @@ export default function NewTransactionPage() {
           totalAmount,
           paidByUserId: paidBy,
           transactionDate: date,
-          items: scanItems.length > 0 ? scanItems : undefined,
+          items: scanItems.length > 0 ? scanItems.map(item => ({
+            name: item.nm || "Item", // Convert nm to name field, fallback to "Item"
+            quantity: item.cnt || 1, // Convert cnt to quantity field, fallback to 1
+            price: item.price
+          })) : undefined,
           participants: transactionParticipants,
           itemAssignments: savedAssignments,
         }),
@@ -289,10 +307,16 @@ export default function NewTransactionPage() {
       if (json.success) {
         window.location.href = "/transactions";
       } else {
-        setError(json.error || ERROR_MESSAGES.FAILED_TO_SAVE);
+        setDialogError({
+          title: "Save failed",
+          message: json.error || ERROR_MESSAGES.FAILED_TO_SAVE,
+        });
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : ERROR_MESSAGES.UNKNOWN);
+      setDialogError({
+        title: "Save failed",
+        message: mapErrorMessage(err),
+      });
     } finally {
       setSaving(false);
     }
@@ -332,10 +356,12 @@ export default function NewTransactionPage() {
 
       <div className="space-y-5">
         {/* ── Description ────────────────────────────────────────── */}
-        <div>
-          <label className="text-xs font-medium text-gray-500 mb-1 block">
-            Description
-          </label>
+        <FormField
+          label="Description"
+          value={title}
+          validate={(v) => (!(v as string)?.trim() ? "Enter a description" : null)}
+          showError={showAllErrors}
+        >
           <input
             type="text"
             value={title}
@@ -343,7 +369,7 @@ export default function NewTransactionPage() {
             placeholder="e.g. Dinner at Sakura, Groceries"
             className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
           />
-        </div>
+        </FormField>
 
         {/* ── Scan receipt button ────────────────────────────────── */}
         {scanStatus === "idle" && (
@@ -542,15 +568,19 @@ export default function NewTransactionPage() {
         )}
 
         {/* ── Total amount ───────────────────────────────────────── */}
-        <div>
-          <label className="text-xs font-medium text-gray-500 mb-1 block">
-            Total amount
-            {scanItems.length > 0 && (
+        <FormField
+          label="Total amount"
+          value={totalAmount}
+          validate={(v) => ((v as number) <= 0 ? "Enter an amount greater than $0" : null)}
+          showError={showAllErrors}
+          labelSuffix={
+            scanItems.length > 0 ? (
               <span className="text-gray-400 font-normal ml-1">
                 (from items: ${totalFromItems.toFixed(2)})
               </span>
-            )}
-          </label>
+            ) : undefined
+          }
+        >
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">
               $
@@ -565,25 +595,36 @@ export default function NewTransactionPage() {
               className="w-full pl-7 pr-3 py-2 text-sm border border-[var(--border)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
             />
           </div>
-        </div>
+        </FormField>
 
         {/* ── Date ───────────────────────────────────────────────── */}
-        <div>
-          <label className="text-xs font-medium text-gray-500 mb-1 block">Date</label>
+        <FormField
+          label="Date"
+          value={date}
+          validate={(v) => (!(v as string)?.trim() ? "Select a date" : null)}
+          showError={showAllErrors}
+        >
           <input
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
             className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
           />
-        </div>
+        </FormField>
 
         {/* ── Participants ────────────────────────────────────────── */}
-        <UserPicker
-          selectedUserIds={selectedParticipants}
-          onChange={setSelectedParticipants}
+        <FormField
           label="Who's involved?"
-        />
+          value={selectedParticipants}
+          validate={(v) => ((v as string[]).length === 0 ? "Select at least one person" : null)}
+          showError={showAllErrors}
+        >
+          <UserPicker
+            selectedUserIds={selectedParticipants}
+            onChange={setSelectedParticipants}
+            label=""
+          />
+        </FormField>
 
         {/* ── Split method ────────────────────────────────────────── */}
         {selectedParticipants.length > 0 && (
@@ -617,7 +658,9 @@ export default function NewTransactionPage() {
         </div>
 
         {/* ── Error ──────────────────────────────────────────────── */}
-        {error && <p className="text-sm text-[var(--danger)]">{error}</p>}
+        {error && !showAllErrors && (
+          <p className="text-sm text-[var(--danger)]">{error}</p>
+        )}
 
         {/* ── Save ───────────────────────────────────────────────── */}
         <button
@@ -637,6 +680,14 @@ export default function NewTransactionPage() {
       {/* ── Loading overlays ──────────────────────────────────────── */}
       {scanStatus === "uploading" && <LoadingOverlay />}
       {saving && <LoadingOverlay />}
+
+      {/* ── Error dialog (POST save failures) ─────────────────────── */}
+      <ErrorDialog
+        open={!!dialogError}
+        title={dialogError?.title || "Error"}
+        message={dialogError?.message || ""}
+        onDismiss={() => setDialogError(null)}
+      />
     </main>
   );
 }

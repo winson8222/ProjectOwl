@@ -127,5 +127,5 @@ function computeBalanceWithUser(userId: string, friendId: string): number {
   const userAlreadyPaid = settlementsFromUser.reduce((sum, r) => sum + r.amount, 0);
 
   // Net: friendOwes (to user) - userOwes (to friend) - already settled
-  return friendOwes - userOwes + friendAlreadyPaid - userAlreadyPaid;
+  return friendOwes - userOwes - friendAlreadyPaid + userAlreadyPaid;
 }

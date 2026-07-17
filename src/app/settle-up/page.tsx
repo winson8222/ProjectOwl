@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import UserAvatar from "@/components/UserAvatar";
+import ErrorDialog from "@/components/ErrorDialog";
 import { getSessionUser } from "@/lib/session";
 
 /**
@@ -12,8 +13,10 @@ export default function SettleUpPage() {
   const [user, setUser] = useState<any>(null);
   const [balance, setBalance] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [settling, setSettling] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [dialogError, setDialogError] = useState<{ title: string; message: string } | null>(null);
 
   useEffect(() => {
     const currentUser = getSessionUser();
@@ -27,23 +30,20 @@ export default function SettleUpPage() {
       .then((r) => r.json())
       .then((json) => {
         if (json.success) setBalance(json.data);
+        else setError(json.error || "Failed to load balances");
       })
-      .catch(console.error)
+      .catch(() => setError("Failed to connect to the server"))
       .finally(() => setLoading(false));
   }, []);
 
   const handleMarkPaid = useCallback(async (fromUserId: string, toUserId: string, amount: number) => {
     setSettling(`${fromUserId}-${toUserId}`);
 
-    // Create a settlement and mark it as paid immediately
     try {
-      // We mark as paid by creating a settlement record
       const response = await fetch("/api/settlements/mark-paid", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          settlementId: `settlement-${fromUserId}-${toUserId}-${Date.now()}`,
-        }),
+        body: JSON.stringify({ fromUserId, toUserId, amount }),
       });
 
       const json = await response.json();
@@ -52,12 +52,16 @@ export default function SettleUpPage() {
         // Reload to refresh balances
         setTimeout(() => window.location.reload(), 1500);
       } else {
-        // For now, just reload since settlements are tracked via dummy IDs
-        setMessage("Settled! Refreshing...");
-        setTimeout(() => window.location.reload(), 1000);
+        setDialogError({
+          title: "Payment failed",
+          message: json.error || "Failed to record payment. Please try again.",
+        });
       }
     } catch (err) {
-      setMessage("Failed to record payment");
+      setDialogError({
+        title: "Payment failed",
+        message: "Failed to connect to the server.",
+      });
     } finally {
       setSettling(null);
     }
@@ -91,6 +95,13 @@ export default function SettleUpPage() {
           <p className="text-sm text-gray-500 mt-0.5">Who pays who</p>
         </div>
       </div>
+
+      {/* Error banner */}
+      {error && (
+        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+          ⚠ {error}
+        </div>
+      )}
 
       {/* Balance summary */}
       {balance && (
@@ -190,6 +201,14 @@ export default function SettleUpPage() {
           <p className="text-xs text-gray-400 mt-1">No outstanding balances</p>
         </div>
       )}
+
+      {/* Error dialog (POST action failures) */}
+      <ErrorDialog
+        open={!!dialogError}
+        title={dialogError?.title || "Error"}
+        message={dialogError?.message || ""}
+        onDismiss={() => setDialogError(null)}
+      />
     </main>
   );
 }
