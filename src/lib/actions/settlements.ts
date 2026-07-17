@@ -3,6 +3,7 @@ import { eq, and, isNull, desc } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 import type { User } from "./users";
 import { getBalance } from "./balances";
+import { logActivity } from "./activities";
 import { computeNetBalances, minimizeTransfers, type SimpleTransaction } from "@/lib/simplify";
 
 export interface SettlementPlan {
@@ -163,17 +164,31 @@ export function markSettled(settlementId: string): boolean {
 /**
  * Create a settlement record AND mark it as paid in one step.
  * This is the main path for the "Mark paid" / "Pay" button on the settle-up page.
+ * When `groupId` is given, the payment settles debt within that group and is
+ * recorded in the group's activity feed.
  */
 export function createAndMarkPaid(
   fromUserId: string,
   toUserId: string,
-  amount: number
+  amount: number,
+  groupId?: string
 ): Settlement | null {
   const rounded = Math.round(amount * 100) / 100;
   if (rounded <= 0) return null;
 
-  const settlement = createSettlement(fromUserId, toUserId, rounded);
+  const settlement = createSettlement(fromUserId, toUserId, rounded, undefined, groupId);
   markSettled(settlement.id);
+
+  if (groupId) {
+    logActivity({
+      type: "settlement",
+      userId: fromUserId,
+      relatedUserId: toUserId,
+      amount: rounded,
+      groupId,
+    });
+  }
+
   return { ...settlement, settledAt: "PAID" };
 }
 
@@ -182,7 +197,8 @@ export function createSettlement(
   fromUserId: string,
   toUserId: string,
   amount: number,
-  transactionId?: string
+  transactionId?: string,
+  groupId?: string
 ): Settlement {
   const db = getDb();
   const id = `settlement-${uuid().slice(0, 8)}`;
@@ -192,6 +208,7 @@ export function createSettlement(
     toUserId,
     amount,
     transactionId: transactionId ?? null,
+    groupId: groupId ?? null,
   }).run();
 
   return { id, fromUserId, toUserId, transactionId: transactionId ?? null, amount, settledAt: null, createdAt: new Date().toISOString() };

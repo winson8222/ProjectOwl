@@ -6,11 +6,12 @@ import { CODES, ERROR_MESSAGES, apiError, mapErrorMessage, type ApiErrorResponse
  * POST /api/settlements/mark-paid
  * Create a settlement and mark it as paid.
  *
- * Body: { fromUserId: string, toUserId: string, amount: number }
+ * Body: { fromUserId: string, toUserId: string, amount: number, groupId?: string }
+ * `groupId` scopes the payment to a group and records it in its activity feed.
  */
 export async function POST(request: NextRequest) {
   try {
-    const body: { fromUserId?: string; toUserId?: string; amount?: number } =
+    const body: { fromUserId?: string; toUserId?: string; amount?: number; groupId?: string } =
       await request.json();
 
     if (!body.fromUserId || !body.toUserId) {
@@ -27,7 +28,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const settlement = createAndMarkPaid(body.fromUserId, body.toUserId, body.amount);
+    const settlement = createAndMarkPaid(body.fromUserId, body.toUserId, body.amount, body.groupId);
     if (!settlement) {
       return NextResponse.json<ApiErrorResponse>(
         apiError("Could not create settlement record.", CODES.INTERNAL_ERROR),

@@ -7,6 +7,24 @@ import * as schema from "./schema";
  * Compatible with PostgreSQL syntax for future migration.
  */
 export function migrate(db: BetterSQLite3Database<typeof schema>) {
+  // ── One-time wipe for the groups migration ─────────────────────────
+  // Transactions now belong to groups. Rather than invent group memberships
+  // for pre-group data, we clear everything and let the seed create fresh
+  // test groups. Detected by: a transactions table exists but has no
+  // group_id column (the pre-groups schema shape).
+  const preGroupCols = db.all<{ name: string }>("PRAGMA table_info(transactions);");
+  if (preGroupCols.length > 0 && !preGroupCols.some((c) => c.name === "group_id")) {
+    db.run("PRAGMA foreign_keys = OFF;");
+    for (const table of [
+      "activities", "group_members", "groups", "settlements",
+      "item_assignments", "participants", "transaction_items",
+      "transactions", "friendships", "users",
+    ]) {
+      db.run(`DROP TABLE IF EXISTS ${table};`);
+    }
+    db.run("PRAGMA foreign_keys = ON;");
+  }
+
   // We use db.run() with SQL since drizzle-kit migrations aren't
   // wired at runtime. This keeps it self-contained.
   const sql = `
@@ -25,11 +43,38 @@ export function migrate(db: BetterSQLite3Database<typeof schema>) {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS groups (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      color TEXT,
+      created_by_user_id TEXT NOT NULL REFERENCES users(id),
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS group_members (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS activities (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      user_id TEXT NOT NULL REFERENCES users(id),
+      related_user_id TEXT REFERENCES users(id),
+      amount REAL,
+      group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+      transaction_id TEXT REFERENCES transactions(id),
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS transactions (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       total_amount REAL NOT NULL,
       paid_by_user_id TEXT NOT NULL REFERENCES users(id),
+      group_id TEXT REFERENCES groups(id),
       transaction_date TEXT NOT NULL,
       notes TEXT,
       receipt_image TEXT,
@@ -69,6 +114,7 @@ export function migrate(db: BetterSQLite3Database<typeof schema>) {
       from_user_id TEXT NOT NULL REFERENCES users(id),
       to_user_id TEXT NOT NULL REFERENCES users(id),
       transaction_id TEXT REFERENCES transactions(id),
+      group_id TEXT REFERENCES groups(id),
       amount REAL NOT NULL,
       settled_at TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
@@ -83,6 +129,12 @@ export function migrate(db: BetterSQLite3Database<typeof schema>) {
     CREATE INDEX IF NOT EXISTS idx_participants_user ON participants(user_id);
     CREATE INDEX IF NOT EXISTS idx_settlements_from ON settlements(from_user_id);
     CREATE INDEX IF NOT EXISTS idx_settlements_to ON settlements(to_user_id);
+    CREATE INDEX IF NOT EXISTS idx_transactions_group ON transactions(group_id);
+    CREATE INDEX IF NOT EXISTS idx_settlements_group ON settlements(group_id);
+    CREATE INDEX IF NOT EXISTS idx_group_members_group ON group_members(group_id);
+    CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members(user_id);
+    CREATE INDEX IF NOT EXISTS idx_activities_group ON activities(group_id);
+    CREATE INDEX IF NOT EXISTS idx_activities_created ON activities(created_at);
   `;
 
   // Split by semicolons and run each statement separately

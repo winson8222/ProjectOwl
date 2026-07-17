@@ -73,13 +73,18 @@ Delete `data/projectowl.db` and restart the server — the database is auto-crea
 | Method | Route | Purpose |
 |---|---|---|
 | `POST` | `/api/receipts/extract` | Upload receipt image → returns structured JSON from Gemini |
-| `POST` | `/api/transactions` | Create transaction with line items + participant split |
-| `GET` | `/api/transactions?userId=` | List transactions (filter by `payer`, `payees`) |
+| `GET` | `/api/groups?userId=` | List a user's groups (members, your net position, settled flag) |
+| `POST` | `/api/groups` | Create a group `{ name, creatorId, memberIds? }` |
+| `GET` | `/api/groups/[id]?userId=` | Group detail: member balances, pairwise nets, transfer plan, down-bad ranking |
+| `POST` | `/api/groups/[id]/members` | Add members `{ userIds, actorId }` |
+| `GET` | `/api/activities?userId=` | Activity feed across all the user's groups |
+| `POST` | `/api/transactions` | Create transaction (requires `groupId`; payer + participants must be members) |
+| `GET` | `/api/transactions?userId=` | List transactions (filter by `groupId`, `payer`, `payees`) |
 | `GET` | `/api/transactions?id=&userId=` | Single transaction with full details |
 | `DELETE` | `/api/transactions?id=` | Soft-delete single transaction (kept for ledger history) |
 | `DELETE` | `/api/transactions?all=true` | **Delete ALL transactions** |
-| `GET` | `/api/balances?userId=` | Balance summary (net, owe/owed, per-person) |
-| `GET` | `/api/settlements/optimize` | Group-wide **minimum-transaction** settlement plan |
+| `GET` | `/api/balances?userId=` | Balance summary — overall, or one group with `&groupId=` |
+| `GET` | `/api/settlements/optimize?groupId=` | **Minimum-transaction** settlement plan within a group (app-wide without `groupId`) |
 | `GET` | `/api/users` | List all users |
 | `POST` | `/api/users` | Create a new test user |
 | `POST` | `/api/settlements/mark-paid` | Mark a settlement as paid |
@@ -194,14 +199,16 @@ curl http://localhost:3000/api/debug
 ## Page Structure
 
 ```
-/                          → Home dashboard
-/transactions              → Transaction history (filterable)
-/transactions/new          → Choose scan or manual
-/transactions/new/scan     → Upload → extract → review → save
-/transactions/new/manual   → Manual entry form
+/                          → Home: "most down bad" ranking per group + overall balance
+/groups                    → Your groups (create group, settled-groups toggle)
+/groups/[id]               → Group detail: members, balances, ledger, + new transaction
+/groups/[id]/settle-up     → Minimal transfer plan within the group (mark paid)
+/activity                  → Activity feed across all your groups
+/transactions              → Transaction history (filterable, all groups)
+/transactions/new          → Unified manual + scan entry (scoped to a group)
 /transactions/[id]         → Transaction detail
-/friends                   → Friend list with balances
-/settle-up                 → Settlement view
+/friends                   → Friend list with balances (legacy, off-nav)
+/settle-up                 → All-groups settlement view (legacy, off-nav)
 ```
 
 ## Project Structure
@@ -268,11 +275,14 @@ src/
 | Table | Purpose |
 |---|---|
 | `users` | id, name, email, avatar |
-| `friendships` | user ↔ friend edges |
-| `transactions` | title, total, paid by, date |
+| `friendships` | user ↔ friend edges (legacy) |
+| `groups` | name, color, creator — expenses are shared within a group |
+| `group_members` | user ↔ group edges (users can be in many groups) |
+| `activities` | feed: type, actor, related user, amount, group, transaction |
+| `transactions` | title, total, paid by, date, **group** |
 | `transaction_items` | item name, quantity, price per line |
 | `item_assignments` | user + share per item |
-| `settlements` | debt records with paid status |
+| `settlements` | debt records with paid status (+ group) |
 
 All balances are **computed from raw data** on every page load (not stored), ensuring consistency on delete or edit.
 

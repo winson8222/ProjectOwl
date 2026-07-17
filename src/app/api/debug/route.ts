@@ -77,10 +77,14 @@ export async function POST(request: Request) {
     if (action === "reset") {
       // Raw SQL to bypass any Drizzle query issues
       db.run("PRAGMA foreign_keys = OFF");
+      db.run("DELETE FROM activities");
+      db.run("DELETE FROM item_assignments");
       db.run("DELETE FROM participants");
       db.run("DELETE FROM transaction_items");
       db.run("DELETE FROM transactions");
       db.run("DELETE FROM settlements");
+      db.run("DELETE FROM group_members");
+      db.run("DELETE FROM groups");
       db.run("DELETE FROM friendships");
       db.run("DELETE FROM users");
       db.run("PRAGMA foreign_keys = ON");
@@ -94,6 +98,8 @@ export async function POST(request: Request) {
 
     if (action === "delete-all-transactions") {
       db.run("PRAGMA foreign_keys = OFF");
+      db.run("DELETE FROM activities WHERE transaction_id IS NOT NULL");
+      db.run("DELETE FROM item_assignments");
       db.run("DELETE FROM participants");
       db.run("DELETE FROM transaction_items");
       db.run("DELETE FROM transactions");

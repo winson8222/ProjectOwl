@@ -36,6 +36,11 @@ export const CODES = {
   NO_PARTICIPANTS: "NO_PARTICIPANTS",
   SPLIT_MISMATCH: "SPLIT_MISMATCH",
 
+  // Groups
+  MISSING_GROUP: "MISSING_GROUP",
+  GROUP_NOT_FOUND: "GROUP_NOT_FOUND",
+  NOT_GROUP_MEMBER: "NOT_GROUP_MEMBER",
+
   // Settlements
   MISSING_SETTLEMENT_ID: "MISSING_SETTLEMENT_ID",
 
@@ -74,6 +79,12 @@ export const ERROR_MESSAGES = {
   TX_ID_REQUIRED: "Transaction id is required",
   TX_SPLIT_MISMATCH: (assigned: string, price: string) =>
     `Split amounts ($${assigned}) don't equal total ($${price})`,
+
+  // Groups
+  GROUP_REQUIRED: "A group is required — transactions happen within a group",
+  GROUP_NOT_FOUND: "Group not found",
+  GROUP_NAME_REQUIRED: "Group name is required",
+  NOT_GROUP_MEMBER: "Everyone involved must be a member of the group",
 
   // Settlements
   SETTLEMENT_ID_REQUIRED: "settlementId is required",

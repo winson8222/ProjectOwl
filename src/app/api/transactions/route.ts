@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createTransaction, getTransactions, getTransaction, deleteTransaction } from "@/lib/actions/transactions";
 import type { CreateTransactionInput } from "@/lib/actions/transactions";
+import { areGroupMembers } from "@/lib/actions/groups";
 import { CODES, ERROR_MESSAGES, apiError, mapErrorMessage, type ApiErrorResponse } from "@/lib/constants";
 
 /**
@@ -24,6 +25,23 @@ export async function POST(request: NextRequest) {
     if (!body.participants || body.participants.length === 0) {
       return NextResponse.json<ApiErrorResponse>(
         apiError(ERROR_MESSAGES.TX_NO_PARTICIPANTS, CODES.NO_PARTICIPANTS),
+        { status: 400 }
+      );
+    }
+
+    // Transactions must occur within a group…
+    if (!body.groupId) {
+      return NextResponse.json<ApiErrorResponse>(
+        apiError(ERROR_MESSAGES.GROUP_REQUIRED, CODES.MISSING_GROUP),
+        { status: 400 }
+      );
+    }
+
+    // …and everyone involved (payer + participants) must be a group member.
+    const involved = [...new Set([body.paidByUserId, ...body.participants.map((p) => p.userId)])];
+    if (!areGroupMembers(body.groupId, involved)) {
+      return NextResponse.json<ApiErrorResponse>(
+        apiError(ERROR_MESSAGES.NOT_GROUP_MEMBER, CODES.NOT_GROUP_MEMBER),
         { status: 400 }
       );
     }
@@ -90,9 +108,10 @@ export async function GET(request: NextRequest) {
 
     const payer = searchParams.get("payer") || undefined;
     const payees = searchParams.get("payees")?.split(",").filter(Boolean) || undefined;
+    const groupId = searchParams.get("groupId") || undefined;
     const limit = parseInt(searchParams.get("limit") || "50", 10);
 
-    const transactions = getTransactions({ userId, payer, payees, limit });
+    const transactions = getTransactions({ userId, groupId, payer, payees, limit });
     return NextResponse.json({ success: true, data: transactions });
   } catch (err) {
     console.error("GET /api/transactions error:", err);

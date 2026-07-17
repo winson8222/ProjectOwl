@@ -14,6 +14,9 @@ interface UserPickerProps {
   onChange: (userIds: string[]) => void;
   excludeUserId?: string; // don't show this user (e.g. current user)
   label?: string;
+  /** When given, pick from this list instead of fetching all users
+   *  (e.g. only a group's members). */
+  users?: User[];
 }
 
 /**
@@ -26,11 +29,21 @@ export default function UserPicker({
   onChange,
   excludeUserId,
   label = "Select participants",
+  users: providedUsers,
 }: UserPickerProps) {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (providedUsers) {
+      setUsers(
+        excludeUserId
+          ? providedUsers.filter((u) => u.id !== excludeUserId)
+          : providedUsers
+      );
+      setLoading(false);
+      return;
+    }
     fetch("/api/users")
       .then((r) => r.json())
       .then((json) => {
@@ -44,7 +57,7 @@ export default function UserPicker({
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [excludeUserId]);
+  }, [excludeUserId, providedUsers]);
 
   const toggle = (userId: string) => {
     if (selectedUserIds.includes(userId)) {
