@@ -1,13 +1,8 @@
 import { getDb, schema } from "@/lib/db";
 import { eq, desc, and, inArray } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
-/** Return the current datetime as a local-time ISO string (no timezone suffix, sorts lexicographically). */
-function localTimestamp(): string {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) +
-    " " + pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
-}
+import { localTimestamp } from "@/lib/time";
+import { logActivity } from "./activities";
 
 
 export type Transaction = typeof schema.transactions.$inferSelect;
@@ -18,12 +13,15 @@ export interface TransactionWithDetails extends Transaction {
   participants: { user: typeof schema.users.$inferSelect; shareAmount: number }[];
   itemAssignments: (typeof schema.itemAssignments.$inferSelect & { userName: string })[];
   userShare: number; // current user's share
+  groupName: string | null;
 }
 
 export interface CreateTransactionInput {
   title: string;
   totalAmount: number;
   paidByUserId: string;
+  /** The group this transaction happens in — every transaction lives in a group. */
+  groupId: string;
   transactionDate: string;
   notes?: string;
   receiptImage?: string;
@@ -53,6 +51,7 @@ export function createTransaction(input: CreateTransactionInput): Transaction {
       title: input.title,
       totalAmount: input.totalAmount,
       paidByUserId: input.paidByUserId,
+      groupId: input.groupId,
       transactionDate: input.transactionDate,
       notes: input.notes ?? null,
       receiptImage: input.receiptImage ?? null,
@@ -106,7 +105,22 @@ export function createTransaction(input: CreateTransactionInput): Transaction {
     }
   });
 
+  logActivity({
+    type: "transaction",
+    userId: input.paidByUserId,
+    amount: input.totalAmount,
+    groupId: input.groupId,
+    transactionId: txId,
+  });
+
   return db.select().from(schema.transactions).where(eq(schema.transactions.id, txId)).get()!;
+}
+
+/** Look up a group's name (null when the transaction predates groups). */
+function groupNameFor(groupId: string | null): string | null {
+  if (!groupId) return null;
+  const g = getDb().select().from(schema.groups).where(eq(schema.groups.id, groupId)).get();
+  return g?.name ?? null;
 }
 
 /** Get a single transaction with all details. */
@@ -167,48 +181,56 @@ export function getTransaction(id: string, currentUserId?: string): TransactionW
     participants: userShares,
     itemAssignments,
     userShare,
+    groupName: groupNameFor(tx.groupId),
   };
 }
 
-/** Query transactions visible to a user with optional filters. */
+/** Query transactions visible to a user with optional filters.
+ *  When `groupId` is given, returns ALL of that group's transactions
+ *  (members see the whole group ledger, not just their own involvement). */
 export function getTransactions(params: {
   userId: string;
+  groupId?: string; // scope to one group
   payer?: string; // filter by who paid
   payees?: string[]; // filter by who's involved
   limit?: number;
   offset?: number;
 }): TransactionWithDetails[] {
   const db = getDb();
-  const { userId, payer, payees, limit = 50, offset = 0 } = params;
+  const { userId, groupId, payer, payees, limit = 50, offset = 0 } = params;
 
-  // Get transaction IDs where this user is a participant
-  const involvement = db
-    .select({ transactionId: schema.participants.transactionId })
-    .from(schema.participants)
-    .where(eq(schema.participants.userId, userId))
-    .all();
+  let txIds: string[] | undefined;
+  if (!groupId) {
+    // Get transaction IDs where this user is a participant
+    const involvement = db
+      .select({ transactionId: schema.participants.transactionId })
+      .from(schema.participants)
+      .where(eq(schema.participants.userId, userId))
+      .all();
 
-  // Also include transactions the user paid for (even if not a participant)
-  const paidTxIds = db
-    .select({ id: schema.transactions.id })
-    .from(schema.transactions)
-    .where(eq(schema.transactions.paidByUserId, userId))
-    .all();
+    // Also include transactions the user paid for (even if not a participant)
+    const paidTxIds = db
+      .select({ id: schema.transactions.id })
+      .from(schema.transactions)
+      .where(eq(schema.transactions.paidByUserId, userId))
+      .all();
 
-  const txIds = [
-    ...new Set([
-      ...involvement.map((r) => r.transactionId),
-      ...paidTxIds.map((r) => r.id),
-    ]),
-  ];
-  if (txIds.length === 0) return [];
+    txIds = [
+      ...new Set([
+        ...involvement.map((r) => r.transactionId),
+        ...paidTxIds.map((r) => r.id),
+      ]),
+    ];
+    if (txIds.length === 0) return [];
+  }
 
   const txs = db
     .select()
     .from(schema.transactions)
     .where(
       and(
-        inArray(schema.transactions.id, txIds),
+        txIds ? inArray(schema.transactions.id, txIds) : undefined,
+        groupId ? eq(schema.transactions.groupId, groupId) : undefined,
         eq(schema.transactions.isDeleted, false),
         payer ? eq(schema.transactions.paidByUserId, payer) : undefined,
       )
@@ -264,6 +286,7 @@ export function getTransactions(params: {
       participants: userShares,
       itemAssignments,
       userShare,
+      groupName: groupNameFor(tx.groupId),
     };
   });
 }

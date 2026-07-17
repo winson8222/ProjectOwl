@@ -35,6 +35,11 @@ export default function NewTransactionPage() {
   const [user, setUser] = useState<any>(null);
   const [participantsMeta, setParticipantsMeta] = useState<{ id: string; name: string }[]>([]);
 
+  // ── Group (transactions always happen within a group) ─────────────
+  const [groups, setGroups] = useState<any[]>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState<string>("");
+  const [groupsLoaded, setGroupsLoaded] = useState(false);
+
   // ── Base form fields ───────────────────────────────────────────────
   const [title, setTitle] = useState("");
   const [totalAmount, setTotalAmount] = useState<number>(0);
@@ -74,17 +79,34 @@ export default function NewTransactionPage() {
     setPaidBy(currentUser.id);
     setSelectedParticipants([currentUser.id]);
 
-    fetch("/api/users")
+    // Deep-link support: /transactions/new?groupId=xxx (from a group page)
+    const requestedGroupId = new URLSearchParams(window.location.search).get("groupId");
+
+    fetch(`/api/groups?userId=${currentUser.id}`)
       .then((r) => r.json())
       .then((json) => {
         if (json.success) {
-          setParticipantsMeta(json.data);
+          setGroups(json.data);
+          const match = json.data.find((g: any) => g.id === requestedGroupId);
+          setSelectedGroupId(match?.id ?? json.data[0]?.id ?? "");
         } else {
-          setError(json.error || "Failed to load users");
+          setError(json.error || "Failed to load groups");
         }
       })
-      .catch(() => setError("Failed to connect to the server"));
+      .catch(() => setError("Failed to connect to the server"))
+      .finally(() => setGroupsLoaded(true));
   }, []);
+
+  // Participants come from the selected group's members. Changing group
+  // resets the selection since the old participants may not be members.
+  useEffect(() => {
+    if (!user || !selectedGroupId) return;
+    const group = groups.find((g) => g.id === selectedGroupId);
+    if (!group) return;
+    setParticipantsMeta(group.members);
+    setSelectedParticipants([user.id]);
+    setPaidBy(user.id);
+  }, [user, selectedGroupId, groups]);
 
   // Auto-split when participants or total changes (even mode only)
   useEffect(() => {
@@ -236,6 +258,11 @@ export default function NewTransactionPage() {
     setShowAllErrors(true);
     if (!user || !title.trim() || totalAmount <= 0 || selectedParticipants.length === 0) return;
 
+    if (!selectedGroupId) {
+      setError("Pick a group — transactions happen within a group");
+      return;
+    }
+
     // Validate items have non-empty names
     if (scanItems.some(item => !item.nm || item.nm.trim() === '')) {
       setError("All items must have names");
@@ -292,6 +319,7 @@ export default function NewTransactionPage() {
           title,
           totalAmount,
           paidByUserId: paidBy,
+          groupId: selectedGroupId,
           transactionDate: date,
           items: scanItems.length > 0 ? scanItems.map(item => ({
             name: item.nm || "Item", // Convert nm to name field, fallback to "Item"
@@ -305,7 +333,7 @@ export default function NewTransactionPage() {
 
       const json = await response.json();
       if (json.success) {
-        window.location.href = "/transactions";
+        window.location.href = `/groups/${selectedGroupId}`;
       } else {
         setDialogError({
           title: "Save failed",
@@ -327,6 +355,7 @@ export default function NewTransactionPage() {
     date,
     selectedParticipants,
     paidBy,
+    selectedGroupId,
     splitMode,
     splitValues,
     scanItems,
@@ -354,7 +383,34 @@ export default function NewTransactionPage() {
 
       <h1 className="text-xl font-bold text-gray-900 mb-6">New Transaction</h1>
 
+      {groupsLoaded && groups.length === 0 ? (
+        <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl px-4 py-8 text-center">
+          <p className="text-sm text-gray-500 mb-2">
+            Transactions happen within a group — you&apos;re not in any yet.
+          </p>
+          <button
+            onClick={() => (window.location.href = "/groups")}
+            className="text-sm font-medium text-[var(--primary)]"
+          >
+            Create a group first →
+          </button>
+        </div>
+      ) : (
       <div className="space-y-5">
+        {/* ── Group ──────────────────────────────────────────────── */}
+        <div>
+          <label className="text-xs font-medium text-gray-500 mb-1 block">Group</label>
+          <select
+            value={selectedGroupId}
+            onChange={(e) => setSelectedGroupId(e.target.value)}
+            className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+          >
+            {groups.map((g) => (
+              <option key={g.id} value={g.id}>{g.name}</option>
+            ))}
+          </select>
+        </div>
+
         {/* ── Description ────────────────────────────────────────── */}
         <FormField
           label="Description"
@@ -622,6 +678,7 @@ export default function NewTransactionPage() {
           <UserPicker
             selectedUserIds={selectedParticipants}
             onChange={setSelectedParticipants}
+            users={participantsMeta as any}
             label=""
           />
         </FormField>
@@ -676,6 +733,7 @@ export default function NewTransactionPage() {
           {saving ? "Saving..." : "Save transaction"}
         </button>
       </div>
+      )}
 
       {/* ── Loading overlays ──────────────────────────────────────── */}
       {scanStatus === "uploading" && <LoadingOverlay />}

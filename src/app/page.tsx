@@ -4,17 +4,19 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import BalanceCard from "@/components/BalanceCard";
 import UserAvatar from "@/components/UserAvatar";
-import TransactionCard from "@/components/TransactionCard";
 import { getSessionUser } from "@/lib/session";
 import type { BalanceSummary } from "@/lib/actions/balances";
 
 /**
- * Home page — dashboard with balance summary, quick actions,
- * top debtor/creditor highlights, and recent activity.
+ * Home page — "most down bad" ranking for a selected group,
+ * plus the overall (all-groups) balance summary.
  */
 export default function HomePage() {
   const [balance, setBalance] = useState<BalanceSummary | null>(null);
-  const [recentTransactions, setRecentTransactions] = useState<any[]>([]);
+  const [groups, setGroups] = useState<any[]>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState<string>("");
+  const [ranking, setRanking] = useState<any[] | null>(null);
+  const [rankingLoading, setRankingLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [user, setUser] = useState<any>(null);
@@ -27,7 +29,7 @@ export default function HomePage() {
     }
     setUser(currentUser);
 
-    // Fetch balance
+    // Overall balance across all groups
     fetch(`/api/balances?userId=${currentUser.id}`)
       .then((r) => r.json())
       .then((json) => {
@@ -36,16 +38,34 @@ export default function HomePage() {
       })
       .catch(() => setError("Failed to connect to the server"));
 
-    // Fetch recent transactions
-    fetch(`/api/transactions?userId=${currentUser.id}&limit=5`)
+    // Groups for the ranking selector
+    fetch(`/api/groups?userId=${currentUser.id}`)
       .then((r) => r.json())
       .then((json) => {
-        if (json.success) setRecentTransactions(json.data);
-        else setError((prev) => prev || json.error || "Failed to load transactions");
+        if (json.success) {
+          setGroups(json.data);
+          if (json.data.length > 0) setSelectedGroupId(json.data[0].id);
+        } else {
+          setError((prev) => prev || json.error || "Failed to load groups");
+        }
       })
       .catch(() => setError((prev) => prev || "Failed to connect to the server"))
       .finally(() => setLoading(false));
   }, []);
+
+  // Load the "most down bad" ranking whenever the selected group changes
+  useEffect(() => {
+    if (!user || !selectedGroupId) return;
+    setRankingLoading(true);
+    fetch(`/api/groups/${selectedGroupId}?userId=${user.id}`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success) setRanking(json.data.downBadRanking);
+        else setError((prev) => prev || json.error || "Failed to load ranking");
+      })
+      .catch(() => setError((prev) => prev || "Failed to connect to the server"))
+      .finally(() => setRankingLoading(false));
+  }, [user, selectedGroupId]);
 
   if (loading) {
     return (
@@ -65,7 +85,7 @@ export default function HomePage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Hello, {user.name}</h1>
-          <p className="text-xs text-gray-400">Here&apos;s your balance</p>
+          <p className="text-xs text-gray-400">Here&apos;s the damage</p>
         </div>
         <UserAvatar name={user.name} size="md" />
       </div>
@@ -77,7 +97,38 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Balance card */}
+      {/* Most down bad ranking */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-lg font-bold text-gray-900">Most down bad</h2>
+        </div>
+
+        {groups.length === 0 ? (
+          <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl px-4 py-8 text-center">
+            <p className="text-sm text-gray-400 mb-2">You&apos;re not in any group yet</p>
+            <Link href="/groups" className="text-sm font-medium text-[var(--primary)]">
+              Create your first group →
+            </Link>
+          </div>
+        ) : (
+          <>
+            {/* Group selector */}
+            <select
+              value={selectedGroupId}
+              onChange={(e) => setSelectedGroupId(e.target.value)}
+              className="text-xs font-medium text-gray-600 mb-3 px-2 py-1 border border-[var(--border)] rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+            >
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>{g.name}</option>
+              ))}
+            </select>
+
+            <DownBadRanking ranking={ranking} loading={rankingLoading} currentUserId={user.id} />
+          </>
+        )}
+      </div>
+
+      {/* Overall balance card */}
       {balance && (
         <BalanceCard
           netBalance={balance.netBalance}
@@ -95,98 +146,78 @@ export default function HomePage() {
           + New transaction
         </Link>
         <Link
-          href="/settle-up"
+          href="/groups"
           className="flex-1 px-4 py-3 text-sm font-semibold text-[var(--primary)] border border-[var(--primary)] rounded-xl hover:bg-blue-50 text-center transition-colors"
         >
-          Settle up
+          Your groups
         </Link>
-      </div>
-
-      {/* Top debtor / creditor highlights */}
-      {balance && (
-        <div className="mt-6 space-y-3">
-          {balance.topDebtor && (
-            <HighlightCard
-              user={balance.topDebtor.user}
-              amount={balance.topDebtor.amount}
-              label="owes you the most"
-              type="positive"
-            />
-          )}
-          {balance.topCreditor && (
-            <HighlightCard
-              user={balance.topCreditor.user}
-              amount={Math.abs(balance.topCreditor.amount)}
-              label="you owe the most"
-              type="negative"
-            />
-          )}
-        </div>
-      )}
-
-      {/* Recent activity */}
-      <div className="mt-6">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-gray-700">Recent Activity</h2>
-          <Link href="/transactions" className="text-xs text-[var(--primary)] font-medium">
-            See all
-          </Link>
-        </div>
-        <div className="space-y-2">
-          {recentTransactions.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-8">
-              No transactions yet. Start by scanning a receipt!
-            </p>
-          ) : (
-            recentTransactions.map((tx: any) => (
-              <TransactionCard
-                key={tx.id}
-                id={tx.id}
-                title={tx.title}
-                totalAmount={tx.totalAmount}
-                userShare={tx.userShare}
-                paidByUserName={tx.paidByUser?.name ?? "Unknown"}
-                paidByUserId={tx.paidByUserId}
-                currentUserId={user.id}
-                transactionDate={tx.transactionDate}
-              />
-            ))
-          )}
-        </div>
       </div>
     </main>
   );
 }
 
-/** Highlight card for top debtor / creditor */
-function HighlightCard({
-  user,
-  amount,
-  label,
-  type,
+/** Podium-style ranking of who owes the most in the selected group. */
+function DownBadRanking({
+  ranking,
+  loading,
+  currentUserId,
 }: {
-  user: { id: string; name: string };
-  amount: number;
-  label: string;
-  type: "positive" | "negative";
+  ranking: any[] | null;
+  loading: boolean;
+  currentUserId: string;
 }) {
-  const href = `/transactions?with=${user.id}`;
-  return (
-    <Link
-      href={href}
-      className="flex items-center gap-3 px-4 py-3 bg-[var(--card)] border border-[var(--border)] rounded-xl hover:bg-gray-50 transition-colors"
-    >
-      <UserAvatar name={user.name} size="sm" />
-      <div className="flex-1">
-        <p className="text-xs text-gray-400">{label}</p>
-        <p className="text-sm font-medium text-gray-900">{user.name}</p>
+  if (loading || ranking === null) {
+    return (
+      <div className="space-y-2 animate-pulse">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-9 bg-gray-100 rounded-full" />
+        ))}
       </div>
-      <p className={`text-sm font-bold ${
-        type === "positive" ? "text-[var(--success)]" : "text-[var(--danger)]"
-      }`}>
-        {type === "positive" ? "+" : "-"}${amount.toFixed(2)}
-      </p>
-    </Link>
+    );
+  }
+
+  if (ranking.length === 0) {
+    return (
+      <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl px-4 py-6 text-center">
+        <p className="text-sm text-gray-500 font-medium">No one is down bad 🎉</p>
+        <p className="text-xs text-gray-400 mt-1">Everyone in this group is settled</p>
+      </div>
+    );
+  }
+
+  const top = ranking.slice(0, 3);
+  const maxOwed = Math.abs(top[0].net);
+  const barColors = ["bg-lime-400", "bg-sky-400", "bg-rose-400"];
+  const badgeColors = ["bg-lime-500", "bg-sky-500", "bg-rose-500"];
+
+  return (
+    <div className="space-y-2">
+      {top.map((entry, i) => {
+        const owed = Math.abs(entry.net);
+        const widthPct = Math.max(30, Math.round((owed / maxOwed) * 100));
+        const isYou = entry.user.id === currentUserId;
+        return (
+          <div key={entry.user.id} className="flex items-center gap-2">
+            <span
+              className={`w-8 h-8 ${badgeColors[i]} rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0 border-2 border-white shadow`}
+            >
+              {i + 1}
+            </span>
+            <div
+              className={`${barColors[i]} h-9 rounded-r-full rounded-l-md flex items-center justify-between px-3 min-w-0`}
+              style={{ width: `${widthPct}%` }}
+            >
+              <span className="text-sm font-semibold text-white truncate">
+                {isYou ? "You" : entry.user.name}
+              </span>
+            </div>
+            <span className="text-xs font-semibold text-gray-500 shrink-0">
+              owes ${owed.toFixed(2)}
+            </span>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

@@ -1,5 +1,88 @@
 # ProjectOwl — Devlog
 
+## 2026-07-17 — Groups feature: group-scoped transactions, activities feed, new app flow
+
+### Done
+**Database (schema + migrate):**
+- New tables: `groups` (id, name, color, created_by), `group_members` (group ↔ user
+  edges — users can be in many groups), `activities` (type, actor user, related user,
+  amount, group, transaction, created_at).
+- `transactions.group_id` and `settlements.group_id` added. Nullable at the DB level
+  (so the in-memory settlement-test fixtures keep loading), but **required by the API**
+  — every transaction must occur within a group, and payer + all participants must be
+  group members (`NOT_GROUP_MEMBER` 400 otherwise).
+- **One-time wipe migration**: a DB whose `transactions` table lacks `group_id`
+  (pre-groups shape) is dropped entirely and re-seeded — per request, existing data was
+  cleared rather than inventing group memberships for old rows.
+
+**Seed (multiple test groups):**
+- 5 users; 3 groups: *Itrenia Main Club* (all 5, red), *Roommates* (You/Alex/Ben, blue),
+  *Japan Trip* (You/Chloe/Diana, yellow), each with 2 seeded transactions and matching
+  activity rows.
+
+**Backend actions:**
+- `groups.ts` — create group (creator auto-member, random color), add members,
+  `getGroupsForUser` (members + your net + settled flag), `getGroupDetail` (member
+  nets, pairwise nets vs. you), `getGroupNetBalances` (transactions + PAID settlements),
+  `getGroupDownBadRanking` (biggest debtor first), `getGroupTransferPlan`
+  (minimizeTransfers scoped to the group, settlements included so paying updates the plan).
+- `activities.ts` — `logActivity` + `getActivitiesForUser` (feed across all the user's
+  groups with user/group/transaction names resolved). Logged on: transaction created,
+  settlement paid, group created, member added.
+- `balances.ts` — **rewritten to derive from transactions + settlements directly**
+  (previously iterated friendships), with optional `groupId` scoping. Signature stays
+  `getBalance(userId, _db?, groupId?)` so the settlement test suite is untouched (8/8 pass).
+- `transactions.ts` — `groupId` on create + activity logging; `getTransactions({groupId})`
+  returns the whole group ledger (members see all group transactions, not just their own).
+- `settlements.ts` — `createAndMarkPaid(..., groupId?)` stamps the group and logs the
+  settlement activity. Minimal-transfer calculation now happens **within group members**
+  via `getGroupTransferPlan`, not across all people.
+
+**API routes:**
+- New: `GET/POST /api/groups`, `GET /api/groups/[id]` (detail + transferPlan +
+  downBadRanking), `POST /api/groups/[id]/members`, `GET /api/activities`.
+- Updated: `POST /api/transactions` requires `groupId` + membership check;
+  `GET /api/transactions?groupId=`; `GET /api/balances?groupId=`;
+  `GET /api/settlements/optimize?groupId=`; mark-paid accepts `groupId`;
+  debug reset/delete-all clears the new tables (and the previously-missed
+  `item_assignments`).
+
+**Frontend (new flow per mock: Home / Groups / Activity bottom nav):**
+- `BottomNav` tabs → Home `/`, Groups `/groups`, Activity `/activity`.
+- **Home** — "Most down bad" ranking with a group selector (top-3 podium bars, ranked
+  within the selected group, not across all friends) + overall balance card.
+- **Groups** (`/groups`) — overall balance card, group rows (colored circle + name +
+  your net), settled groups hidden behind a "Show settled groups" toggle, inline
+  create-group form (name + participant picker; creator always included).
+- **Group detail** (`/groups/[id]`) — members/balances/settle-up chips, pairwise
+  "X owes you / You owe X" lines, group transaction ledger, floating ＋ that deep-links
+  to `/transactions/new?groupId=`. Full-screen sheets: *Group Balances* (each member
+  "gets back"/"owes") and *Members* (list + add participants).
+- **Group settle-up** (`/groups/[id]/settle-up`) — the group's minimal transfer plan
+  with Pay / Mark-paid on rows involving you (records settlement with groupId).
+- **Activity** (`/activity`) — feed across all your groups (🧾 transaction, 💸 payment,
+  ✨ group created, ➕ member added), each linking to the transaction/group.
+- **New transaction** — group dropdown (preselected from `?groupId=`), participants and
+  payer limited to that group's members (`UserPicker` got a `users` prop), redirects to
+  the group page after save.
+- `/friends` and `/settle-up` still exist but left the nav (superseded by group flows).
+
+### Architecture decisions
+1. **`group_id` nullable in SQLite, required at the API** — keeps the pure/in-memory
+   test fixtures valid while enforcing "transactions occur within groups" where it
+   matters. Membership is validated server-side on create.
+2. **Balances stay computed, never stored** — group scoping is just a filter on the
+   same raw-data computation; overall = all groups combined.
+3. **Settlements are folded into group nets** (`+amount` payer, `-amount` recipient),
+   so the transfer plan and "down bad" ranking react to mark-paid immediately.
+4. **Group "settled"** = has ≥1 transaction **and** your net ≈ 0 — a brand-new empty
+   group still shows in the active list instead of being hidden by the toggle.
+
+### Verification
+- `tsc --noEmit` clean; `test:simplify` 10/10, `test:allocation` 10/10,
+  `test:settlement` 8/8 (settlement suite runs against the rewritten `getBalance`).
+- DB deleted and re-seeded via the new migration path.
+
 ## 2026-07-06 — Initial prototype: receipt scanning
 
 ### Done
