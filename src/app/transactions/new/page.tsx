@@ -227,7 +227,7 @@ export default function NewTransactionPage() {
   };
 
   const addItem = () => {
-    setScanItems((prev) => [...prev, { nm: "", price: 0, cnt: 1 }]);
+    setScanItems((prev) => [...prev, { nm: "Item", price: 0, cnt: 1 }]);
   };
 
   // ── Save ───────────────────────────────────────────────────────────
@@ -235,6 +235,13 @@ export default function NewTransactionPage() {
   const handleSave = useCallback(async () => {
     setShowAllErrors(true);
     if (!user || !title.trim() || totalAmount <= 0 || selectedParticipants.length === 0) return;
+
+    // Validate items have non-empty names
+    if (scanItems.some(item => !item.nm || item.nm.trim() === '')) {
+      setError("All items must have names");
+      return;
+    }
+
     setSaving(true);
     setError(null);
 
@@ -286,7 +293,11 @@ export default function NewTransactionPage() {
           totalAmount,
           paidByUserId: paidBy,
           transactionDate: date,
-          items: scanItems.length > 0 ? scanItems : undefined,
+          items: scanItems.length > 0 ? scanItems.map(item => ({
+            name: item.nm || "Item", // Convert nm to name field, fallback to "Item"
+            quantity: item.cnt || 1, // Convert cnt to quantity field, fallback to 1
+            price: item.price
+          })) : undefined,
           participants: transactionParticipants,
           itemAssignments: savedAssignments,
         }),

@@ -40,6 +40,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate: ensure all items have non-empty names
+    if (body.items && body.items.some(item => !item.name || item.name.trim() === '')) {
+      return NextResponse.json<ApiErrorResponse>(
+        apiError("All items must have non-empty names", CODES.MISSING_FIELDS),
+        { status: 400 }
+      );
+    }
+
     const transaction = createTransaction(body);
     return NextResponse.json({ success: true, data: transaction }, { status: 201 });
   } catch (err) {
