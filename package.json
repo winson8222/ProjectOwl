@@ -10,7 +10,8 @@
     "lint": "next lint",
     "test:simplify": "tsx scripts/run-simplify-tests.ts",
     "test:allocation": "tsx scripts/run-allocation-tests.ts",
-    "test:settlement": "tsx scripts/run-settlement-tests.ts"
+    "test:settlement": "tsx scripts/run-settlement-tests.ts",
+    "test:security": "tsx scripts/run-security-tests.ts"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",

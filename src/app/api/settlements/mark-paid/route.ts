@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAndMarkPaid } from "@/lib/actions/settlements";
 import { CODES, ERROR_MESSAGES, apiError, mapErrorMessage, type ApiErrorResponse } from "@/lib/constants";
+import { settlementAmountValid } from "@/lib/security";
 
 /**
  * POST /api/settlements/mark-paid
@@ -21,9 +22,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!body.amount || body.amount <= 0) {
+    // Reject non-positive, NaN, and Infinity amounts (Infinity > 0 is true,
+    // so the old `amount <= 0` check let it slip into the ledger).
+    if (!settlementAmountValid(body.amount)) {
       return NextResponse.json<ApiErrorResponse>(
-        apiError("Settlement amount must be greater than 0.", CODES.MISSING_SETTLEMENT_ID),
+        apiError("Settlement amount must be greater than 0.", CODES.INVALID_AMOUNT),
         { status: 400 }
       );
     }

@@ -2,12 +2,21 @@ import { NextResponse } from "next/server";
 import { getDb, schema } from "@/lib/db";
 import { count, sql, eq } from "drizzle-orm";
 import { mapErrorMessage } from "@/lib/constants";
+import { debugEndpointsEnabled } from "@/lib/debug-guard";
+
+/** Shared 404 for when debug endpoints are disabled (production). */
+function debugDisabled() {
+  // 404, not 403 — don't reveal that these endpoints exist in production.
+  return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+}
 
 /**
  * GET /api/debug
- * Returns DB statistics for debugging (no auth — dev-only).
+ * Returns DB statistics for debugging. Dev-only — dumps every user and
+ * transaction, so it is disabled outside development.
  */
 export async function GET() {
+  if (!debugEndpointsEnabled()) return debugDisabled();
   try {
     const db = getDb();
 
@@ -68,6 +77,7 @@ export async function GET() {
  * POST /api/debug?action=reset|delete-all-transactions
  */
 export async function POST(request: Request) {
+  if (!debugEndpointsEnabled()) return debugDisabled();
   try {
     const { searchParams } = new URL(request.url);
     const action = searchParams.get("action");
