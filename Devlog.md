@@ -61,6 +61,59 @@ and the tests exercise the *same* code path — the same pattern as
 ### Verification
 - `tsc --noEmit` clean; `test:security` 26/26, `test:simplify` 10/10,
   `test:allocation` 10/10, `test:settlement` 8/8.
+## 2026-07-19 — Payments: transactions of type "payment" (branch: payment)
+
+### Done
+**Payments as transactions:**
+- `transactions.type` column added (`"expense"` default | `"payment"`), with an
+  additive `ALTER TABLE` migration for existing DBs. A payment is stored as a
+  transaction where the payer pays and the **sole participant is the recipient**
+  for the full amount — so every balance path (group nets, transfer plan,
+  pairwise, "down bad") folds payments in automatically with zero changes to
+  the balance math.
+- `POST /api/transactions` accepts `type`; payments are validated to have
+  exactly one recipient who isn't the payer (`INVALID_PAYMENT` 400).
+  Group-membership and split checks apply unchanged.
+- Activity type `"payment"` logged on create (actor = payer, related user =
+  recipient); Activity tab renders it as 💸 "You paid Alex $20" linking to the
+  payment's transaction page.
+
+**New payment page (`/payments/new`):**
+- Deliberately distinct from the expense form: green money-transfer styling
+  (emerald gradient hero, "You → recipient" avatar visual, big centered amount,
+  green submit). Group + recipient (group members only) + amount + date.
+- Deep-link prefills via `?groupId=&toUserId=&amount=`.
+- Shows an owe/owed reference banner for the chosen recipient **based on the
+  group's simplified settle-up plan** (`transferPlan` from `GET /api/groups/[id]`),
+  with a one-tap "Pay $X" prefill. Plan-based (not pairwise) so it always
+  matches the settle-up page's numbers.
+
+**Entry points:**
+- Group page ＋ FAB is now a two-option menu: 🧾 New transaction / 💸 Record a
+  payment (backdrop + rotate animation).
+- Transaction detail: "💸 Pay {payer} back $X" shortcut when you owe a share
+  (prefills the payment page; the original transaction is untouched).
+- Group settle-up: rows where you pay now deep-link to the prefilled payment
+  page; "Mark paid" on rows where you receive still records a settlement.
+- `/transactions/new` links to the payment page ("Paying someone back?").
+- `TransactionCard` renders payments distinctly ("You paid Alex · Payment").
+
+### Architecture decisions
+1. **Payment = transaction, not settlement.** Balances are computed live from
+   transactions + participants, so modeling a payment as payer→sole-participant
+   makes it flow through every existing computation (including the settlement
+   tests' `getBalance`) untouched. The settlements table still backs the
+   receive-side "Mark paid" flow; both fold into group nets.
+2. **Payment-page reference uses the transfer plan, not pairwise nets.** The
+   two can differ (e.g. you owe Ben $11.75 directly but the plan routes a 5¢
+   third-party debt straight to Ben, so *you* pay $11.70). Showing the plan
+   number keeps the payment page consistent with settle-up and its prefill.
+
+### Verification
+- `tsc --noEmit` clean; `test:simplify` 10/10, `test:allocation` 10/10,
+  `test:settlement` 8/8.
+- Payment flow exercised against a live group ("Test group"): payment + plan
+  amounts verified against a raw-SQL recomputation of pairwise vs. plan.
 
 ## 2026-07-17 — Groups feature: group-scoped transactions, activities feed, new app flow
 

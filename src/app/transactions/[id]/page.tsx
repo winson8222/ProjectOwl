@@ -93,6 +93,9 @@ export default function TransactionDetailPage() {
   }
 
   const isPayer = user?.id === tx.paidByUserId;
+  const isPayment = tx.type === "payment";
+  // "Pay back" shortcut: you owe a share of this expense to whoever paid it.
+  const youOwe = !isPayer && !isPayment && tx.userShare > 0;
 
   return (
     <main className="min-h-dvh px-4 pt-6 pb-8 max-w-lg mx-auto">
@@ -106,7 +109,10 @@ export default function TransactionDetailPage() {
 
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-xl font-bold text-gray-900">{tx.title}</h1>
+        <h1 className="text-xl font-bold text-gray-900">
+          {isPayment && <span className="mr-1.5">💸</span>}
+          {tx.title}
+        </h1>
         <div className="flex items-center gap-2 mt-1">
           <span className="text-xs text-gray-400">
             {new Date(tx.transactionDate).toLocaleDateString("en-US", {
@@ -115,7 +121,13 @@ export default function TransactionDetailPage() {
           </span>
           <span className="text-xs text-gray-300">·</span>
           <span className="text-xs text-gray-400">
-            {isPayer ? "You paid" : `${tx.paidByUser?.name ?? "Someone"} paid`}
+            {isPayment
+              ? `${isPayer ? "You" : tx.paidByUser?.name ?? "Someone"} paid ${
+                  tx.participants?.[0]?.user.id === user?.id
+                    ? "you"
+                    : tx.participants?.[0]?.user.name ?? "someone"
+                } $${tx.totalAmount.toFixed(2)}`
+              : isPayer ? "You paid" : `${tx.paidByUser?.name ?? "Someone"} paid`}
           </span>
         </div>
       </div>
@@ -204,6 +216,14 @@ export default function TransactionDetailPage() {
 
       {/* Actions */}
       <div className="space-y-2">
+        {youOwe && tx.groupId && (
+          <a
+            href={`/payments/new?groupId=${tx.groupId}&toUserId=${tx.paidByUserId}&amount=${tx.userShare}`}
+            className="block w-full px-4 py-2.5 text-center text-sm font-semibold text-white bg-[var(--primary)] rounded-xl hover:bg-[var(--primary-hover)] transition-colors"
+          >
+            💸 Pay {tx.paidByUser?.name ?? "them"} back ${tx.userShare.toFixed(2)}
+          </a>
+        )}
         <button
           onClick={() => setShowDeleteDialog(true)}
           className="w-full px-4 py-2.5 text-sm font-medium text-[var(--danger)] border border-[var(--danger)] rounded-xl hover:bg-red-50 transition-colors"

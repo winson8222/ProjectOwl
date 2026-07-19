@@ -31,6 +31,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // A payment is a direct user→user transfer: exactly one recipient, not the payer.
+    if (body.type === "payment") {
+      if (body.participants.length !== 1) {
+        return NextResponse.json<ApiErrorResponse>(
+          apiError(ERROR_MESSAGES.PAYMENT_ONE_RECIPIENT, CODES.INVALID_PAYMENT),
+          { status: 400 }
+        );
+      }
+      if (body.participants[0].userId === body.paidByUserId) {
+        return NextResponse.json<ApiErrorResponse>(
+          apiError(ERROR_MESSAGES.PAYMENT_SELF, CODES.INVALID_PAYMENT),
+          { status: 400 }
+        );
+      }
+    }
+
     // Transactions must occur within a group…
     if (!body.groupId) {
       return NextResponse.json<ApiErrorResponse>(

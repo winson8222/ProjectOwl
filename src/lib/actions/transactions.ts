@@ -18,6 +18,9 @@ export interface TransactionWithDetails extends Transaction {
 
 export interface CreateTransactionInput {
   title: string;
+  /** "expense" (default) = shared cost split between participants.
+   *  "payment" = direct user→user payment; the sole participant is the recipient. */
+  type?: "expense" | "payment";
   totalAmount: number;
   paidByUserId: string;
   /** The group this transaction happens in — every transaction lives in a group. */
@@ -49,6 +52,7 @@ export function createTransaction(input: CreateTransactionInput): Transaction {
     db.insert(schema.transactions).values({
       id: txId,
       title: input.title,
+      type: input.type ?? "expense",
       totalAmount: input.totalAmount,
       paidByUserId: input.paidByUserId,
       groupId: input.groupId,
@@ -106,8 +110,10 @@ export function createTransaction(input: CreateTransactionInput): Transaction {
   });
 
   logActivity({
-    type: "transaction",
+    type: input.type === "payment" ? "payment" : "transaction",
     userId: input.paidByUserId,
+    // A payment's recipient is its sole participant.
+    relatedUserId: input.type === "payment" ? input.participants[0]?.userId : undefined,
     amount: input.totalAmount,
     groupId: input.groupId,
     transactionId: txId,

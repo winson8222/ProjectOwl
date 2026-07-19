@@ -37,6 +37,7 @@ export const CODES = {
   // Transactions
   NO_PARTICIPANTS: "NO_PARTICIPANTS",
   SPLIT_MISMATCH: "SPLIT_MISMATCH",
+  INVALID_PAYMENT: "INVALID_PAYMENT",
 
   // Groups
   MISSING_GROUP: "MISSING_GROUP",
@@ -83,6 +84,8 @@ export const ERROR_MESSAGES = {
   TX_ID_REQUIRED: "Transaction id is required",
   TX_SPLIT_MISMATCH: (assigned: string, price: string) =>
     `Split amounts ($${assigned}) don't equal total ($${price})`,
+  PAYMENT_ONE_RECIPIENT: "A payment must have exactly one recipient",
+  PAYMENT_SELF: "You can't make a payment to yourself",
 
   // Groups
   GROUP_REQUIRED: "A group is required — transactions happen within a group",

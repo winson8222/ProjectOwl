@@ -381,7 +381,13 @@ export default function NewTransactionPage() {
         ← Back
       </button>
 
-      <h1 className="text-xl font-bold text-gray-900 mb-6">New Transaction</h1>
+      <h1 className="text-xl font-bold text-gray-900 mb-1">New Transaction</h1>
+      <a
+        href={`/payments/new${selectedGroupId ? `?groupId=${selectedGroupId}` : ""}`}
+        className="text-sm font-medium text-[var(--primary)] mb-6 block"
+      >
+        💸 Paying someone back? Record a payment →
+      </a>
 
       {groupsLoaded && groups.length === 0 ? (
         <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl px-4 py-8 text-center">

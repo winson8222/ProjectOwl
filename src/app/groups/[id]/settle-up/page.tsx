@@ -152,15 +152,21 @@ export default function GroupSettleUpPage() {
                     ${t.amount.toFixed(2)}
                   </p>
                 </div>
-                {(youPay || youReceive) && (
+                {youPay && (
+                  <Link
+                    href={`/payments/new?groupId=${groupId}&toUserId=${t.toUser.id}&amount=${t.amount}`}
+                    className="px-3 py-1.5 text-xs font-medium text-white rounded-lg hover:opacity-90 transition-opacity bg-[var(--danger)]"
+                  >
+                    💸 Pay
+                  </Link>
+                )}
+                {youReceive && (
                   <button
                     onClick={() => handleMarkPaid(t.fromUser.id, t.toUser.id, t.amount)}
                     disabled={settling === key}
-                    className={`px-3 py-1.5 text-xs font-medium text-white rounded-lg hover:opacity-90 disabled:opacity-50 transition-opacity ${
-                      youPay ? "bg-[var(--danger)]" : "bg-[var(--success)]"
-                    }`}
+                    className="px-3 py-1.5 text-xs font-medium text-white rounded-lg hover:opacity-90 disabled:opacity-50 transition-opacity bg-[var(--success)]"
                   >
-                    {settling === key ? "..." : youPay ? "Pay" : "Mark paid"}
+                    {settling === key ? "..." : "Mark paid"}
                   </button>
                 )}
               </div>

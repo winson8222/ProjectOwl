@@ -25,6 +25,7 @@ export default function GroupDetailPage() {
 
   const [showMembers, setShowMembers] = useState(false);
   const [showBalances, setShowBalances] = useState(false);
+  const [fabOpen, setFabOpen] = useState(false);
 
   const loadData = useCallback((currentUser: any) => {
     fetch(`/api/groups/${groupId}?userId=${currentUser.id}`)
@@ -176,19 +177,50 @@ export default function GroupDetailPage() {
               paidByUserId={tx.paidByUserId}
               currentUserId={user.id}
               transactionDate={tx.transactionDate}
+              type={tx.type}
+              recipientName={tx.participants?.[0]?.user?.name}
+              recipientUserId={tx.participants?.[0]?.user?.id}
             />
           ))
         )}
       </div>
 
-      {/* Floating add-transaction button */}
-      <Link
-        href={`/transactions/new?groupId=${groupId}`}
-        className="fixed bottom-24 right-5 w-14 h-14 bg-[var(--primary)] text-white rounded-full flex items-center justify-center text-3xl font-light shadow-lg hover:bg-[var(--primary-hover)] transition-colors z-30"
-        aria-label="New transaction in this group"
-      >
-        +
-      </Link>
+      {/* Floating add button — opens a choice: new expense or record a payment */}
+      {fabOpen && (
+        <div
+          className="fixed inset-0 bg-black/20 z-30"
+          onClick={() => setFabOpen(false)}
+          aria-hidden
+        />
+      )}
+      <div className="fixed bottom-24 right-5 z-30 flex flex-col items-end gap-3">
+        {fabOpen && (
+          <>
+            <Link
+              href={`/payments/new?groupId=${groupId}`}
+              className="flex items-center gap-2 px-4 py-3 bg-emerald-600 text-white rounded-full shadow-lg text-sm font-semibold hover:bg-emerald-700 transition-colors"
+            >
+              💸 Record a payment
+            </Link>
+            <Link
+              href={`/transactions/new?groupId=${groupId}`}
+              className="flex items-center gap-2 px-4 py-3 bg-[var(--primary)] text-white rounded-full shadow-lg text-sm font-semibold hover:bg-[var(--primary-hover)] transition-colors"
+            >
+              🧾 New transaction
+            </Link>
+          </>
+        )}
+        <button
+          onClick={() => setFabOpen((o) => !o)}
+          className={`w-14 h-14 bg-[var(--primary)] text-white rounded-full flex items-center justify-center text-3xl font-light shadow-lg hover:bg-[var(--primary-hover)] transition-transform ${
+            fabOpen ? "rotate-45" : ""
+          }`}
+          aria-label={fabOpen ? "Close add menu" : "Add transaction or payment"}
+          aria-expanded={fabOpen}
+        >
+          +
+        </button>
+      </div>
 
       {/* Members sheet */}
       {showMembers && (
