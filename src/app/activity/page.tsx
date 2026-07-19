@@ -96,6 +96,7 @@ function ActivityRow({ activity, currentUserId }: { activity: any; currentUserId
         </>
       );
       break;
+    case "payment":
     case "settlement":
       icon = "💸";
       body = (
@@ -127,9 +128,10 @@ function ActivityRow({ activity, currentUserId }: { activity: any; currentUserId
       body = <span className="font-medium">{actor}</span>;
   }
 
-  // Transaction rows deep-link to the transaction, everything else to the group.
+  // Transaction and payment rows deep-link to the transaction, everything
+  // else to the group.
   const href =
-    a.type === "transaction" && a.transactionId
+    (a.type === "transaction" || a.type === "payment") && a.transactionId
       ? `/transactions/${a.transactionId}`
       : `/groups/${a.groupId}`;
 

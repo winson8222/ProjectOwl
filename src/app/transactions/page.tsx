@@ -163,6 +163,9 @@ export default function TransactionsPage() {
               paidByUserId={tx.paidByUserId}
               currentUserId={user.id}
               transactionDate={tx.transactionDate}
+              type={tx.type}
+              recipientName={tx.participants?.[0]?.user?.name}
+              recipientUserId={tx.participants?.[0]?.user?.id}
             />
           ))
         )}
