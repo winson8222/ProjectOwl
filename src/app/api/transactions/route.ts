@@ -3,6 +3,8 @@ import { createTransaction, getTransactions, getTransaction, deleteTransaction }
 import type { CreateTransactionInput } from "@/lib/actions/transactions";
 import { areGroupMembers } from "@/lib/actions/groups";
 import { CODES, ERROR_MESSAGES, apiError, mapErrorMessage, type ApiErrorResponse } from "@/lib/constants";
+import { debugEndpointsEnabled } from "@/lib/debug-guard";
+import { transactionAmountsValid, clampLimit } from "@/lib/security";
 
 /**
  * POST /api/transactions
@@ -58,6 +60,16 @@ export async function POST(request: NextRequest) {
     if (!areGroupMembers(body.groupId, involved)) {
       return NextResponse.json<ApiErrorResponse>(
         apiError(ERROR_MESSAGES.NOT_GROUP_MEMBER, CODES.NOT_GROUP_MEMBER),
+        { status: 400 }
+      );
+    }
+
+    // Validate: all money fields are real, finite, non-negative numbers.
+    // Without this a negative total + negative shares still passes the
+    // split-sum check below and silently corrupts everyone's balances.
+    if (!transactionAmountsValid(body)) {
+      return NextResponse.json<ApiErrorResponse>(
+        apiError(ERROR_MESSAGES.INVALID_AMOUNT, CODES.INVALID_AMOUNT),
         { status: 400 }
       );
     }
@@ -125,7 +137,9 @@ export async function GET(request: NextRequest) {
     const payer = searchParams.get("payer") || undefined;
     const payees = searchParams.get("payees")?.split(",").filter(Boolean) || undefined;
     const groupId = searchParams.get("groupId") || undefined;
-    const limit = parseInt(searchParams.get("limit") || "50", 10);
+
+    // Clamp limit to a sane range so a huge/NaN value can't exhaust the server.
+    const limit = clampLimit(searchParams.get("limit"));
 
     const transactions = getTransactions({ userId, groupId, payer, payees, limit });
     return NextResponse.json({ success: true, data: transactions });
@@ -146,8 +160,14 @@ export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
 
-    // Delete ALL transactions
+    // Delete ALL transactions — destructive reset tool, dev-only.
     if (searchParams.get("all") === "true") {
+      if (!debugEndpointsEnabled()) {
+        return NextResponse.json<ApiErrorResponse>(
+          apiError(ERROR_MESSAGES.FORBIDDEN, CODES.FORBIDDEN),
+          { status: 403 }
+        );
+      }
       const { getDb, schema } = await import("@/lib/db");
       const db = getDb();
       db.delete(schema.transactions).run();

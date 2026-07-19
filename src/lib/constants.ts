@@ -20,6 +20,8 @@ export const CODES = {
   NOT_FOUND: "NOT_FOUND",
   MISSING_FIELDS: "MISSING_FIELDS",
   MISSING_ID: "MISSING_ID",
+  FORBIDDEN: "FORBIDDEN",
+  INVALID_AMOUNT: "INVALID_AMOUNT",
 
   // Users
   MISSING_USER_ID: "MISSING_USER_ID",
@@ -57,6 +59,8 @@ export const ERROR_MESSAGES = {
   UNKNOWN: "An unexpected error occurred",
   FAILED_TO_SAVE: "Failed to save. Please try again.",
   FAILED_TO_CONNECT: "Failed to connect to the server. Is it running?",
+  FORBIDDEN: "You don't have access to this resource",
+  INVALID_AMOUNT: "Amounts must be valid non-negative numbers",
 
   // Users
   USER_NOT_FOUND: "User not found",
@@ -227,4 +231,16 @@ export interface ApiErrorResponse {
 /** Build a standardized error response object. */
 export function apiError(message: string, code: string): ApiErrorResponse {
   return { success: false, error: message, code };
+}
+
+/**
+ * True when `n` is a real, finite, non-negative number.
+ *
+ * Guards money fields (totals, shares, prices, settlement amounts) coming off
+ * untrusted JSON: rejects negatives, `NaN`, and `Infinity` — any of which would
+ * otherwise be written straight into the ledger and corrupt computed balances
+ * (e.g. a negative-share transaction that still passes the split-sum check).
+ */
+export function isNonNegativeMoney(n: unknown): n is number {
+  return typeof n === "number" && Number.isFinite(n) && n >= 0;
 }

@@ -1,5 +1,66 @@
 # ProjectOwl — Devlog
 
+## 2026-07-18 — Security hardening: auth-independent fixes (debug lockdown + input validation)
+
+Done on branch `worktree-security-hardening`. Scope deliberately limited to fixes
+that **don't depend on knowing who the caller is** — i.e. that hold up even under
+the current spoofable `userId` identity model. Per-group authorization checks were
+intentionally left out and deferred to the auth work (see below).
+
+### Fixed
+1. **Unauthenticated destructive / data-dump endpoints (critical).**
+   `GET /api/debug` dumped every user + transaction; `POST /api/debug?action=reset`
+   wiped and re-seeded the whole DB; `POST /api/debug?action=delete-all-transactions`
+   and `DELETE /api/transactions?all=true` deleted all transactions — all with **no
+   gating**, so any anonymous request could nuke or exfiltrate the entire database.
+   Added [`src/lib/debug-guard.ts`](src/lib/debug-guard.ts) (`debugEndpointsEnabled()`,
+   reads the **server-only** `NODE_ENV` / `ALLOW_DEBUG_ENDPOINTS`, never a
+   `NEXT_PUBLIC_*` var so it can't be spoofed from the client bundle). The debug
+   routes now 404 outside development; the `all=true` mass-delete returns 403.
+   *(This is genuinely auth-independent: it gates on deploy environment, not caller
+   identity.)*
+2. **Money-field validation → balance corruption.** `totalAmount`, participant
+   `shareAmount`, item `price`/`quantity`, and settlement `amount` were taken off JSON
+   untyped. A negative total with negative shares passed the split-sum check and
+   silently corrupted balances; settlement `amount: Infinity` passed `amount > 0`. Added
+   `isNonNegativeMoney()` in [`src/lib/constants.ts`](src/lib/constants.ts) (finite,
+   non-negative) and applied it in the transaction + settlement routes. Also clamped the
+   transactions `limit` query param to 1–200 (was an unbounded/NaN `parseInt`).
+
+### Deferred to the auth work (intentionally NOT implemented here)
+Per-group authorization — restricting group detail (`GET /api/groups/[id]`), the group
+ledger (`GET /api/transactions?groupId=`), and add-members (`POST /api/groups/[id]/members`)
+to actual members — was **left out**. Those checks can only be real once identity is
+server-verified; bolted onto the current self-asserted `userId`/`actorId` they're
+trivially spoofable and give a false sense of protection. They belong in Phase 4 of
+[`docs/auth-implementation-plan.md`](docs/auth-implementation-plan.md), enforced against
+the authenticated user rather than a request param.
+
+### Test suite (`npm run test:security`)
+Added a dedicated suite so the security fixes have regression coverage that
+**doesn't depend on the UI or HTTP layer**. The route validation logic was first
+extracted into pure functions in [`src/lib/security.ts`](src/lib/security.ts)
+(`transactionAmountsValid`, `settlementAmountValid`, `clampLimit`) so the routes
+and the tests exercise the *same* code path — the same pattern as
+`allocation.ts`. `debugEndpointsEnabled` in
+[`src/lib/debug-guard.ts`](src/lib/debug-guard.ts) is already pure.
+
+- Fixtures: [`src/lib/test-data/security-fixtures.ts`](src/lib/test-data/security-fixtures.ts)
+  — 26 cases across four groups:
+  - **transaction-amounts** — rejects negative total/share, NaN, Infinity, non-number,
+    negative item price; accepts normal/zero/no-items.
+  - **settlement-amount** — rejects zero, negative, NaN, Infinity, non-number.
+  - **limit-clamp** — clamps to 1–200, falls back to 50 on missing/garbage input.
+  - **debug-gate** — enabled in dev/test/undefined env, **blocked in production**,
+    re-enabled only by explicit `ALLOW_DEBUG_ENDPOINTS`.
+- Runner: [`src/lib/test-data/run-security-tests.ts`](src/lib/test-data/run-security-tests.ts);
+  CLI: `scripts/run-security-tests.ts`; script: `npm run test:security`.
+- Pure + in-memory (no server, no DB) — consistent with the other three suites, so
+  UI/route refactors won't require touching these tests.
+
+### Verification
+- `tsc --noEmit` clean; `test:security` 26/26, `test:simplify` 10/10,
+  `test:allocation` 10/10, `test:settlement` 8/8.
 ## 2026-07-19 — Payments: transactions of type "payment" (branch: payment)
 
 ### Done
