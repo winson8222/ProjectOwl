@@ -72,6 +72,7 @@ export function migrate(db: BetterSQLite3Database<typeof schema>) {
     CREATE TABLE IF NOT EXISTS transactions (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'expense',
       total_amount REAL NOT NULL,
       paid_by_user_id TEXT NOT NULL REFERENCES users(id),
       group_id TEXT REFERENCES groups(id),
@@ -157,6 +158,10 @@ export function migrate(db: BetterSQLite3Database<typeof schema>) {
   const hasIsDeleted = transactionColumns.some((c) => c.name === "is_deleted");
   if (!hasIsDeleted) {
     db.run("ALTER TABLE transactions ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0;");
+  }
+  const hasType = transactionColumns.some((c) => c.name === "type");
+  if (!hasType) {
+    db.run("ALTER TABLE transactions ADD COLUMN type TEXT NOT NULL DEFAULT 'expense';");
   }
 
   db.run("CREATE INDEX IF NOT EXISTS idx_transactions_is_deleted ON transactions(is_deleted);");

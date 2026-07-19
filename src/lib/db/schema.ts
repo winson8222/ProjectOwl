@@ -54,6 +54,10 @@ export const activities = sqliteTable("activities", {
 export const transactions = sqliteTable("transactions", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),
+  // "expense" = a shared cost split between participants.
+  // "payment" = a direct user→user payment: paid_by pays the sole
+  // participant, which reduces what the payer owes them.
+  type: text("type").notNull().default("expense"),
   totalAmount: real("total_amount").notNull(),
   paidByUserId: text("paid_by_user_id").notNull().references(() => users.id),
   groupId: text("group_id").references(() => groups.id), // nullable in DB, required by the API
