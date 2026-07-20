@@ -10,11 +10,48 @@ $LocalPgPassword = "postgres"
 
 Write-Host "🦉 ProjectOwl — Setting up development environment" -ForegroundColor Cyan
 
+function Refresh-EnvPath {
+    # Re-reads PATH from the registry so a just-installed binary (by this
+    # script, or by an elevated child process) is visible without needing
+    # a new terminal.
+    $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+    $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+    $env:Path = "$machinePath;$userPath"
+}
+
+# ── winget (needed to auto-install Node.js / PostgreSQL below) ───────
+if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+    Write-Host "❌ winget isn't available, so Node.js/PostgreSQL can't be installed automatically." -ForegroundColor Red
+    Write-Host "   Install 'App Installer' from the Microsoft Store (provides winget), or install" -ForegroundColor Red
+    Write-Host "   Node.js (https://nodejs.org, v18+) and PostgreSQL 16 manually, then re-run this script." -ForegroundColor Red
+    exit 1
+}
+
 # ── Check for Node.js ────────────────────────────────────────────────
 $nodeVersion = node --version 2>$null
 if (-not $nodeVersion) {
-    Write-Host "❌ Node.js is required. Install it from https://nodejs.org (v18+)" -ForegroundColor Red
-    exit 1
+    Write-Host ""
+    Write-Host "📦 Node.js not found — installing the LTS release silently..." -ForegroundColor Yellow
+    Write-Host "   (one UAC prompt — installing Node machine-wide needs admin rights)" -ForegroundColor Yellow
+
+    $proc = Start-Process winget -ArgumentList @(
+        "install", "--id", "OpenJS.NodeJS.LTS", "--silent",
+        "--accept-package-agreements", "--accept-source-agreements"
+    ) -Verb RunAs -Wait -PassThru
+    if ($proc.ExitCode -ne 0) {
+        Write-Host ""
+        Write-Host "❌ Automated install failed (exit $($proc.ExitCode)). Install manually:" -ForegroundColor Red
+        Write-Host "     winget install OpenJS.NodeJS.LTS" -ForegroundColor Cyan
+        Write-Host "   Or from https://nodejs.org (v18+), then re-run this script." -ForegroundColor Red
+        exit 1
+    }
+
+    Refresh-EnvPath
+    $nodeVersion = node --version 2>$null
+    if (-not $nodeVersion) {
+        Write-Host "❌ Installed, but node still isn't on PATH. Open a new terminal and re-run this script." -ForegroundColor Red
+        exit 1
+    }
 }
 
 $majorVersion = [int]($nodeVersion.TrimStart('v').Split('.')[0])
@@ -27,7 +64,11 @@ Write-Host "✓ Node.js $nodeVersion" -ForegroundColor Green
 # ── Check for npm ────────────────────────────────────────────────────
 $npmVersion = npm --version 2>$null
 if (-not $npmVersion) {
-    Write-Host "❌ npm is required (comes with Node.js)" -ForegroundColor Red
+    Refresh-EnvPath
+    $npmVersion = npm --version 2>$null
+}
+if (-not $npmVersion) {
+    Write-Host "❌ npm is required (comes with Node.js). Open a new terminal and re-run this script." -ForegroundColor Red
     exit 1
 }
 Write-Host "✓ npm $npmVersion" -ForegroundColor Green
@@ -74,6 +115,7 @@ if (-not $psql) {
         exit 1
     }
 
+    Refresh-EnvPath
     Add-PgBinToPath
     $psql = Get-Command psql -ErrorAction SilentlyContinue
     if (-not $psql) {
