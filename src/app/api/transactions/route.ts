@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
 
     // …and everyone involved (payer + participants) must be a group member.
     const involved = [...new Set([body.paidByUserId, ...body.participants.map((p) => p.userId)])];
-    if (!areGroupMembers(body.groupId, involved)) {
+    if (!(await areGroupMembers(body.groupId, involved))) {
       return NextResponse.json<ApiErrorResponse>(
         apiError(ERROR_MESSAGES.NOT_GROUP_MEMBER, CODES.NOT_GROUP_MEMBER),
         { status: 400 }
@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const transaction = createTransaction(body);
+    const transaction = await createTransaction(body);
     return NextResponse.json({ success: true, data: transaction }, { status: 201 });
   } catch (err) {
     console.error("POST /api/transactions error:", err);
@@ -116,7 +116,7 @@ export async function GET(request: NextRequest) {
 
     if (txId) {
       const userId = searchParams.get("userId") || undefined;
-      const tx = getTransaction(txId, userId);
+      const tx = await getTransaction(txId, userId);
       if (!tx) {
         return NextResponse.json<ApiErrorResponse>(
           apiError(ERROR_MESSAGES.TX_NOT_FOUND, CODES.NOT_FOUND),
@@ -141,7 +141,7 @@ export async function GET(request: NextRequest) {
     // Clamp limit to a sane range so a huge/NaN value can't exhaust the server.
     const limit = clampLimit(searchParams.get("limit"));
 
-    const transactions = getTransactions({ userId, groupId, payer, payees, limit });
+    const transactions = await getTransactions({ userId, groupId, payer, payees, limit });
     return NextResponse.json({ success: true, data: transactions });
   } catch (err) {
     console.error("GET /api/transactions error:", err);
@@ -170,7 +170,7 @@ export async function DELETE(request: NextRequest) {
       }
       const { getDb, schema } = await import("@/lib/db");
       const db = getDb();
-      db.delete(schema.transactions).run();
+      await db.delete(schema.transactions);
       return NextResponse.json({ success: true, message: "All transactions deleted" });
     }
 
@@ -183,7 +183,7 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const success = deleteTransaction(txId);
+    const success = await deleteTransaction(txId);
     if (!success) {
       return NextResponse.json<ApiErrorResponse>(
         apiError(ERROR_MESSAGES.TX_NOT_FOUND, CODES.NOT_FOUND),

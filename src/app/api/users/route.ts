@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     const id = searchParams.get("id");
 
     if (id) {
-      const user = getUser(id);
+      const user = await getUser(id);
       if (!user) {
         return NextResponse.json<ApiErrorResponse>(
           apiError(ERROR_MESSAGES.USER_NOT_FOUND, CODES.NOT_FOUND),
@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, data: user });
     }
 
-    const users = getUsers();
+    const users = await getUsers();
     return NextResponse.json({ success: true, data: users });
   } catch (err) {
     console.error("GET /api/users error:", err);
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const user = createUser(name, email);
+    const user = await createUser(name, email);
     return NextResponse.json({ success: true, data: user }, { status: 201 });
   } catch (err) {
     console.error("POST /api/users error:", err);

@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const settlement = createAndMarkPaid(body.fromUserId, body.toUserId, body.amount, body.groupId);
+    const settlement = await createAndMarkPaid(body.fromUserId, body.toUserId, body.amount, body.groupId);
     if (!settlement) {
       return NextResponse.json<ApiErrorResponse>(
         apiError("Could not create settlement record.", CODES.INTERNAL_ERROR),

@@ -3,12 +3,12 @@ import { runSettlementTests } from "@/lib/test-data/run-settlement-tests";
 
 /**
  * GET /api/debug/settlement-tests
- * Runs the settlement-balance test fixtures against an in-memory SQLite database
+ * Runs the settlement-balance test fixtures against an in-memory PGlite database
  * and returns the per-case pass/fail results. Used by the debug page.
  */
 export async function GET() {
   try {
-    const results = runSettlementTests();
+    const results = await runSettlementTests();
     return NextResponse.json({ success: true, data: results });
   } catch (err) {
     return NextResponse.json(

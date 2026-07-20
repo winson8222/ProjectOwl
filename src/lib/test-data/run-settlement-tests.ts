@@ -1,15 +1,17 @@
 /**
  * Test runner for the settlement-balance logic.
  *
- * Each fixture sets up an in-memory SQLite database with users, transactions,
- * and settlements, then calls `getBalance()` to verify the per-person balances
- * match expectations. Used by both the CLI (`npm run test:settlement`) and the
- * debug API endpoint.
+ * Each fixture sets up an in-memory PGlite (Postgres-in-WASM) database with
+ * users, transactions, and settlements, then calls `getBalance()` to verify
+ * the per-person balances match expectations. No server or external database
+ * needed — used by both the CLI (`npm run test:settlement`) and the debug
+ * API endpoint.
  */
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
+import { PGlite } from "@electric-sql/pglite";
+import { drizzle } from "drizzle-orm/pglite";
+import { migrate } from "drizzle-orm/pglite/migrator";
+import { sql } from "drizzle-orm";
 import * as schema from "../db/schema";
-import { migrate } from "../db/migrate";
 import { getBalance } from "../actions/balances";
 import { SETTLEMENT_FIXTURES, type SettlementFixture } from "./settlement-fixtures";
 
@@ -34,74 +36,81 @@ export interface SuiteResult {
   cases: CaseResult[];
 }
 
-/** Create a fresh in-memory database and apply schema + seed. */
-function createTestDb() {
-  const sqlite = new Database(":memory:");
-  sqlite.pragma("journal_mode = WAL");
-  sqlite.pragma("foreign_keys = ON");
-  const db = drizzle(sqlite, { schema });
+type TestDb = ReturnType<typeof drizzle<typeof schema>>;
 
-  // Create tables via the migration logic
-  migrate(db);
-
-  return { sqlite, db };
+/** Create a fresh in-memory database and apply the real migrations. */
+async function createTestDb() {
+  const client = new PGlite(); // in-memory, nothing touches disk
+  const db = drizzle(client, { schema });
+  await migrate(db, { migrationsFolder: "drizzle" });
+  return { client, db };
 }
 
-/** Load a fixture into a fresh DB and return the computed balances. */
-function loadFixture(fixture: SettlementFixture, db: ReturnType<typeof drizzle>) {
+/** Wipe all tables between fixtures (one shared instance keeps the suite fast). */
+async function truncateAll(db: TestDb) {
+  await db.execute(sql`
+    TRUNCATE TABLE
+      activities, item_assignments, participants, transaction_items,
+      transactions, settlements, group_members, groups, friendships, users
+    CASCADE
+  `);
+}
+
+/** Load a fixture into the DB. */
+async function loadFixture(fixture: SettlementFixture, db: TestDb) {
   const { users, friendships, transactions, settlements } = fixture;
 
   // Insert users
   for (const u of users) {
-    db.insert(schema.users).values({ ...u, avatarUrl: null }).run();
+    await db.insert(schema.users).values({ ...u, avatarUrl: null });
   }
 
   // Insert friendships (two-way)
   for (const [a, b] of friendships) {
-    db.insert(schema.friendships).values({ id: `f-${a}-${b}`, userId: a, friendId: b }).run();
-    db.insert(schema.friendships).values({ id: `f-${b}-${a}`, userId: b, friendId: a }).run();
+    await db.insert(schema.friendships).values({ id: `f-${a}-${b}`, userId: a, friendId: b });
+    await db.insert(schema.friendships).values({ id: `f-${b}-${a}`, userId: b, friendId: a });
   }
 
   // Insert transactions + participants
   for (const tx of transactions) {
-    db.insert(schema.transactions).values({
+    await db.insert(schema.transactions).values({
       id: tx.id,
       title: tx.title,
       totalAmount: tx.totalAmount,
       paidByUserId: tx.paidByUserId,
       transactionDate: tx.transactionDate,
-      isDeleted: false as any,
-    }).run();
+      isDeleted: false,
+    });
 
     for (const p of tx.participants) {
-      db.insert(schema.participants).values({
+      await db.insert(schema.participants).values({
         id: `p-${tx.id}-${p.userId}`,
         transactionId: tx.id,
         userId: p.userId,
         shareAmount: p.shareAmount,
-      }).run();
+      });
     }
   }
 
   // Insert settlements
   for (const s of settlements) {
-    db.insert(schema.settlements).values({
+    await db.insert(schema.settlements).values({
       id: s.id,
       fromUserId: s.fromUserId,
       toUserId: s.toUserId,
       amount: s.amount,
       transactionId: null,
       settledAt: s.settledAt,
-    }).run();
+    });
   }
 }
 
-function runCase(fixture: SettlementFixture): CaseResult {
-  const { sqlite, db } = createTestDb();
-  loadFixture(fixture, db);
+async function runCase(fixture: SettlementFixture, db: TestDb): Promise<CaseResult> {
+  await truncateAll(db);
+  await loadFixture(fixture, db);
 
   const viewerId = fixture.users[0].id;
-  const balance = getBalance(viewerId, db as any);
+  const balance = await getBalance(viewerId, db as never);
 
   const checks: CheckResult[] = [];
   const balanceResults: { friendId: string; actual: number; expected: number }[] = [];
@@ -161,8 +170,6 @@ function runCase(fixture: SettlementFixture): CaseResult {
     });
   }
 
-  sqlite.close();
-
   return {
     name: fixture.name,
     description: fixture.description,
@@ -173,13 +180,21 @@ function runCase(fixture: SettlementFixture): CaseResult {
 }
 
 /** Run all fixtures and return a structured result. */
-export function runSettlementTests(): SuiteResult {
-  const cases = SETTLEMENT_FIXTURES.map(runCase);
-  const passed = cases.filter((c) => c.passed).length;
-  return {
-    total: cases.length,
-    passed,
-    failed: cases.length - passed,
-    cases,
-  };
+export async function runSettlementTests(): Promise<SuiteResult> {
+  const { client, db } = await createTestDb();
+  try {
+    const cases: CaseResult[] = [];
+    for (const fixture of SETTLEMENT_FIXTURES) {
+      cases.push(await runCase(fixture, db));
+    }
+    const passed = cases.filter((c) => c.passed).length;
+    return {
+      total: cases.length,
+      passed,
+      failed: cases.length - passed,
+      cases,
+    };
+  } finally {
+    await client.close();
+  }
 }

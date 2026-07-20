@@ -25,10 +25,10 @@ export interface Settlement {
 }
 
 /** Get pending settlements for a user. */
-export function getPendingSettlements(userId: string): Settlement[] {
+export async function getPendingSettlements(userId: string): Promise<Settlement[]> {
   const db = getDb();
 
-  const rows = db
+  const rows = await db
     .select()
     .from(schema.settlements)
     .where(
@@ -37,19 +37,20 @@ export function getPendingSettlements(userId: string): Settlement[] {
         // User is either the sender or receiver
       )
     )
-    .orderBy(desc(schema.settlements.createdAt))
-    .all();
+    .orderBy(desc(schema.settlements.createdAt));
 
   // Filter to those involving this user
   const relevant = rows.filter(
     (r) => r.fromUserId === userId || r.toUserId === userId
   );
 
-  return relevant.map((r) => {
-    const fromUser = db.select().from(schema.users).where(eq(schema.users.id, r.fromUserId)).get();
-    const toUser = db.select().from(schema.users).where(eq(schema.users.id, r.toUserId)).get();
-    return { ...r, fromUser, toUser };
-  });
+  const result: Settlement[] = [];
+  for (const r of relevant) {
+    const fromUser = (await db.select().from(schema.users).where(eq(schema.users.id, r.fromUserId)))[0];
+    const toUser = (await db.select().from(schema.users).where(eq(schema.users.id, r.toUserId)))[0];
+    result.push({ ...r, fromUser, toUser });
+  }
+  return result;
 }
 
 /**
@@ -57,8 +58,8 @@ export function getPendingSettlements(userId: string): Settlement[] {
  * Uses a greedy algorithm: match largest debtor with largest creditor.
  * This produces minimum-number-of-transactions settlement plan.
  */
-export function getOptimizedPlan(userId: string): SettlementPlan[] {
-  const balance = getBalance(userId);
+export async function getOptimizedPlan(userId: string): Promise<SettlementPlan[]> {
+  const balance = await getBalance(userId);
 
   // Creditors (people who owe user → user receives money)
   const creditors = balance.perPerson
@@ -70,19 +71,9 @@ export function getOptimizedPlan(userId: string): SettlementPlan[] {
     .filter((p) => p.amount < 0)
     .map((p) => ({ user: p.user, amount: Math.abs(p.amount) }));
 
-  // For the personalized view, user pays debtors and creditors pay user
-  const plan: SettlementPlan[] = [];
-
-  // User pays debtors
-  for (const debtor of debtors) {
-    plan.push({ from: debtor.user, to: balance.perPerson.find(p => p.user.id === debtor.user.id)!.user, amount: debtor.amount });
-  }
-
-  // Actually, the simplified plan: user pays anyone they owe, and anyone who owes them pays them
-  // Let me fix this: "from" = who pays, "to" = who receives
-
+  // "from" = who pays, "to" = who receives
   const db = getDb();
-  const currentUser = db.select().from(schema.users).where(eq(schema.users.id, userId)).get();
+  const currentUser = (await db.select().from(schema.users).where(eq(schema.users.id, userId)))[0];
   const result: SettlementPlan[] = [];
 
   if (!currentUser) return result;
@@ -111,54 +102,53 @@ export function getOptimizedPlan(userId: string): SettlementPlan[] {
  * per-user balance, then runs the same greedy simplification the test suite
  * verifies. Returns the fewest payments that settle the whole group.
  */
-export function getGroupSettlementPlan(): SettlementPlan[] {
+export async function getGroupSettlementPlan(): Promise<SettlementPlan[]> {
   const db = getDb();
 
   // Pull every non-deleted transaction as a SimpleTransaction (payer + shares).
-  const txs = db
+  const txs = await db
     .select({ id: schema.transactions.id, paidBy: schema.transactions.paidByUserId })
     .from(schema.transactions)
-    .where(eq(schema.transactions.isDeleted, false))
-    .all();
+    .where(eq(schema.transactions.isDeleted, false));
 
-  const simpleTxs: SimpleTransaction[] = txs.map((tx) => {
-    const parts = db
+  const simpleTxs: SimpleTransaction[] = [];
+  for (const tx of txs) {
+    const parts = await db
       .select({ userId: schema.participants.userId, shareAmount: schema.participants.shareAmount })
       .from(schema.participants)
-      .where(eq(schema.participants.transactionId, tx.id))
-      .all();
-    return { paidBy: tx.paidBy, participants: parts };
-  });
+      .where(eq(schema.participants.transactionId, tx.id));
+    simpleTxs.push({ paidBy: tx.paidBy, participants: parts });
+  }
 
   const transfers = minimizeTransfers(computeNetBalances(simpleTxs));
 
   // Resolve user ids to full user rows for the UI.
   const userCache = new Map<string, User | undefined>();
-  const resolve = (id: string): User | undefined => {
+  const resolve = async (id: string): Promise<User | undefined> => {
     if (!userCache.has(id)) {
-      userCache.set(id, db.select().from(schema.users).where(eq(schema.users.id, id)).get());
+      userCache.set(id, (await db.select().from(schema.users).where(eq(schema.users.id, id)))[0]);
     }
     return userCache.get(id);
   };
 
-  return transfers
-    .map((t) => {
-      const from = resolve(t.from);
-      const to = resolve(t.to);
-      return from && to ? { from, to, amount: t.amount } : null;
-    })
-    .filter((p): p is SettlementPlan => p !== null);
+  const plan: SettlementPlan[] = [];
+  for (const t of transfers) {
+    const from = await resolve(t.from);
+    const to = await resolve(t.to);
+    if (from && to) plan.push({ from, to, amount: t.amount });
+  }
+  return plan;
 }
 
 /** Mark a settlement as paid. */
-export function markSettled(settlementId: string): boolean {
+export async function markSettled(settlementId: string): Promise<boolean> {
   const db = getDb();
-  const result = db
+  const updated = await db
     .update(schema.settlements)
     .set({ settledAt: "PAID" })
     .where(eq(schema.settlements.id, settlementId))
-    .run();
-  return result.changes > 0;
+    .returning({ id: schema.settlements.id });
+  return updated.length > 0;
 }
 
 /**
@@ -167,20 +157,20 @@ export function markSettled(settlementId: string): boolean {
  * When `groupId` is given, the payment settles debt within that group and is
  * recorded in the group's activity feed.
  */
-export function createAndMarkPaid(
+export async function createAndMarkPaid(
   fromUserId: string,
   toUserId: string,
   amount: number,
   groupId?: string
-): Settlement | null {
+): Promise<Settlement | null> {
   const rounded = Math.round(amount * 100) / 100;
   if (rounded <= 0) return null;
 
-  const settlement = createSettlement(fromUserId, toUserId, rounded, undefined, groupId);
-  markSettled(settlement.id);
+  const settlement = await createSettlement(fromUserId, toUserId, rounded, undefined, groupId);
+  await markSettled(settlement.id);
 
   if (groupId) {
-    logActivity({
+    await logActivity({
       type: "settlement",
       userId: fromUserId,
       relatedUserId: toUserId,
@@ -193,23 +183,23 @@ export function createAndMarkPaid(
 }
 
 /** Create a settlement record. */
-export function createSettlement(
+export async function createSettlement(
   fromUserId: string,
   toUserId: string,
   amount: number,
   transactionId?: string,
   groupId?: string
-): Settlement {
+): Promise<Settlement> {
   const db = getDb();
   const id = `settlement-${uuid().slice(0, 8)}`;
-  db.insert(schema.settlements).values({
+  await db.insert(schema.settlements).values({
     id,
     fromUserId,
     toUserId,
     amount,
     transactionId: transactionId ?? null,
     groupId: groupId ?? null,
-  }).run();
+  });
 
   return { id, fromUserId, toUserId, transactionId: transactionId ?? null, amount, settledAt: null, createdAt: new Date().toISOString() };
 }

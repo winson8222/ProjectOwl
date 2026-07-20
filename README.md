@@ -2,7 +2,7 @@
 
 Split receipts with friends — without the math.
 
-A Splitwise-like PWA built with **Next.js 15**, **Tailwind v4**, and **SQLite** (via Drizzle ORM).
+A Splitwise-like PWA built with **Next.js 15**, **Tailwind v4**, and **PostgreSQL** (via Drizzle ORM).
 
 ## Features
 
@@ -26,10 +26,10 @@ A Splitwise-like PWA built with **Next.js 15**, **Tailwind v4**, and **SQLite** 
 
 - **Node.js** v18+ ([nodejs.org](https://nodejs.org))
 - **Google Gemini API key** (free at [aistudio.google.com](https://aistudio.google.com/apikey))
-- **C++ build tools** (required by `better-sqlite3` native addon)
-  - **macOS**: `xcode-select --install`
-  - **Linux**: `sudo apt install build-essential`
-  - **Windows**: Visual Studio Build Tools (prompted during setup)
+- **PostgreSQL 16** (the setup scripts install/verify it)
+  - **macOS**: `brew install postgresql@16 && brew services start postgresql@16`
+  - **Linux**: `sudo apt install postgresql-16`
+  - **Windows**: `winget install PostgreSQL.PostgreSQL.16` (runs as a Windows service)
 
 ### Setup
 
@@ -46,10 +46,11 @@ chmod +x setup.sh
 
 The setup script will:
 1. Verify Node.js v18+
-2. Check for native build tools (better-sqlite3)
+2. Verify (or install) PostgreSQL 16 and create the `projectowl` database
 3. Install npm dependencies
-4. Create `.env.local` from `.env.example` (add your `GEMINI_API_KEY`)
-5. Run a build check
+4. Create `.env.local` from `.env.example` (add your `GEMINI_API_KEY`) and set `DATABASE_URL`
+5. Apply database migrations (`npm run db:migrate`) and seed demo data (`npm run db:seed`)
+6. Run a build check
 
 ### Start
 
@@ -66,7 +67,8 @@ exercise item allocation for free. See [Test mode](#test-mode-mock-scan-no-llm-a
 
 ### Reset data
 
-Delete `data/projectowl.db` and restart the server — the database is auto-created with fresh seed data.
+With the dev server running: `POST /api/debug?action=reset` (or the button on `/debug`).
+From scratch: `dropdb projectowl && createdb projectowl && npm run db:migrate && npm run db:seed`.
 
 ## API Routes
 
@@ -182,19 +184,21 @@ npm run test:allocation
 "🧾 Item-allocation tests" — the same suite runs via
 `GET /api/debug/allocation-tests` and shows computed-vs-expected totals per case.
 
-### Viewing SQLite Data
+### Viewing Database Data
 
-The database is stored at `data/projectowl.db`. To inspect it:
+The app uses the PostgreSQL database `projectowl` on `localhost:5432`. To inspect it:
 
 **Via the debug API** (no tools needed):
 ```bash
 curl http://localhost:3000/api/debug
 ```
 
-**Via a SQLite browser** (recommended for deep inspection):
-- **Windows**: Download [DB Browser for SQLite](https://sqlitebrowser.org)
-- **macOS**: `brew install --cask db-browser-for-sqlite`
-- Open `data/projectowl.db` in the browser
+**Via psql** (recommended for deep inspection):
+```bash
+psql projectowl                     # macOS/Linux
+psql -U postgres -d projectowl      # Windows
+```
+Or point any Postgres GUI (TablePlus, pgAdmin, DBeaver) at the `DATABASE_URL` in `.env.local`.
 
 ## Page Structure
 
@@ -249,10 +253,9 @@ src/
 │   └── ErrorAlert.tsx              # Error display with retry
 └── lib/
     ├── db/
-    │   ├── schema.ts               # Drizzle ORM table definitions
-    │   ├── index.ts                # SQLite client + Drizzle instance
-    │   ├── migrate.ts              # Auto-create tables on startup
-    │   └── seed.ts                 # Seed users + demo transactions
+    │   ├── schema.ts               # Drizzle ORM table definitions (pg-core)
+    │   ├── index.ts                # Postgres client + Drizzle instance
+    │   └── seed.ts                 # Seed users + demo transactions (npm run db:seed)
     ├── actions/
     │   ├── users.ts                # User CRUD + friend balance
     │   ├── transactions.ts         # Transaction CRUD with items
@@ -270,7 +273,12 @@ src/
 
 ## Database
 
-**SQLite** via Drizzle ORM (`better-sqlite3`). Migration to PostgreSQL requires only changing the Drizzle driver + schema dialect — all query logic stays the same.
+**PostgreSQL** via Drizzle ORM (`postgres` driver). Schema lives in `src/lib/db/schema.ts`;
+versioned SQL migrations are generated with `npm run db:generate` (drizzle-kit) into `drizzle/`
+and applied with `npm run db:migrate`. Seeding is an explicit step (`npm run db:seed`) that
+refuses to run in production. Connection comes from `DATABASE_URL`; `DIRECT_URL` (optional)
+is used for migrations when `DATABASE_URL` points at a transaction-mode pooler (e.g. Supabase
+port 6543).
 
 | Table | Purpose |
 |---|---|

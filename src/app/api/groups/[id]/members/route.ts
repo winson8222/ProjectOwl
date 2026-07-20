@@ -21,7 +21,7 @@ export async function POST(
       );
     }
 
-    const members = addGroupMembers(id, body.userIds, body.actorId);
+    const members = await addGroupMembers(id, body.userIds, body.actorId);
     return NextResponse.json({ success: true, data: members });
   } catch (err) {
     console.error("POST /api/groups/[id]/members error:", err);

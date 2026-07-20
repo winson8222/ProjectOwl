@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     }
 
     const limit = parseInt(searchParams.get("limit") || "50", 10);
-    return NextResponse.json({ success: true, data: getActivitiesForUser(userId, limit) });
+    return NextResponse.json({ success: true, data: await getActivitiesForUser(userId, limit) });
   } catch (err) {
     console.error("GET /api/activities error:", err);
     return NextResponse.json<ApiErrorResponse>(

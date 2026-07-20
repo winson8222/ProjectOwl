@@ -23,7 +23,7 @@ export async function GET(
       );
     }
 
-    const detail = getGroupDetail(id, userId);
+    const detail = await getGroupDetail(id, userId);
     if (!detail) {
       return NextResponse.json<ApiErrorResponse>(
         apiError(ERROR_MESSAGES.GROUP_NOT_FOUND, CODES.GROUP_NOT_FOUND),
@@ -35,8 +35,8 @@ export async function GET(
       success: true,
       data: {
         ...detail,
-        transferPlan: getGroupTransferPlan(id),
-        downBadRanking: getGroupDownBadRanking(id),
+        transferPlan: await getGroupTransferPlan(id),
+        downBadRanking: await getGroupDownBadRanking(id),
       },
     });
   } catch (err) {

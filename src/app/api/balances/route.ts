@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     }
 
     const groupId = searchParams.get("groupId") || undefined;
-    const balance = getBalance(userId, undefined, groupId);
+    const balance = await getBalance(userId, undefined, groupId);
     return NextResponse.json({ success: true, data: balance });
   } catch (err) {
     console.error("GET /api/balances error:", err);
