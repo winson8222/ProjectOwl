@@ -20,15 +20,14 @@ export async function GET() {
   try {
     const db = getDb();
 
-    const userCount = db.select({ count: count() }).from(schema.users).get()?.count ?? 0;
-    const txCount = db.select({ count: count() }).from(schema.transactions).get()?.count ?? 0;
-    const itemCount = db.select({ count: count() }).from(schema.transactionItems).get()?.count ?? 0;
-    const participantCount = db.select({ count: count() }).from(schema.participants).get()?.count ?? 0;
-    const settlementCount = db.select({ count: count() }).from(schema.settlements).get()?.count ?? 0;
-    const dbSize = sql`page_count * page_size`.as<number>();
+    const userCount = (await db.select({ count: count() }).from(schema.users))[0]?.count ?? 0;
+    const txCount = (await db.select({ count: count() }).from(schema.transactions))[0]?.count ?? 0;
+    const itemCount = (await db.select({ count: count() }).from(schema.transactionItems))[0]?.count ?? 0;
+    const participantCount = (await db.select({ count: count() }).from(schema.participants))[0]?.count ?? 0;
+    const settlementCount = (await db.select({ count: count() }).from(schema.settlements))[0]?.count ?? 0;
 
-    const users = db.select({ id: schema.users.id, name: schema.users.name }).from(schema.users).all();
-    const transactions = db
+    const users = await db.select({ id: schema.users.id, name: schema.users.name }).from(schema.users);
+    const transactions = await db
       .select({
         id: schema.transactions.id,
         title: schema.transactions.title,
@@ -37,18 +36,17 @@ export async function GET() {
         createdAt: schema.transactions.createdAt,
       })
       .from(schema.transactions)
-      .orderBy(sql`created_at DESC`)
-      .all();
+      .orderBy(sql`created_at DESC`);
 
     // Check participants per transaction
-    const participantsPerTx = transactions.map((tx) => {
-      const result = db
+    const participantsPerTx = [];
+    for (const tx of transactions) {
+      const result = (await db
         .select({ total: count() })
         .from(schema.participants)
-        .where(eq(schema.participants.transactionId, tx.id))
-        .get();
-      return { txId: tx.id, participantCount: result?.total ?? 0 };
-    });
+        .where(eq(schema.participants.transactionId, tx.id)))[0];
+      participantsPerTx.push({ txId: tx.id, participantCount: result?.total ?? 0 });
+    }
 
     return NextResponse.json({
       success: true,
@@ -85,35 +83,33 @@ export async function POST(request: Request) {
     const db = getDb();
 
     if (action === "reset") {
-      // Raw SQL to bypass any Drizzle query issues
-      db.run("PRAGMA foreign_keys = OFF");
-      db.run("DELETE FROM activities");
-      db.run("DELETE FROM item_assignments");
-      db.run("DELETE FROM participants");
-      db.run("DELETE FROM transaction_items");
-      db.run("DELETE FROM transactions");
-      db.run("DELETE FROM settlements");
-      db.run("DELETE FROM group_members");
-      db.run("DELETE FROM groups");
-      db.run("DELETE FROM friendships");
-      db.run("DELETE FROM users");
-      db.run("PRAGMA foreign_keys = ON");
+      // TRUNCATE ... CASCADE clears every table (and anything referencing
+      // them) in one statement — the Postgres equivalent of the old
+      // "PRAGMA foreign_keys = OFF; DELETE FROM ..." sequence.
+      await db.execute(sql`
+        TRUNCATE TABLE
+          activities, item_assignments, participants, transaction_items,
+          transactions, settlements, group_members, groups, friendships, users
+        CASCADE
+      `);
 
       // Re-seed
       const { seed } = await import("@/lib/db/seed");
-      seed(db);
+      await seed(db);
 
       return NextResponse.json({ success: true, message: "Database reset and re-seeded" });
     }
 
     if (action === "delete-all-transactions") {
-      db.run("PRAGMA foreign_keys = OFF");
-      db.run("DELETE FROM activities WHERE transaction_id IS NOT NULL");
-      db.run("DELETE FROM item_assignments");
-      db.run("DELETE FROM participants");
-      db.run("DELETE FROM transaction_items");
-      db.run("DELETE FROM transactions");
-      db.run("PRAGMA foreign_keys = ON");
+      // Order matters with FKs enforced: clear referencing rows first, and
+      // detach settlements that point at a transaction (they survive the
+      // purge, matching the old behavior of only deleting transaction data).
+      await db.execute(sql`DELETE FROM activities WHERE transaction_id IS NOT NULL`);
+      await db.execute(sql`UPDATE settlements SET transaction_id = NULL WHERE transaction_id IS NOT NULL`);
+      await db.execute(sql`DELETE FROM item_assignments`);
+      await db.execute(sql`DELETE FROM participants`);
+      await db.execute(sql`DELETE FROM transaction_items`);
+      await db.execute(sql`DELETE FROM transactions`);
 
       return NextResponse.json({ success: true, message: "All transactions deleted" });
     }

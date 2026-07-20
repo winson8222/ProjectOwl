@@ -36,67 +36,67 @@ export interface GroupDetail extends Group {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** All member user-ids of a group. */
-export function getGroupMemberIds(groupId: string): string[] {
-  return getDb()
+export async function getGroupMemberIds(groupId: string): Promise<string[]> {
+  const rows = await getDb()
     .select({ userId: schema.groupMembers.userId })
     .from(schema.groupMembers)
-    .where(eq(schema.groupMembers.groupId, groupId))
-    .all()
-    .map((r) => r.userId);
+    .where(eq(schema.groupMembers.groupId, groupId));
+  return rows.map((r) => r.userId);
 }
 
 /** True when every given user is a member of the group. */
-export function areGroupMembers(groupId: string, userIds: string[]): boolean {
-  const members = new Set(getGroupMemberIds(groupId));
+export async function areGroupMembers(groupId: string, userIds: string[]): Promise<boolean> {
+  const members = new Set(await getGroupMemberIds(groupId));
   return userIds.every((id) => members.has(id));
 }
 
-function getMembers(groupId: string): User[] {
+async function getMembers(groupId: string): Promise<User[]> {
   const db = getDb();
-  const ids = getGroupMemberIds(groupId);
+  const ids = await getGroupMemberIds(groupId);
   if (ids.length === 0) return [];
-  return db.select().from(schema.users).where(inArray(schema.users.id, ids)).all();
+  return db.select().from(schema.users).where(inArray(schema.users.id, ids));
 }
 
 /** Group transactions as SimpleTransactions (payer + participant shares). */
-function getGroupSimpleTransactions(groupId: string): SimpleTransaction[] {
+async function getGroupSimpleTransactions(groupId: string): Promise<SimpleTransaction[]> {
   const db = getDb();
-  const txs = db
+  const txs = await db
     .select({ id: schema.transactions.id, paidBy: schema.transactions.paidByUserId })
     .from(schema.transactions)
-    .where(and(eq(schema.transactions.groupId, groupId), eq(schema.transactions.isDeleted, false)))
-    .all();
+    .where(and(eq(schema.transactions.groupId, groupId), eq(schema.transactions.isDeleted, false)));
 
-  return txs.map((tx) => ({
-    paidBy: tx.paidBy,
-    participants: db
-      .select({ userId: schema.participants.userId, shareAmount: schema.participants.shareAmount })
-      .from(schema.participants)
-      .where(eq(schema.participants.transactionId, tx.id))
-      .all(),
-  }));
+  const result: SimpleTransaction[] = [];
+  for (const tx of txs) {
+    result.push({
+      paidBy: tx.paidBy,
+      participants: await db
+        .select({ userId: schema.participants.userId, shareAmount: schema.participants.shareAmount })
+        .from(schema.participants)
+        .where(eq(schema.participants.transactionId, tx.id)),
+    });
+  }
+  return result;
 }
 
 /**
  * Net position of every group member, from the group's transactions and
  * settled payments. Positive = gets back money, negative = owes money.
  */
-export function getGroupNetBalances(groupId: string): MemberBalance[] {
+export async function getGroupNetBalances(groupId: string): Promise<MemberBalance[]> {
   const db = getDb();
-  const members = getMembers(groupId);
+  const members = await getMembers(groupId);
 
   const net = new Map<string, number>();
   for (const m of members) net.set(m.id, 0);
-  for (const b of computeNetBalances(getGroupSimpleTransactions(groupId))) {
+  for (const b of computeNetBalances(await getGroupSimpleTransactions(groupId))) {
     net.set(b.userId, (net.get(b.userId) ?? 0) + b.amount);
   }
 
   // A paid settlement reduces the payer's debt and the recipient's credit.
-  const settlements = db
+  const settlements = await db
     .select()
     .from(schema.settlements)
-    .where(and(eq(schema.settlements.groupId, groupId), eq(schema.settlements.settledAt, "PAID")))
-    .all();
+    .where(and(eq(schema.settlements.groupId, groupId), eq(schema.settlements.settledAt, "PAID")));
   for (const s of settlements) {
     net.set(s.fromUserId, (net.get(s.fromUserId) ?? 0) + s.amount);
     net.set(s.toUserId, (net.get(s.toUserId) ?? 0) - s.amount);
@@ -113,69 +113,69 @@ export function getGroupNetBalances(groupId: string): MemberBalance[] {
  * "Most down bad" ranking: members who owe the most in this group,
  * biggest debtor first.
  */
-export function getGroupDownBadRanking(groupId: string): MemberBalance[] {
-  return getGroupNetBalances(groupId)
+export async function getGroupDownBadRanking(groupId: string): Promise<MemberBalance[]> {
+  return (await getGroupNetBalances(groupId))
     .filter((b) => b.net < -0.005)
     .sort((a, b) => a.net - b.net);
 }
 
 /** Minimum-transfer settlement plan within one group (settlements included). */
-export function getGroupTransferPlan(groupId: string): (Transfer & { fromUser: User; toUser: User })[] {
-  const balances = getGroupNetBalances(groupId).map((b) => ({ userId: b.user.id, amount: b.net }));
+export async function getGroupTransferPlan(groupId: string): Promise<(Transfer & { fromUser: User; toUser: User })[]> {
+  const balances = (await getGroupNetBalances(groupId)).map((b) => ({ userId: b.user.id, amount: b.net }));
   const transfers = minimizeTransfers(balances);
-  const members = new Map(getMembers(groupId).map((m) => [m.id, m]));
+  const members = new Map((await getMembers(groupId)).map((m) => [m.id, m]));
   return transfers
     .filter((t) => members.has(t.from) && members.has(t.to))
     .map((t) => ({ ...t, fromUser: members.get(t.from)!, toUser: members.get(t.to)! }));
 }
 
 /** All groups a user belongs to, with members and the user's net position. */
-export function getGroupsForUser(userId: string): GroupSummary[] {
+export async function getGroupsForUser(userId: string): Promise<GroupSummary[]> {
   const db = getDb();
-  const memberships = db
+  const memberships = await db
     .select({ groupId: schema.groupMembers.groupId })
     .from(schema.groupMembers)
-    .where(eq(schema.groupMembers.userId, userId))
-    .all();
+    .where(eq(schema.groupMembers.userId, userId));
   if (memberships.length === 0) return [];
 
-  const groups = db
+  const groups = await db
     .select()
     .from(schema.groups)
     .where(inArray(schema.groups.id, memberships.map((m) => m.groupId)))
-    .orderBy(desc(schema.groups.createdAt))
-    .all();
+    .orderBy(desc(schema.groups.createdAt));
 
-  return groups.map((g) => {
-    const balances = getGroupNetBalances(g.id);
+  const summaries: GroupSummary[] = [];
+  for (const g of groups) {
+    const balances = await getGroupNetBalances(g.id);
     const yourNet = balances.find((b) => b.user.id === userId)?.net ?? 0;
-    const transactionCount = db
+    const txRows = await db
       .select({ id: schema.transactions.id })
       .from(schema.transactions)
-      .where(and(eq(schema.transactions.groupId, g.id), eq(schema.transactions.isDeleted, false)))
-      .all().length;
-    return {
+      .where(and(eq(schema.transactions.groupId, g.id), eq(schema.transactions.isDeleted, false)));
+    const transactionCount = txRows.length;
+    summaries.push({
       ...g,
-      members: getMembers(g.id),
+      members: await getMembers(g.id),
       yourNet,
       transactionCount,
       isSettled: transactionCount > 0 && Math.abs(yourNet) < 0.005,
-    };
-  });
+    });
+  }
+  return summaries;
 }
 
 /** Full detail for the group page. */
-export function getGroupDetail(groupId: string, currentUserId: string): GroupDetail | undefined {
+export async function getGroupDetail(groupId: string, currentUserId: string): Promise<GroupDetail | undefined> {
   const db = getDb();
-  const group = db.select().from(schema.groups).where(eq(schema.groups.id, groupId)).get();
+  const group = (await db.select().from(schema.groups).where(eq(schema.groups.id, groupId)))[0];
   if (!group) return undefined;
 
-  const members = getMembers(groupId);
-  const memberBalances = getGroupNetBalances(groupId);
+  const members = await getMembers(groupId);
+  const memberBalances = await getGroupNetBalances(groupId);
 
   // Pairwise nets vs. the current user: who owes you / you owe within the group.
   const pairwise = new Map<string, number>();
-  for (const tx of getGroupSimpleTransactions(groupId)) {
+  for (const tx of await getGroupSimpleTransactions(groupId)) {
     for (const p of tx.participants) {
       if (p.userId === tx.paidBy) continue;
       if (tx.paidBy === currentUserId && p.userId !== currentUserId) {
@@ -185,11 +185,10 @@ export function getGroupDetail(groupId: string, currentUserId: string): GroupDet
       }
     }
   }
-  const settlements = db
+  const settlements = await db
     .select()
     .from(schema.settlements)
-    .where(and(eq(schema.settlements.groupId, groupId), eq(schema.settlements.settledAt, "PAID")))
-    .all();
+    .where(and(eq(schema.settlements.groupId, groupId), eq(schema.settlements.settledAt, "PAID")));
   for (const s of settlements) {
     if (s.toUserId === currentUserId) {
       pairwise.set(s.fromUserId, (pairwise.get(s.fromUserId) ?? 0) - s.amount);
@@ -207,54 +206,54 @@ export function getGroupDetail(groupId: string, currentUserId: string): GroupDet
 }
 
 /** Create a group with its initial members (creator always included). */
-export function createGroup(name: string, createdByUserId: string, memberIds: string[], color?: string): Group {
+export async function createGroup(name: string, createdByUserId: string, memberIds: string[], color?: string): Promise<Group> {
   const db = getDb();
   const id = `group-${uuid().slice(0, 8)}`;
   const allMembers = [...new Set([createdByUserId, ...memberIds])];
   const chosenColor =
     color ?? GROUP_COLORS[Math.floor(Math.random() * GROUP_COLORS.length)];
 
-  db.transaction(() => {
-    db.insert(schema.groups).values({
+  await db.transaction(async (tx) => {
+    await tx.insert(schema.groups).values({
       id,
       name,
       color: chosenColor,
       createdByUserId,
       createdAt: localTimestamp(),
-    }).run();
+    });
     for (const userId of allMembers) {
-      db.insert(schema.groupMembers).values({
+      await tx.insert(schema.groupMembers).values({
         id: `gm-${uuid().slice(0, 8)}`,
         groupId: id,
         userId,
         createdAt: localTimestamp(),
-      }).run();
+      });
     }
   });
 
-  logActivity({ type: "group_created", userId: createdByUserId, groupId: id });
+  await logActivity({ type: "group_created", userId: createdByUserId, groupId: id });
   for (const userId of allMembers) {
     if (userId === createdByUserId) continue;
-    logActivity({ type: "member_added", userId: createdByUserId, relatedUserId: userId, groupId: id });
+    await logActivity({ type: "member_added", userId: createdByUserId, relatedUserId: userId, groupId: id });
   }
 
-  return db.select().from(schema.groups).where(eq(schema.groups.id, id)).get()!;
+  return (await db.select().from(schema.groups).where(eq(schema.groups.id, id)))[0]!;
 }
 
 /** Add users to a group (already-present members are skipped). */
-export function addGroupMembers(groupId: string, userIds: string[], actorId: string): User[] {
+export async function addGroupMembers(groupId: string, userIds: string[], actorId: string): Promise<User[]> {
   const db = getDb();
-  const existing = new Set(getGroupMemberIds(groupId));
+  const existing = new Set(await getGroupMemberIds(groupId));
   const toAdd = [...new Set(userIds)].filter((id) => !existing.has(id));
 
   for (const userId of toAdd) {
-    db.insert(schema.groupMembers).values({
+    await db.insert(schema.groupMembers).values({
       id: `gm-${uuid().slice(0, 8)}`,
       groupId,
       userId,
       createdAt: localTimestamp(),
-    }).run();
-    logActivity({ type: "member_added", userId: actorId, relatedUserId: userId, groupId });
+    });
+    await logActivity({ type: "member_added", userId: actorId, relatedUserId: userId, groupId });
   }
 
   return getMembers(groupId);

@@ -1,4 +1,4 @@
-import { getDb, schema } from "@/lib/db";
+import { getDb, schema, type Db } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import { getGroupMemberIds } from "./groups";
 
@@ -25,11 +25,11 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
  * @param _db Optional database instance (for testing with in-memory DBs).
  * @param groupId Optional group to scope the summary to.
  */
-export function getBalance(
+export async function getBalance(
   userId: string,
-  _db?: ReturnType<typeof getDb>,
+  _db?: Db,
   groupId?: string
-): BalanceSummary {
+): Promise<BalanceSummary> {
   const db = _db ?? getDb();
 
   // Pairwise net vs. every counterparty: positive = they owe the user.
@@ -38,7 +38,7 @@ export function getBalance(
     net.set(otherId, (net.get(otherId) ?? 0) + delta);
 
   // ── Transactions ───────────────────────────────────────────────────
-  const txs = db
+  const txs = await db
     .select({ id: schema.transactions.id, paidBy: schema.transactions.paidByUserId })
     .from(schema.transactions)
     .where(
@@ -46,15 +46,13 @@ export function getBalance(
         eq(schema.transactions.isDeleted, false),
         groupId ? eq(schema.transactions.groupId, groupId) : undefined
       )
-    )
-    .all();
+    );
 
   for (const tx of txs) {
-    const parts = db
+    const parts = await db
       .select({ userId: schema.participants.userId, shareAmount: schema.participants.shareAmount })
       .from(schema.participants)
-      .where(eq(schema.participants.transactionId, tx.id))
-      .all();
+      .where(eq(schema.participants.transactionId, tx.id));
 
     for (const p of parts) {
       if (p.userId === tx.paidBy) continue; // can't owe yourself
@@ -67,7 +65,7 @@ export function getBalance(
   }
 
   // ── Paid settlements ───────────────────────────────────────────────
-  const settlements = db
+  const settlements = await db
     .select()
     .from(schema.settlements)
     .where(
@@ -75,8 +73,7 @@ export function getBalance(
         eq(schema.settlements.settledAt, "PAID"),
         groupId ? eq(schema.settlements.groupId, groupId) : undefined
       )
-    )
-    .all();
+    );
 
   for (const s of settlements) {
     if (s.toUserId === userId) {
@@ -88,14 +85,14 @@ export function getBalance(
 
   // ── Resolve counterparties (group scope: include settled members too) ──
   if (groupId) {
-    for (const memberId of getGroupMemberIds(groupId)) {
+    for (const memberId of await getGroupMemberIds(groupId)) {
       if (memberId !== userId && !net.has(memberId)) net.set(memberId, 0);
     }
   }
 
   const perPerson: BalanceSummary["perPerson"] = [];
   for (const [otherId, amount] of net.entries()) {
-    const user = db.select().from(schema.users).where(eq(schema.users.id, otherId)).get();
+    const user = (await db.select().from(schema.users).where(eq(schema.users.id, otherId)))[0];
     if (!user) continue;
     perPerson.push({ user, amount: round2(amount) });
   }

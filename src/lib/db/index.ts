@@ -1,32 +1,32 @@
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
 import * as schema from "./schema";
-import { migrate } from "./migrate";
-import { seed } from "./seed";
-import path from "path";
 
-const DB_PATH = process.env.DATABASE_URL
-  ? path.resolve(process.env.DATABASE_URL)
-  : path.resolve(process.cwd(), "data/projectowl.db");
+export type Db = ReturnType<typeof drizzle<typeof schema>>;
 
-let dbInstance: ReturnType<typeof drizzle<typeof schema>> | null = null;
+let dbInstance: Db | null = null;
 
 /**
  * Get or initialize the database client.
- * Ensures tables exist and seed data is populated on first run.
+ *
+ * Connection-only: schema migrations run at deploy time (`npm run db:migrate`)
+ * and seeding is an explicit dev/staging step (`npm run db:seed`) — neither
+ * belongs in the request path.
  */
-export function getDb() {
+export function getDb(): Db {
   if (dbInstance) return dbInstance;
 
-  const sqlite = new Database(DB_PATH);
-  sqlite.pragma("journal_mode = WAL"); // better concurrent access
-  sqlite.pragma("foreign_keys = ON");
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    throw new Error(
+      "DATABASE_URL is not set. Add it to .env.local, e.g. postgresql://postgres:postgres@localhost:5432/projectowl"
+    );
+  }
 
-  dbInstance = drizzle(sqlite, { schema });
-
-  // Auto-migrate + seed on first load
-  migrate(dbInstance);
-  seed(dbInstance);
+  // prepare:false keeps the client compatible with transaction-mode poolers
+  // (Supabase pgbouncer on port 6543); harmless against a direct connection.
+  const client = postgres(url, { prepare: false });
+  dbInstance = drizzle(client, { schema });
 
   return dbInstance;
 }

@@ -1,5 +1,5 @@
 import { getDb, schema } from "@/lib/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 
 export type User = typeof schema.users.$inferSelect;
@@ -7,58 +7,55 @@ export type NewUser = typeof schema.users.$inferInsert;
 export type FriendWithBalance = User & { balance: number };
 
 /** Get all users. */
-export function getUsers(): User[] {
-  return getDb().select().from(schema.users).all();
+export async function getUsers(): Promise<User[]> {
+  return getDb().select().from(schema.users);
 }
 
 /** Get a single user by ID. */
-export function getUser(id: string): User | undefined {
-  return getDb().select().from(schema.users).where(eq(schema.users.id, id)).get();
+export async function getUser(id: string): Promise<User | undefined> {
+  const rows = await getDb().select().from(schema.users).where(eq(schema.users.id, id));
+  return rows[0];
 }
 
 /** Create a new user. */
-export function createUser(name: string, email: string): User {
+export async function createUser(name: string, email: string): Promise<User> {
   const id = `user-${uuid().slice(0, 8)}`;
-  getDb().insert(schema.users).values({ id, name, email }).run();
+  await getDb().insert(schema.users).values({ id, name, email });
   return { id, name, email, avatarUrl: null, createdAt: new Date().toISOString() };
 }
 
 /** Get all friends for a user (with net balance). */
-export function getFriends(userId: string): FriendWithBalance[] {
+export async function getFriends(userId: string): Promise<FriendWithBalance[]> {
   const db = getDb();
 
   // Get friend IDs
-  const rows = db
+  const rows = await db
     .select({ friendId: schema.friendships.friendId })
     .from(schema.friendships)
-    .where(eq(schema.friendships.userId, userId))
-    .all();
+    .where(eq(schema.friendships.userId, userId));
 
   if (rows.length === 0) return [];
 
   const friendIds = rows.map((r) => r.friendId);
-  const friends = db
+  const friends = await db
     .select()
     .from(schema.users)
-    .where(
-      // SQLite doesn't support array contains, use OR chain
-      and(...friendIds.map((id) => eq(schema.users.id, id)))
-    )
-    .all();
+    .where(inArray(schema.users.id, friendIds));
 
   // For each friend, compute net balance
-  return friends.map((f) => ({
-    ...f,
-    balance: computeBalanceWithUser(userId, f.id),
-  }));
+  const result: FriendWithBalance[] = [];
+  for (const f of friends) {
+    result.push({ ...f, balance: await computeBalanceWithUser(userId, f.id) });
+  }
+  return result;
 }
 
 /** Compute net balance between two users (positive = friend owes user). */
-function computeBalanceWithUser(userId: string, friendId: string): number {
+async function computeBalanceWithUser(userId: string, friendId: string): Promise<number> {
   const db = getDb();
 
   // Get all shares where this friend participated, paid by userId
-  const paidByUser = db
+  const paidByUser = await db
     .select({
       shareAmount: schema.participants.shareAmount,
     })
@@ -73,11 +70,10 @@ function computeBalanceWithUser(userId: string, friendId: string): number {
         eq(schema.participants.userId, friendId),
         eq(schema.transactions.isDeleted, false)
       )
-    )
-    .all();
+    );
 
   // Get all shares where user participated, paid by friend
-  const paidByFriend = db
+  const paidByFriend = await db
     .select({
       shareAmount: schema.participants.shareAmount,
     })
@@ -92,11 +88,10 @@ function computeBalanceWithUser(userId: string, friendId: string): number {
         eq(schema.participants.userId, userId),
         eq(schema.transactions.isDeleted, false)
       )
-    )
-    .all();
+    );
 
   // Settlements: friend paid user
-  const settlementsToUser = db
+  const settlementsToUser = await db
     .select({ amount: schema.settlements.amount })
     .from(schema.settlements)
     .where(
@@ -105,11 +100,10 @@ function computeBalanceWithUser(userId: string, friendId: string): number {
         eq(schema.settlements.toUserId, userId),
         eq(schema.settlements.settledAt, "PAID")
       )
-    )
-    .all();
+    );
 
   // Settlements: user paid friend
-  const settlementsFromUser = db
+  const settlementsFromUser = await db
     .select({ amount: schema.settlements.amount })
     .from(schema.settlements)
     .where(
@@ -118,8 +112,7 @@ function computeBalanceWithUser(userId: string, friendId: string): number {
         eq(schema.settlements.toUserId, friendId),
         eq(schema.settlements.settledAt, "PAID")
       )
-    )
-    .all();
+    );
 
   const friendOwes = paidByUser.reduce((sum, r) => sum + r.shareAmount, 0);
   const userOwes = paidByFriend.reduce((sum, r) => sum + r.shareAmount, 0);

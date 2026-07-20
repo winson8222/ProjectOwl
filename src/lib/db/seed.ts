@@ -1,14 +1,17 @@
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import type { Db } from "./index";
 import * as schema from "./schema";
 import { v4 as uuid } from "uuid";
 
 /**
  * Seed the database with sample users, groups, and per-group transactions.
- * Only runs if the users table is empty.
+ * Only runs if the users table is empty. Returns true when data was inserted.
+ *
+ * Not called at connection time — run explicitly via `npm run db:seed` or the
+ * dev-only debug reset endpoint.
  */
-export function seed(db: BetterSQLite3Database<typeof schema>) {
-  const existing = db.select().from(schema.users).all();
-  if (existing.length > 0) return; // already seeded
+export async function seed(db: Db): Promise<boolean> {
+  const existing = await db.select().from(schema.users);
+  if (existing.length > 0) return false; // already seeded
 
   // ── Users ──────────────────────────────────────────────────────────
   const allUsers = [
@@ -19,14 +22,14 @@ export function seed(db: BetterSQLite3Database<typeof schema>) {
     { id: "user-diana", name: "Diana", email: "diana@example.com" },
   ];
   for (const u of allUsers) {
-    db.insert(schema.users).values({ ...u, avatarUrl: null }).run();
+    await db.insert(schema.users).values({ ...u, avatarUrl: null });
   }
 
   // Friendships (two-way, everyone knows everyone — legacy table kept for compat)
   for (let i = 0; i < allUsers.length; i++) {
     for (let j = i + 1; j < allUsers.length; j++) {
-      db.insert(schema.friendships).values({ id: uuid(), userId: allUsers[i].id, friendId: allUsers[j].id }).run();
-      db.insert(schema.friendships).values({ id: uuid(), userId: allUsers[j].id, friendId: allUsers[i].id }).run();
+      await db.insert(schema.friendships).values({ id: uuid(), userId: allUsers[i].id, friendId: allUsers[j].id });
+      await db.insert(schema.friendships).values({ id: uuid(), userId: allUsers[j].id, friendId: allUsers[i].id });
     }
   }
 
@@ -40,28 +43,28 @@ export function seed(db: BetterSQLite3Database<typeof schema>) {
   const dateOnly = (n: number): string =>
     new Date(Date.now() - 86400000 * n).toISOString().split("T")[0];
 
-  const createGroup = (id: string, name: string, color: string, creator: string, memberIds: string[], createdDaysAgo: number) => {
-    db.insert(schema.groups).values({
+  const createGroup = async (id: string, name: string, color: string, creator: string, memberIds: string[], createdDaysAgo: number) => {
+    await db.insert(schema.groups).values({
       id, name, color, createdByUserId: creator, createdAt: daysAgo(createdDaysAgo, 9),
-    }).run();
+    });
     for (const userId of memberIds) {
-      db.insert(schema.groupMembers).values({
+      await db.insert(schema.groupMembers).values({
         id: `gm-${uuid().slice(0, 8)}`, groupId: id, userId, createdAt: daysAgo(createdDaysAgo, 9),
-      }).run();
+      });
     }
-    db.insert(schema.activities).values({
+    await db.insert(schema.activities).values({
       id: `act-${uuid().slice(0, 12)}`, type: "group_created", userId: creator,
       groupId: id, createdAt: daysAgo(createdDaysAgo, 9),
-    }).run();
+    });
   };
 
-  const createTx = (opts: {
+  const createTx = async (opts: {
     id: string; groupId: string; title: string; total: number; paidBy: string;
     ageDays: number;
     items?: { name: string; quantity: number; price: number }[];
     split: { userId: string; amount: number }[];
   }) => {
-    db.insert(schema.transactions).values({
+    await db.insert(schema.transactions).values({
       id: opts.id,
       title: opts.title,
       totalAmount: opts.total,
@@ -69,29 +72,29 @@ export function seed(db: BetterSQLite3Database<typeof schema>) {
       groupId: opts.groupId,
       transactionDate: dateOnly(opts.ageDays),
       createdAt: daysAgo(opts.ageDays, 18),
-    }).run();
+    });
     for (const item of opts.items ?? [{ name: opts.title, quantity: 1, price: opts.total }]) {
-      db.insert(schema.transactionItems).values({
+      await db.insert(schema.transactionItems).values({
         id: `item-${uuid().slice(0, 8)}`, transactionId: opts.id, ...item,
-      }).run();
+      });
     }
     for (const p of opts.split) {
-      db.insert(schema.participants).values({
+      await db.insert(schema.participants).values({
         id: uuid(), transactionId: opts.id, userId: p.userId, shareAmount: p.amount,
-      }).run();
+      });
     }
-    db.insert(schema.activities).values({
+    await db.insert(schema.activities).values({
       id: `act-${uuid().slice(0, 12)}`, type: "transaction", userId: opts.paidBy,
       amount: opts.total, groupId: opts.groupId, transactionId: opts.id,
       createdAt: daysAgo(opts.ageDays, 18),
-    }).run();
+    });
   };
 
   // ── Group 1: Itrenia Main Club (everyone) ──────────────────────────
-  createGroup("group-itrenia", "Itrenia Main Club", "#f87171", "user-you",
+  await createGroup("group-itrenia", "Itrenia Main Club", "#f87171", "user-you",
     ["user-you", "user-alex", "user-ben", "user-chloe", "user-diana"], 10);
 
-  createTx({
+  await createTx({
     id: "tx-demo-sakura", groupId: "group-itrenia",
     title: "Dinner at Sakura", total: 116.50, paidBy: "user-you", ageDays: 3,
     items: [
@@ -109,7 +112,7 @@ export function seed(db: BetterSQLite3Database<typeof schema>) {
     ],
   });
 
-  createTx({
+  await createTx({
     id: "tx-demo-karaoke", groupId: "group-itrenia",
     title: "Karaoke Night", total: 80.00, paidBy: "user-ben", ageDays: 2,
     split: [
@@ -122,10 +125,10 @@ export function seed(db: BetterSQLite3Database<typeof schema>) {
   });
 
   // ── Group 2: Roommates (You, Alex, Ben) ────────────────────────────
-  createGroup("group-roommates", "Roommates", "#60a5fa", "user-alex",
+  await createGroup("group-roommates", "Roommates", "#60a5fa", "user-alex",
     ["user-you", "user-alex", "user-ben"], 8);
 
-  createTx({
+  await createTx({
     id: "tx-demo-groceries", groupId: "group-roommates",
     title: "Weekly Groceries", total: 62.40, paidBy: "user-alex", ageDays: 4,
     split: [
@@ -135,7 +138,7 @@ export function seed(db: BetterSQLite3Database<typeof schema>) {
     ],
   });
 
-  createTx({
+  await createTx({
     id: "tx-demo-internet", groupId: "group-roommates",
     title: "Internet Bill", total: 45.00, paidBy: "user-you", ageDays: 1,
     split: [
@@ -146,10 +149,10 @@ export function seed(db: BetterSQLite3Database<typeof schema>) {
   });
 
   // ── Group 3: Japan Trip (You, Chloe, Diana) ────────────────────────
-  createGroup("group-japan", "Japan Trip", "#fbbf24", "user-chloe",
+  await createGroup("group-japan", "Japan Trip", "#fbbf24", "user-chloe",
     ["user-you", "user-chloe", "user-diana"], 6);
 
-  createTx({
+  await createTx({
     id: "tx-demo-airbnb", groupId: "group-japan",
     title: "Osaka Airbnb", total: 240.00, paidBy: "user-chloe", ageDays: 5,
     split: [
@@ -159,7 +162,7 @@ export function seed(db: BetterSQLite3Database<typeof schema>) {
     ],
   });
 
-  createTx({
+  await createTx({
     id: "tx-demo-ramen-street", groupId: "group-japan",
     title: "Ramen Street", total: 36.00, paidBy: "user-you", ageDays: 4,
     split: [
@@ -168,4 +171,6 @@ export function seed(db: BetterSQLite3Database<typeof schema>) {
       { userId: "user-diana", amount: 12.00 },
     ],
   });
+
+  return true;
 }

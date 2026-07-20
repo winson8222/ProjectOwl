@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({ success: true, data: getGroupsForUser(userId) });
+    return NextResponse.json({ success: true, data: await getGroupsForUser(userId) });
   } catch (err) {
     console.error("GET /api/groups error:", err);
     return NextResponse.json<ApiErrorResponse>(
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const group = createGroup(body.name.trim(), body.creatorId, body.memberIds ?? [], body.color);
+    const group = await createGroup(body.name.trim(), body.creatorId, body.memberIds ?? [], body.color);
     return NextResponse.json({ success: true, data: group }, { status: 201 });
   } catch (err) {
     console.error("POST /api/groups error:", err);

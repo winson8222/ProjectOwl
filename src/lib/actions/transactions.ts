@@ -43,13 +43,13 @@ export interface CreateTransactionInput {
 }
 
 /** Create a full transaction with its (unsplit) line items, item-level assignments, and participant shares. */
-export function createTransaction(input: CreateTransactionInput): Transaction {
+export async function createTransaction(input: CreateTransactionInput): Promise<Transaction> {
   const db = getDb();
   const txId = `tx-${uuid().slice(0, 12)}`;
 
-  db.transaction(() => {
+  await db.transaction(async (tx) => {
     // Insert the transaction
-    db.insert(schema.transactions).values({
+    await tx.insert(schema.transactions).values({
       id: txId,
       title: input.title,
       type: input.type ?? "expense",
@@ -60,7 +60,7 @@ export function createTransaction(input: CreateTransactionInput): Transaction {
       notes: input.notes ?? null,
       receiptImage: input.receiptImage ?? null,
       createdAt: localTimestamp(),
-    }).run();
+    });
 
     // Insert items — descriptive line items only, no split data attached
     const insertedItemIds: string[] = [];
@@ -73,13 +73,13 @@ export function createTransaction(input: CreateTransactionInput): Transaction {
 
       const itemId = `item-${uuid().slice(0, 8)}`;
       insertedItemIds.push(itemId);
-      db.insert(schema.transactionItems).values({
+      await tx.insert(schema.transactionItems).values({
         id: itemId,
         transactionId: txId,
         name: item.name.trim(), // Trim whitespace from item names
         quantity: item.quantity,
         price: item.price,
-      }).run();
+      });
     }
 
     // Insert item-level assignments (from scan allocation)
@@ -89,27 +89,27 @@ export function createTransaction(input: CreateTransactionInput): Transaction {
       const itemId = insertedItemIds[i];
       if (!itemId) continue;
       for (const assignment of assignments) {
-        db.insert(schema.itemAssignments).values({
+        await tx.insert(schema.itemAssignments).values({
           id: `ia-${uuid().slice(0, 8)}`,
           itemId,
           userId: assignment.userId,
           shareAmount: assignment.shareAmount,
-        }).run();
+        });
       }
     }
 
     // Insert participants — the split, once, for the whole transaction
     for (const participant of input.participants) {
-      db.insert(schema.participants).values({
+      await tx.insert(schema.participants).values({
         id: uuid(),
         transactionId: txId,
         userId: participant.userId,
         shareAmount: participant.shareAmount,
-      }).run();
+      });
     }
   });
 
-  logActivity({
+  await logActivity({
     type: input.type === "payment" ? "payment" : "transaction",
     userId: input.paidByUserId,
     // A payment's recipient is its sole participant.
@@ -119,48 +119,46 @@ export function createTransaction(input: CreateTransactionInput): Transaction {
     transactionId: txId,
   });
 
-  return db.select().from(schema.transactions).where(eq(schema.transactions.id, txId)).get()!;
+  return (await db.select().from(schema.transactions).where(eq(schema.transactions.id, txId)))[0]!;
 }
 
 /** Look up a group's name (null when the transaction predates groups). */
-function groupNameFor(groupId: string | null): string | null {
+async function groupNameFor(groupId: string | null): Promise<string | null> {
   if (!groupId) return null;
-  const g = getDb().select().from(schema.groups).where(eq(schema.groups.id, groupId)).get();
+  const g = (await getDb().select().from(schema.groups).where(eq(schema.groups.id, groupId)))[0];
   return g?.name ?? null;
 }
 
 /** Get a single transaction with all details. */
-export function getTransaction(id: string, currentUserId?: string): TransactionWithDetails | undefined {
+export async function getTransaction(id: string, currentUserId?: string): Promise<TransactionWithDetails | undefined> {
   const db = getDb();
 
-  const tx = db
+  const tx = (await db
     .select()
     .from(schema.transactions)
-    .where(and(eq(schema.transactions.id, id), eq(schema.transactions.isDeleted, false)))
-    .get();
+    .where(and(eq(schema.transactions.id, id), eq(schema.transactions.isDeleted, false))))[0];
   if (!tx) return undefined;
 
-  const paidByUser = db.select().from(schema.users).where(eq(schema.users.id, tx.paidByUserId)).get();
+  const paidByUser = (await db.select().from(schema.users).where(eq(schema.users.id, tx.paidByUserId)))[0];
 
-  const items = db
+  const items = await db
     .select()
     .from(schema.transactionItems)
-    .where(eq(schema.transactionItems.transactionId, id))
-    .all();
+    .where(eq(schema.transactionItems.transactionId, id));
 
-  const participantRows = db
+  const participantRows = await db
     .select()
     .from(schema.participants)
-    .where(eq(schema.participants.transactionId, id))
-    .all();
+    .where(eq(schema.participants.transactionId, id));
 
-  const userShares = participantRows.map((p) => {
-    const user = db.select().from(schema.users).where(eq(schema.users.id, p.userId)).get();
-    return { user: user!, shareAmount: p.shareAmount };
-  });
+  const userShares = [];
+  for (const p of participantRows) {
+    const user = (await db.select().from(schema.users).where(eq(schema.users.id, p.userId)))[0];
+    userShares.push({ user: user!, shareAmount: p.shareAmount });
+  }
 
   // Load item-level assignments with user names
-  const rawAssignments = db
+  const rawAssignments = items.length === 0 ? [] : await db
     .select()
     .from(schema.itemAssignments)
     .where(
@@ -168,13 +166,13 @@ export function getTransaction(id: string, currentUserId?: string): TransactionW
         schema.itemAssignments.itemId,
         items.map((i) => i.id)
       )
-    )
-    .all();
+    );
 
-  const itemAssignments = rawAssignments.map((a) => {
-    const u = db.select().from(schema.users).where(eq(schema.users.id, a.userId)).get();
-    return { ...a, userName: u?.name ?? "Unknown" };
-  });
+  const itemAssignments = [];
+  for (const a of rawAssignments) {
+    const u = (await db.select().from(schema.users).where(eq(schema.users.id, a.userId)))[0];
+    itemAssignments.push({ ...a, userName: u?.name ?? "Unknown" });
+  }
 
   const userShare = currentUserId
     ? (participantRows.find((p) => p.userId === currentUserId)?.shareAmount ?? 0)
@@ -187,39 +185,37 @@ export function getTransaction(id: string, currentUserId?: string): TransactionW
     participants: userShares,
     itemAssignments,
     userShare,
-    groupName: groupNameFor(tx.groupId),
+    groupName: await groupNameFor(tx.groupId),
   };
 }
 
 /** Query transactions visible to a user with optional filters.
  *  When `groupId` is given, returns ALL of that group's transactions
  *  (members see the whole group ledger, not just their own involvement). */
-export function getTransactions(params: {
+export async function getTransactions(params: {
   userId: string;
   groupId?: string; // scope to one group
   payer?: string; // filter by who paid
   payees?: string[]; // filter by who's involved
   limit?: number;
   offset?: number;
-}): TransactionWithDetails[] {
+}): Promise<TransactionWithDetails[]> {
   const db = getDb();
   const { userId, groupId, payer, payees, limit = 50, offset = 0 } = params;
 
   let txIds: string[] | undefined;
   if (!groupId) {
     // Get transaction IDs where this user is a participant
-    const involvement = db
+    const involvement = await db
       .select({ transactionId: schema.participants.transactionId })
       .from(schema.participants)
-      .where(eq(schema.participants.userId, userId))
-      .all();
+      .where(eq(schema.participants.userId, userId));
 
     // Also include transactions the user paid for (even if not a participant)
-    const paidTxIds = db
+    const paidTxIds = await db
       .select({ id: schema.transactions.id })
       .from(schema.transactions)
-      .where(eq(schema.transactions.paidByUserId, userId))
-      .all();
+      .where(eq(schema.transactions.paidByUserId, userId));
 
     txIds = [
       ...new Set([
@@ -230,7 +226,7 @@ export function getTransactions(params: {
     if (txIds.length === 0) return [];
   }
 
-  const txs = db
+  const txs = await db
     .select()
     .from(schema.transactions)
     .where(
@@ -243,31 +239,30 @@ export function getTransactions(params: {
     )
     .orderBy(desc(schema.transactions.createdAt)) // Sort by creation timestamp (latest first)
     .limit(limit)
-    .offset(offset)
-    .all();
+    .offset(offset);
 
-  return txs.map((tx) => {
-    const items = db
+  const result: TransactionWithDetails[] = [];
+  for (const tx of txs) {
+    const items = await db
       .select()
       .from(schema.transactionItems)
-      .where(eq(schema.transactionItems.transactionId, tx.id))
-      .all();
+      .where(eq(schema.transactionItems.transactionId, tx.id));
 
-    const participantRows = db
+    const participantRows = await db
       .select()
       .from(schema.participants)
-      .where(eq(schema.participants.transactionId, tx.id))
-      .all();
+      .where(eq(schema.participants.transactionId, tx.id));
 
-    const paidByUser = db.select().from(schema.users).where(eq(schema.users.id, tx.paidByUserId)).get();
+    const paidByUser = (await db.select().from(schema.users).where(eq(schema.users.id, tx.paidByUserId)))[0];
 
-    const userShares = participantRows.map((p) => {
-      const user = db.select().from(schema.users).where(eq(schema.users.id, p.userId)).get();
-      return { user: user!, shareAmount: p.shareAmount };
-    });
+    const userShares = [];
+    for (const p of participantRows) {
+      const user = (await db.select().from(schema.users).where(eq(schema.users.id, p.userId)))[0];
+      userShares.push({ user: user!, shareAmount: p.shareAmount });
+    }
 
     // Load item-level assignments
-    const rawAssignments = db
+    const rawAssignments = items.length === 0 ? [] : await db
       .select()
       .from(schema.itemAssignments)
       .where(
@@ -275,36 +270,37 @@ export function getTransactions(params: {
           schema.itemAssignments.itemId,
           items.map((i) => i.id)
         )
-      )
-      .all();
+      );
 
-    const itemAssignments = rawAssignments.map((a) => {
-      const u = db.select().from(schema.users).where(eq(schema.users.id, a.userId)).get();
-      return { ...a, userName: u?.name ?? "Unknown" };
-    });
+    const itemAssignments = [];
+    for (const a of rawAssignments) {
+      const u = (await db.select().from(schema.users).where(eq(schema.users.id, a.userId)))[0];
+      itemAssignments.push({ ...a, userName: u?.name ?? "Unknown" });
+    }
 
     const userShare = participantRows.find((p) => p.userId === userId)?.shareAmount ?? 0;
 
-    return {
+    result.push({
       ...tx,
       items,
       paidByUser,
       participants: userShares,
       itemAssignments,
       userShare,
-      groupName: groupNameFor(tx.groupId),
-    };
-  });
+      groupName: await groupNameFor(tx.groupId),
+    });
+  }
+  return result;
 }
 
 /** Soft-delete a transaction — the row (and its items/participants) stays for
  * ledger history but is excluded from balance and history queries. */
-export function deleteTransaction(id: string): boolean {
+export async function deleteTransaction(id: string): Promise<boolean> {
   const db = getDb();
-  const result = db
+  const updated = await db
     .update(schema.transactions)
     .set({ isDeleted: true, updatedAt: localTimestamp() })
     .where(eq(schema.transactions.id, id))
-    .run();
-  return result.changes > 0;
+    .returning({ id: schema.transactions.id });
+  return updated.length > 0;
 }

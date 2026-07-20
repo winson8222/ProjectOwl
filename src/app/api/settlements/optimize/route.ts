@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     const groupId = searchParams.get("groupId");
 
     if (groupId) {
-      const plan = getGroupTransferPlan(groupId).map((t) => ({
+      const plan = (await getGroupTransferPlan(groupId)).map((t) => ({
         from: t.fromUser,
         to: t.toUser,
         amount: t.amount,
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, data: plan });
     }
 
-    const plan = getGroupSettlementPlan();
+    const plan = await getGroupSettlementPlan();
     return NextResponse.json({ success: true, data: plan });
   } catch (err) {
     console.error("GET /api/settlements/optimize error:", err);

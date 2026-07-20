@@ -1,5 +1,82 @@
 # ProjectOwl — Devlog
 
+## 2026-07-19 — Full PostgreSQL migration (feature/postgres-migration)
+
+### Done
+**Database layer (SQLite → Postgres):**
+- `schema.ts` rewritten from `sqlite-core` to `pg-core`: `real` → `doublePrecision`,
+  `integer({ mode: "boolean" })` → `boolean`, all 16 indexes from the old
+  hand-written DDL declared in-schema. Timestamps stay TEXT
+  (`YYYY-MM-DD HH:MM:SS`, UTC) via a `to_char(timezone('utc', now()), ...)`
+  default so string-sorting and the `settledAt = "PAID"` sentinel behave
+  exactly as before.
+- Driver: `better-sqlite3` → `postgres` (postgres.js) with `prepare: false`
+  (compatible with Supabase's transaction-mode pooler). `@electric-sql/pglite`
+  added as a dev dep for tests.
+- **`getDb()` is connection-only now.** Migrate/seed no longer run at
+  connection time — no DDL in the request path, no auto-seed race, and a
+  concurrent first request can't observe a half-migrated database.
+- Migrations are versioned drizzle-kit SQL files (`drizzle/0000_init.sql`),
+  generated with `npm run db:generate`, applied with `npm run db:migrate`
+  (prefers `DIRECT_URL` for DDL). Old runtime `migrate.ts` (PRAGMA-based,
+  one-time wipe logic) deleted.
+- `npm run db:seed` is the explicit seed path — same demo data, async, no-op
+  when users exist, **refuses to run when `NODE_ENV=production`**.
+
+**Actions layer — all six modules async:**
+- `.all()`/`.get()`/`.run()` (better-sqlite3 sync API) replaced with awaited
+  queries; `.get()` → `rows[0]`; `result.changes > 0` → `.returning()` length
+  (`deleteTransaction`, `markSettled`).
+- `db.transaction(() => ...)` → `db.transaction(async (tx) => ...)` **using the
+  `tx` client inside** — with the sync driver, using the outer `db` in the
+  callback worked; with an async pg driver it would silently run outside the
+  transaction (`createTransaction`, `createGroup`).
+- `getBalance(userId, _db?, groupId?)` keeps its injectable-db signature for
+  the test suite.
+- All 14 API route handlers await the now-async actions.
+
+**Debug endpoints ported:**
+- `POST /api/debug?action=reset` uses `TRUNCATE ... CASCADE` + re-seed instead
+  of `PRAGMA foreign_keys = OFF` + per-table DELETEs.
+- `delete-all-transactions` deletes in FK order and nulls
+  `settlements.transaction_id` (settlements survive the purge, as before).
+
+**Settlement test suite → PGlite:**
+- `run-settlement-tests.ts` now uses in-memory PGlite (Postgres-in-WASM) with
+  the real generated migrations applied via `drizzle-orm/pglite/migrator` —
+  still fully self-contained, no server or local Postgres needed. One shared
+  instance with `TRUNCATE ... CASCADE` between fixtures.
+
+**Setup scripts:**
+- `setup.sh` / `setup.ps1`: dropped the C++ build-tools checks (no native
+  addon anymore); added Postgres 16 install/verify (brew / winget), database
+  creation, `DATABASE_URL` written into `.env.local`, and `db:migrate` +
+  `db:seed` steps.
+- README, CLAUDE.md, and the dev-tools skill updated for the Postgres
+  workflow.
+
+### Fixed
+- **`getFriends()` friend lookup was broken for >1 friend** — it built
+  `and(eq(users.id, a), eq(users.id, b), ...)`, which can never match a row
+  (the comment said "OR chain" but the code used `and`). Now uses `inArray`.
+
+### Architecture decisions
+1. **Timestamps stay TEXT** — converting to native `timestamp`/`boolean`
+   sentinels (`settledAt`) is a separate refactor; keeping the SQLite-era
+   formats made this a pure driver swap with zero behavior change.
+2. **Money stays `doublePrecision`** — `numeric(10,2)` is the correct type but
+   changes every arithmetic path; deferred (noted as debt).
+3. **Migrate at deploy, seed by hand, connect at runtime** — three lifecycle
+   stages instead of one function, so production can never auto-seed and the
+   runtime DB user never needs DDL rights.
+4. **PGlite for tests** — keeps the settlement suite dependency-free (works in
+   CI and on machines without Postgres) while testing against a real Postgres
+   engine, not SQLite semantics.
+
+### Verification
+- `tsc --noEmit` clean; `test:simplify` 10/10, `test:allocation` 10/10,
+  `test:settlement` 8/8 (on PGlite), `test:security` 26/26; `next build` passes.
+
 ## 2026-07-18 — Security hardening: auth-independent fixes (debug lockdown + input validation)
 
 Done on branch `worktree-security-hardening`. Scope deliberately limited to fixes

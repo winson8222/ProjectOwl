@@ -1,7 +1,7 @@
 # ProjectOwl
 
 Split receipts with friends — without the math. A Splitwise-like PWA built
-with **Next.js 15**, **Tailwind v4**, and **SQLite** (via Drizzle ORM).
+with **Next.js 15**, **Tailwind v4**, and **PostgreSQL** (via Drizzle ORM).
 
 Core flows: scan a receipt (photo → Gemini extracts items/prices → review →
 assign items to friends → save) or enter a transaction manually (even or
@@ -44,9 +44,16 @@ Both serve at [http://localhost:3000](http://localhost:3000).
   flow without burning LLM quota. See
   [`src/lib/debug-config.ts`](src/lib/debug-config.ts).
 
-Reset local data: delete `data/projectowl.db` (and the `-shm`/`-wal`
-sidecar files) and restart — it's auto-created with fresh seed data. Or hit
-`POST /api/debug?action=reset` while the server is running.
+The database is PostgreSQL (`projectowl` on `localhost:5432`, connection from
+`DATABASE_URL` in `.env.local`). Schema changes go through drizzle-kit:
+`npm run db:generate` writes a versioned migration into `drizzle/`, and
+`npm run db:migrate` applies pending migrations. `npm run db:seed` inserts the
+demo data (no-op if users exist; refuses to run when `NODE_ENV=production`).
+None of this happens automatically at runtime — `getDb()` only opens a
+connection.
+
+Reset local data: `POST /api/debug?action=reset` while the server is running,
+or `dropdb projectowl && createdb projectowl && npm run db:migrate && npm run db:seed`.
 
 ## Commit messages
 
@@ -60,9 +67,12 @@ npm run test:simplify    # debt-simplification algorithm (10 fixtures, in-memory
 npm run test:allocation  # receipt item-allocation logic (9 fixtures, in-memory)
 ```
 
-Both are pure, in-memory, and touch nothing in the database. Same suites are
-also runnable from the browser at `/debug` ("Run tests" under each section),
-backed by `GET /api/debug/simplify-tests` and `GET /api/debug/allocation-tests`.
+Both are pure, in-memory, and touch nothing in the database. The settlement
+suite (`npm run test:settlement`) runs against an in-memory PGlite
+(Postgres-in-WASM) instance — also self-contained, no local Postgres needed.
+Same suites are also runnable from the browser at `/debug` ("Run tests" under
+each section), backed by `GET /api/debug/simplify-tests` and
+`GET /api/debug/allocation-tests`.
 
 See also [.claude/skills/dev-tools/SKILL.md](.claude/skills/dev-tools/SKILL.md)
 for these plus other everyday dev commands (killing a stuck local server,
