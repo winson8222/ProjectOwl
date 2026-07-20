@@ -9,6 +9,16 @@ set -euo pipefail
 # never this script.
 LOCAL_PG_PASSWORD="postgres"
 
+# By default `brew install <formula>` also upgrades every other outdated
+# formula on the machine that depends on the same libraries (e.g. installing
+# postgresql@16 has, on real machines, dragged in unrelated upgrades of
+# Node, Python, nginx — slow, disruptive, and if any of THEIR post-install
+# hooks fail, `brew install` reports failure even though the formula we
+# wanted installed fine). Scope brew calls in this script to just what they
+# ask for.
+export HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1
+export HOMEBREW_NO_INSTALL_CLEANUP=1
+
 echo "🦉 ProjectOwl — Setting up development environment"
 
 # ── Check for Node.js ────────────────────────────────────────────────
@@ -33,33 +43,82 @@ echo "✓ npm $(npm -v)"
 
 # ── PostgreSQL ───────────────────────────────────────────────────────
 # The app uses Postgres 16 (same major version as CI / Supabase).
+#
+# We key everything off whether the *server* actually answers
+# (pg_isready), not whether a `psql` binary is on PATH — a client-only
+# library (e.g. libpq, which several unrelated tools pull in) puts psql
+# on PATH without any server behind it, so `command -v psql` alone is
+# not a reliable signal that Postgres is usable.
 PG_DB="projectowl"
 
-if ! command -v psql &>/dev/null; then
+if pg_isready -q 2>/dev/null; then
+  echo "✓ PostgreSQL server is running ($(psql --version 2>/dev/null || echo 'client not found'))"
+else
+  echo ""
+  echo "⚙️  No PostgreSQL server responding — installing/starting one..."
   if [[ "$OSTYPE" == "darwin"* ]]; then
     if command -v brew &>/dev/null; then
-      echo ""
-      echo "📦 PostgreSQL not found — installing postgresql@16 via Homebrew..."
-      brew install postgresql@16
-      brew services start postgresql@16
-      # brew's postgresql@16 is keg-only; make psql/createdb available now
-      export PATH="$(brew --prefix postgresql@16)/bin:$PATH"
-      echo "✓ PostgreSQL 16 installed and started (runs on login via brew services)"
-      echo "  Tip: add $(brew --prefix postgresql@16)/bin to your PATH for psql access"
+      PG_SERVICE=$(brew list --formula 2>/dev/null | grep -E '^postgresql(@[0-9]+)?$' | head -1)
+      if [ -z "$PG_SERVICE" ]; then
+        echo "📦 Installing postgresql@16 via Homebrew..."
+        brew install postgresql@16
+        PG_SERVICE="postgresql@16"
+      fi
+      # brew's postgresql@NN is keg-only; make psql/createdb/initdb available now
+      export PATH="$(brew --prefix "$PG_SERVICE")/bin:$PATH"
+
+      # Some Homebrew versions of this formula ship no post_install hook,
+      # so `brew install` alone never runs initdb — the data directory
+      # (and thus the "database cluster" the formula's own caveats claim
+      # to have created) may simply not exist. `brew services start`
+      # doesn't fail loudly in that case; postgres just can't find its
+      # data dir and pg_isready stays down. Create the cluster ourselves
+      # if it's missing.
+      PG_DATA_DIR="$(brew --prefix)/var/$PG_SERVICE"
+      if [ ! -s "$PG_DATA_DIR/PG_VERSION" ]; then
+        echo "🗄️  Initializing PostgreSQL data directory at $PG_DATA_DIR..."
+        rm -rf "$PG_DATA_DIR"
+        initdb --locale=C -E UTF-8 "$PG_DATA_DIR" >/dev/null
+      fi
+
+      brew services start "$PG_SERVICE"
+      for _ in $(seq 1 10); do
+        pg_isready -q 2>/dev/null && break
+        sleep 1
+      done
     else
       echo "❌ PostgreSQL is required. Install Homebrew (https://brew.sh) then run:"
       echo "     brew install postgresql@16 && brew services start postgresql@16"
       exit 1
     fi
+  elif command -v apt-get &>/dev/null; then
+    echo "📦 Installing postgresql via apt..."
+    sudo apt-get update && sudo apt-get install -y postgresql
+    sudo systemctl enable --now postgresql
+    for _ in $(seq 1 10); do
+      pg_isready -q 2>/dev/null && break
+      sleep 1
+    done
   else
-    echo "❌ PostgreSQL is required. On Debian/Ubuntu:"
-    echo "     sudo apt-get install postgresql-16"
-    echo "     sudo systemctl enable --now postgresql"
+    echo "❌ PostgreSQL is required and no supported package manager (brew/apt) was found."
+    echo "   Install PostgreSQL 16 and start it, then re-run this script."
+    exit 1
+  fi
+
+  if ! pg_isready -q 2>/dev/null; then
+    echo "❌ PostgreSQL was installed but the server still isn't responding."
+    echo "   macOS (brew):  brew services start postgresql@16"
+    echo "   Linux:         sudo systemctl start postgresql"
     echo "   Then re-run this script."
     exit 1
   fi
-else
-  echo "✓ PostgreSQL detected ($(psql --version))"
+  echo "✓ PostgreSQL server installed and running"
+fi
+
+if ! command -v psql &>/dev/null; then
+  echo "❌ PostgreSQL server is running but the 'psql' client isn't on PATH."
+  echo "   Add it to PATH (e.g. $(brew --prefix postgresql@16 2>/dev/null)/bin) and re-run this script."
+  exit 1
 fi
 
 # ── Ensure a 'postgres' role exists with the dev-convention password ───
