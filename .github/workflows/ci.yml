@@ -2,9 +2,9 @@ name: CI / Pre-Deploy Checks
 
 on:
   push:
-    branches: [master, feature/**, staging]
+    branches: [master, feature/**, staging, production]
   pull_request:
-    branches: [master, staging]
+    branches: [master, staging, production]
 
 jobs:
   test:
