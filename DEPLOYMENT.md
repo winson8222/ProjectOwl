@@ -93,12 +93,24 @@ git push origin production
 
 GitHub Actions runs automatically on all branches:
 
+- **Promotion Flow Enforcement** — Ensures staging only receives from master, production only from staging
 - **Type checking** — TypeScript compilation
 - **Debt Simplification tests** — Settlement algorithm
 - **Item Allocation tests** — Receipt item assignment
 - **Linting** — Code quality (if configured)
 
-**Merges are blocked if tests fail.** Fix the issues and push again.
+**Merges are blocked if checks fail.** Fix the issues and push again.
+
+#### Promotion Flow Rules (Automatic)
+
+❌ **Blocked:**
+- PR from `feature/xyz` → `staging` (must be from `master`)
+- PR from `master` → `production` (must be from `staging`)
+- PR from `feature/xyz` → `production` (must be from `staging`)
+
+✅ **Allowed:**
+- PR from `master` → `staging` (or `chore/promote-to-staging` from workflow)
+- PR from `staging` → `production` (or `chore/promote-to-production` from workflow)
 
 ### Vercel Auto-Deploy
 
