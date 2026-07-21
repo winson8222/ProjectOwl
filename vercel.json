@@ -1,9 +1,5 @@
 {
   "buildCommand": "npm run build",
   "devCommand": "npm run dev",
-  "installCommand": "npm install",
-  "env": {
-    "DATABASE_URL": "@DATABASE_URL",
-    "GEMINI_API_KEY": "@GEMINI_API_KEY"
-  }
+  "installCommand": "npm install"
 }
