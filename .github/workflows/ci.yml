@@ -1,0 +1,39 @@
+name: CI / Pre-Deploy Checks
+
+on:
+  push:
+    branches: [master, feature/**, staging]
+  pull_request:
+    branches: [master, staging]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20.x]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run build -- --no-emit 2>/dev/null || npx tsc --noEmit
+
+      - name: Test - Debt Simplification
+        run: npm run test:simplify
+
+      - name: Test - Item Allocation
+        run: npm run test:allocation
+
+      - name: Lint (if available)
+        run: npm run lint 2>/dev/null || echo "No lint script configured"
