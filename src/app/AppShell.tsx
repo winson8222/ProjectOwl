@@ -24,6 +24,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
+      {/* App header */}
+      <header className="fixed top-0 left-0 right-0 bg-white border-b border-[var(--border)] z-50">
+        <div className="max-w-lg mx-auto px-4 py-3">
+          <h1 className="text-xl font-bold text-[var(--primary)]">ItreSplit</h1>
+        </div>
+      </header>
+
       <div className="content-with-nav">{children}</div>
       <BottomNav />
       <DebugMenu />

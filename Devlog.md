@@ -1,5 +1,73 @@
 # ProjectOwl — Devlog
 
+## 2026-07-22 — Major UI overhaul: iOS-style interactions and visual refresh
+
+### Done
+
+**Color palette refresh:**
+- Updated entire app color scheme to match photo reference with blue-based theme
+- Primary color: `#3a85c5` (blue accent from reference image)
+- Background: `#f2f2fd` (light blue-gray tint)
+- Text: `#2a2a2a` (soft black)
+- Borders: `#b0b0b0` (medium gray)
+- Cards: `#fbfbff` (off-white with subtle blue tint)
+- All CSS custom properties in `globals.css` updated
+
+**iOS-style group picker wheel:**
+- Replaced native `<select>` dropdowns with custom `GroupPickerWheel` component
+- Collapsed state: single group card with colored circle, name, chevron
+- Long-press (300ms) expands to vertical scroll wheel
+- Scroll wheel: translucent (`bg-white/70`) with backdrop blur, centered item highlighted
+- Auto-centering on selection, smooth animations
+- Applied to home page ("Most down bad" group selector) and "Add Transaction" page
+- Uses group's assigned color for avatar circles
+
+**Page transitions and spacing:**
+- Added slide-up animation (700ms ease-out) to New Transaction and New Payment pages
+- Pages now "layer on top" with smooth vertical slide from bottom
+- Reduced top spacing on home page: `pt-6` → `pt-2` for tighter header-to-content gap
+
+**Navigation refinements:**
+- Bottom navigation bar made slimmer: `px-6 py-4` → `px-4 py-2`
+- Fixed header at top showing "ItreSplit" branding
+- Content spacing adjusted via `.content-with-nav` CSS class
+
+**Transaction/Payment unified form:**
+- Replaced "Paying someone back? Record a payment →" link with toggle
+- Toggle switches between "Add Expense" (default) and "Add Payment" modes
+- Single page with two modes instead of separate routes
+- Form state resets appropriately when toggling between modes
+- Combined save handler supports both transaction and payment creation
+
+**Label and copy updates:**
+- Transaction form: "Description" → "Title"
+- Removed emojis throughout: scan button, debug labels, payment headers
+- Scan receipt button: "Scan a receipt" → "Use ItreAI"
+- Toggle buttons: "💰 Split expense" / "💸 Pay someone back" → "Add Expense" / "Add Payment"
+
+**ItreAI button premium treatment:**
+- Gradient background (primary → primary-hover)
+- Animated flowing border: rotating gradient (purple → pink → blue) with blur
+- Hover effects: scale to 105%, enhanced shadow, horizontal shine sweep
+- Added sparkle emoji (✨) for visual appeal
+- CSS animation `@keyframes gradientPan` for continuous 3s rotation
+
+**Components added:**
+- `src/components/GroupPickerWheel.tsx`: iOS-style picker with press-and-hold expansion
+
+### Architecture decisions
+1. **Component-based picker over native select** — custom component enables iOS-style interactions (long-press, scroll wheel) that native `<select>` cannot provide, while maintaining accessibility via keyboard/touch handlers.
+2. **Unified transaction/payment form** — single route with mode toggle reduces navigation complexity and keeps split/payment features contextually adjacent; state reset on toggle prevents cross-mode contamination.
+3. **CSS animations over JavaScript** — gradient border animation uses pure CSS (`@keyframes`) for performance and smoothness, avoiding requestAnimationFrame churn.
+
+### Verification
+- All UI changes tested interactively in dev mode
+- Color palette applied consistently across all pages
+- Group picker works on home page and transaction form
+- Transaction/payment toggle functions correctly
+- Slide-up animations smooth at 700ms duration
+- No TypeScript or build errors
+
 ## 2026-07-19 — Full PostgreSQL migration (feature/postgres-migration)
 
 ### Done

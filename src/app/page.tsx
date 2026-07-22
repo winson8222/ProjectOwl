@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import BalanceCard from "@/components/BalanceCard";
 import UserAvatar from "@/components/UserAvatar";
+import GroupPickerWheel from "@/components/GroupPickerWheel";
 import { getSessionUser } from "@/lib/session";
 import type { BalanceSummary } from "@/lib/actions/balances";
 
@@ -80,7 +81,7 @@ export default function HomePage() {
   }
 
   return (
-    <main className="min-h-dvh px-4 pt-6 pb-24 max-w-lg mx-auto">
+    <main className="min-h-dvh px-4 pt-2 pb-24 max-w-lg mx-auto">
       {/* Greeting */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -112,16 +113,12 @@ export default function HomePage() {
           </div>
         ) : (
           <>
-            {/* Group selector */}
-            <select
-              value={selectedGroupId}
-              onChange={(e) => setSelectedGroupId(e.target.value)}
-              className="text-xs font-medium text-gray-600 mb-3 px-2 py-1 border border-[var(--border)] rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
-            >
-              {groups.map((g) => (
-                <option key={g.id} value={g.id}>{g.name}</option>
-              ))}
-            </select>
+            {/* Group scroll wheel picker */}
+            <GroupPickerWheel
+              groups={groups}
+              selectedGroupId={selectedGroupId}
+              onGroupChange={(groupId) => setSelectedGroupId(groupId)}
+            />
 
             <DownBadRanking ranking={ranking} loading={rankingLoading} currentUserId={user.id} />
           </>
@@ -136,22 +133,6 @@ export default function HomePage() {
           totalOwe={balance.totalOwe}
         />
       )}
-
-      {/* Quick actions */}
-      <div className="flex gap-3 mt-4">
-        <Link
-          href="/transactions/new"
-          className="flex-1 px-4 py-3 text-sm font-semibold text-white bg-[var(--primary)] rounded-xl hover:bg-[var(--primary-hover)] text-center transition-colors"
-        >
-          + New transaction
-        </Link>
-        <Link
-          href="/groups"
-          className="flex-1 px-4 py-3 text-sm font-semibold text-[var(--primary)] border border-[var(--primary)] rounded-xl hover:bg-blue-50 text-center transition-colors"
-        >
-          Your groups
-        </Link>
-      </div>
     </main>
   );
 }

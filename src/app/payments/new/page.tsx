@@ -21,7 +21,13 @@ import { ERROR_MESSAGES, mapErrorMessage } from "@/lib/constants";
  */
 export default function NewPaymentPage() {
   const router = useRouter();
+  const [isMounted, setIsMounted] = useState(false);
   const [user, setUser] = useState<any>(null);
+
+  // Slide-up animation on mount
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const [groups, setGroups] = useState<any[]>([]);
   const [groupsLoaded, setGroupsLoaded] = useState(false);
@@ -152,7 +158,11 @@ export default function NewPaymentPage() {
     : 0;
 
   return (
-    <main className="min-h-dvh px-4 pt-6 pb-8 max-w-lg mx-auto">
+    <main
+      className={`min-h-dvh px-4 pt-6 pb-8 max-w-lg mx-auto transition-all duration-700 ease-out ${
+        isMounted ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0'
+      }`}
+    >
       <button
         onClick={() => router.back()}
         className="text-sm text-gray-500 hover:text-gray-700 mb-4 block"
