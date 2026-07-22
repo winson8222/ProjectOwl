@@ -35,7 +35,7 @@ export default function GroupPickerWheel({
   const containerRef = useRef<HTMLDivElement>(null);
   const expandedRef = useRef<HTMLDivElement>(null);
   const touchStartTime = useRef<number>(0);
-  const longPressTimer = useRef<NodeJS.Timeout>();
+  const longPressTimer = useRef<NodeJS.Timeout | undefined>(undefined);
 
   const selectedGroup = groups.find((g) => g.id === selectedGroupId) || groups[0];
   const itemHeight = 80;
