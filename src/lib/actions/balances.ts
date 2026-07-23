@@ -1,5 +1,5 @@
 import { getDb, schema, type Db } from "@/lib/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { getGroupMemberIds } from "./groups";
 
 export interface BalanceSummary {
@@ -48,18 +48,27 @@ export async function getBalance(
       )
     );
 
-  for (const tx of txs) {
+  // Participants for all transactions in one IN query — this scan is
+  // unscoped (every group) for the overall balance, so a per-transaction
+  // loop here was the single most expensive path in the app.
+  if (txs.length > 0) {
     const parts = await db
-      .select({ userId: schema.participants.userId, shareAmount: schema.participants.shareAmount })
+      .select({
+        transactionId: schema.participants.transactionId,
+        userId: schema.participants.userId,
+        shareAmount: schema.participants.shareAmount,
+      })
       .from(schema.participants)
-      .where(eq(schema.participants.transactionId, tx.id));
+      .where(inArray(schema.participants.transactionId, txs.map((t) => t.id)));
 
+    const paidByTx = new Map(txs.map((t) => [t.id, t.paidBy]));
     for (const p of parts) {
-      if (p.userId === tx.paidBy) continue; // can't owe yourself
-      if (tx.paidBy === userId && p.userId !== userId) {
+      const paidBy = paidByTx.get(p.transactionId)!;
+      if (p.userId === paidBy) continue; // can't owe yourself
+      if (paidBy === userId && p.userId !== userId) {
         bump(p.userId, p.shareAmount); // they owe the user
       } else if (p.userId === userId) {
-        bump(tx.paidBy, -p.shareAmount); // the user owes the payer
+        bump(paidBy, -p.shareAmount); // the user owes the payer
       }
     }
   }
@@ -90,9 +99,15 @@ export async function getBalance(
     }
   }
 
+  const counterpartyIds = [...net.keys()];
+  const counterparties = counterpartyIds.length > 0
+    ? await db.select().from(schema.users).where(inArray(schema.users.id, counterpartyIds))
+    : [];
+  const usersById = new Map(counterparties.map((u) => [u.id, u]));
+
   const perPerson: BalanceSummary["perPerson"] = [];
   for (const [otherId, amount] of net.entries()) {
-    const user = (await db.select().from(schema.users).where(eq(schema.users.id, otherId)))[0];
+    const user = usersById.get(otherId);
     if (!user) continue;
     perPerson.push({ user, amount: round2(amount) });
   }

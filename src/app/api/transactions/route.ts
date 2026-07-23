@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { createTransaction, getTransactions, getTransaction, deleteTransaction } from "@/lib/actions/transactions";
 import type { CreateTransactionInput } from "@/lib/actions/transactions";
 import { areGroupMembers } from "@/lib/actions/groups";
+import { getCurrentUser } from "@/lib/auth";
+import { unauthorized, forbidden } from "@/lib/auth/guard";
+import { createTimer } from "@/lib/server-timing";
 import { CODES, ERROR_MESSAGES, apiError, mapErrorMessage, type ApiErrorResponse } from "@/lib/constants";
 import { debugEndpointsEnabled } from "@/lib/debug-guard";
 import { transactionAmountsValid, clampLimit } from "@/lib/security";
@@ -9,12 +12,15 @@ import { transactionAmountsValid, clampLimit } from "@/lib/security";
 /**
  * POST /api/transactions
  * Create a new transaction with (optional, descriptive) items and its
- * participant split.
+ * participant split. The signed-in user must be a member of the group.
  *
  * Validates required fields and split amounts before saving.
  */
 export async function POST(request: NextRequest) {
   try {
+    const me = await getCurrentUser();
+    if (!me) return unauthorized();
+
     const body: CreateTransactionInput = await request.json();
 
     if (!body.title || !body.totalAmount || !body.paidByUserId || !body.transactionDate) {
@@ -55,8 +61,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // …and everyone involved (payer + participants) must be a group member.
-    const involved = [...new Set([body.paidByUserId, ...body.participants.map((p) => p.userId)])];
+    // …and everyone involved (payer + participants + the signed-in creator)
+    // must be a group member. Identity is server-verified, so this check is a
+    // real boundary now, not a spoofable one.
+    const involved = [...new Set([me.id, body.paidByUserId, ...body.participants.map((p) => p.userId)])];
     if (!(await areGroupMembers(body.groupId, involved))) {
       return NextResponse.json<ApiErrorResponse>(
         apiError(ERROR_MESSAGES.NOT_GROUP_MEMBER, CODES.NOT_GROUP_MEMBER),
@@ -107,17 +115,23 @@ export async function POST(request: NextRequest) {
 
 /**
  * GET /api/transactions
- * Query transactions, or get a single transaction by id.
+ * Query the signed-in user's transactions, or get a single transaction by id.
+ * Identity comes from the session — any client-sent userId param is ignored.
  */
 export async function GET(request: NextRequest) {
+  const t = createTimer();
   try {
+    const me = await t.time("auth", () => getCurrentUser());
+    if (!me) return unauthorized();
+
     const { searchParams } = new URL(request.url);
     const txId = searchParams.get("id");
 
     if (txId) {
-      const userId = searchParams.get("userId") || undefined;
-      const tx = await getTransaction(txId, userId);
-      if (!tx) {
+      const tx = await getTransaction(txId, me.id);
+      // A transaction is visible only to members of its group. 404 (not 403)
+      // so non-members can't probe which transaction ids exist.
+      if (!tx || (tx.groupId && !(await areGroupMembers(tx.groupId, [me.id])))) {
         return NextResponse.json<ApiErrorResponse>(
           apiError(ERROR_MESSAGES.TX_NOT_FOUND, CODES.NOT_FOUND),
           { status: 404 }
@@ -126,23 +140,22 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, data: tx });
     }
 
-    const userId = searchParams.get("userId");
-    if (!userId) {
-      return NextResponse.json<ApiErrorResponse>(
-        apiError(ERROR_MESSAGES.USER_ID_REQUIRED, CODES.MISSING_USER_ID),
-        { status: 400 }
-      );
-    }
-
     const payer = searchParams.get("payer") || undefined;
     const payees = searchParams.get("payees")?.split(",").filter(Boolean) || undefined;
     const groupId = searchParams.get("groupId") || undefined;
 
+    // Reading a group's full ledger requires membership.
+    if (groupId && !(await t.time("authz", () => areGroupMembers(groupId, [me.id])))) {
+      return forbidden();
+    }
+
     // Clamp limit to a sane range so a huge/NaN value can't exhaust the server.
     const limit = clampLimit(searchParams.get("limit"));
 
-    const transactions = await getTransactions({ userId, groupId, payer, payees, limit });
-    return NextResponse.json({ success: true, data: transactions });
+    const transactions = await t.time("db", () =>
+      getTransactions({ userId: me.id, groupId, payer, payees, limit })
+    );
+    return NextResponse.json({ success: true, data: transactions }, { headers: t.headers() });
   } catch (err) {
     console.error("GET /api/transactions error:", err);
     return NextResponse.json<ApiErrorResponse>(
@@ -174,12 +187,23 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ success: true, message: "All transactions deleted" });
     }
 
-    // Delete a single transaction
+    // Delete a single transaction — only group members may delete it.
+    const me = await getCurrentUser();
+    if (!me) return unauthorized();
+
     const txId = searchParams.get("id");
     if (!txId) {
       return NextResponse.json<ApiErrorResponse>(
         apiError(ERROR_MESSAGES.TX_ID_REQUIRED, CODES.MISSING_ID),
         { status: 400 }
+      );
+    }
+
+    const tx = await getTransaction(txId, me.id);
+    if (!tx || (tx.groupId && !(await areGroupMembers(tx.groupId, [me.id])))) {
+      return NextResponse.json<ApiErrorResponse>(
+        apiError(ERROR_MESSAGES.TX_NOT_FOUND, CODES.NOT_FOUND),
+        { status: 404 }
       );
     }
 

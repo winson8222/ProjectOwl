@@ -185,7 +185,6 @@ export default function GroupsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: newName.trim(),
-          creatorId: user.id,
           memberIds: newMembers,
         }),
       });
@@ -213,7 +212,6 @@ export default function GroupsPage() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId: user.id,
           groupIds: newOrder.map((g) => g.id),
         }),
       });

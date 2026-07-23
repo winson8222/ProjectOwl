@@ -1,5 +1,296 @@
 # ProjectOwl — Devlog
 
+## 2026-07-24 — Merge master (auth + perf) into UI-Changes
+
+UI-Changes (iOS-style UI overhaul + transaction wizard, branched before the
+auth/perf work) merged with master's 9 commits: dual-mode auth, group
+invites, the N+1 batching rounds, and Server-Timing.
+
+### Done
+- **Migration renumbered.** Both sides had created an idx-1 migration:
+  master's `0001_thick_sasquatch` (users.auth_id) + `0002_sweet_maelstrom`
+  (group_invites), and UI-Changes' `0001_last_avengers`
+  (groups.display_order). Master's numbering is canonical (already deployed
+  via `db:migrate:deploy`), so the display_order migration was deleted and
+  regenerated from the merged schema as `0003_wise_elektra` — identical SQL,
+  new slot. Anyone who ran `0001_last_avengers` locally must roll it back
+  (`ALTER TABLE groups DROP COLUMN display_order`) before migrating, or the
+  0003 apply will fail on the existing column.
+- **AppShell = both intents**: master's server-verified session gate
+  (LoginScreen / sign-out) wrapped around UI-Changes' PageSlider navigation
+  and translucent header.
+- **`GET /api/groups/[id]`** kept master's one-fetch `getGroupPage()` route;
+  its payload already contains the `memberBalances` the new UI reads (plus
+  `downBadRanking`, which UI-Changes had dropped — harmless extra, no extra
+  query).
+- **`getGroupsForUser`** kept master's parallel ledger fetch, ordered by
+  UI-Changes' `display_order` instead of `created_at`.
+
+### Fixed
+- **`PUT /api/groups/reorder` trusted a client-sent userId** — the pattern
+  master's auth work eliminated everywhere else. It came through the merge
+  without textual conflict, so it compiled but bypassed session identity.
+  Now `getCurrentUser()` + `unauthorized()` like every other route; the
+  groups page no longer sends `userId`.
+
+### Verification
+- `tsc --noEmit` clean; `test:simplify` 10/10, `test:allocation` 10/10,
+  `test:settlement` 8/8, `test:security` 26/26; `next build` passes.
+
+## 2026-07-23 — Perf round 2: transactions/balances N+1s, one-fetch group page, single auth round trip
+
+Follow-up to the groups.ts batching — Vercel was still slow because three
+more hot paths had the same serial-query shape, plus every API request paid
+auth twice.
+
+### Done
+- **`getTransactions` batched** (the worst offender — untouched last round).
+  Per transaction it ran items + participants + payer + one query *per
+  participant user* + one *per assignment user* + group name: ~180 serial
+  round trips for a 20-tx ledger. Now three stages of IN queries (txs →
+  items ∥ participants ∥ assignments-joined-to-items → users ∥ groups)
+  regardless of list size.
+- **`getBalance` batched** (homepage fetch #1; the earlier attempt was
+  reverted before landing). Participants for all transactions in one IN
+  query — the scan is unscoped (every group) for the overall balance —
+  and all counterparty user rows in one IN query.
+- **`GET /api/groups/[id]` = one ledger fetch.** New `getGroupPage()`
+  computes detail + pairwise + transfer plan + down-bad ranking from a
+  single parallel (members, txs, settlements) trio; the route previously
+  called three actions that each re-fetched the ledger, plus a separate
+  `areGroupMembers` query (membership now checked against the fetched
+  members). `getGroupDetail`/`getGroupDownBadRanking` folded in;
+  `getGroupTransferPlan` kept (settlements/optimize uses it) sharing a pure
+  `planFromNets`.
+- **Middleware skips `/api`.** It ran `supabase.auth.getUser()` (a network
+  round trip to the auth server) on every API request, and then
+  `getCurrentUser()` verified again inside the route — double auth per
+  request. Route handlers can write refreshed session cookies themselves
+  (the server client's setAll works there), so pages keep middleware
+  refresh and API routes verify exactly once.
+
+### Not fixed (known, deferred)
+- Frontend waterfalls: AppShell gates every page behind `/api/auth/me`,
+  and the homepage waits for `/api/groups` before fetching the ranking.
+- Activity feed resolves names with serial per-row lookups.
+- Staging latency: functions are pinned to syd1 (production's region);
+  staging's DB is in Mumbai and pays ~140 ms per round trip by design.
+- "Group not found" flash on back-navigation (loading gate tied to the
+  wrong fetch — see previous entry).
+
+### Verification
+- `tsc --noEmit` clean; `test:simplify` 10/10, `test:allocation` 10/10,
+  `test:settlement` 8/8 (directly exercises the rewritten `getBalance`),
+  `test:security` 26/26; `next build` passes.
+- Live smoke test: overall balance per-person amounts verified against
+  hand-computed seed math; group page nets/pairwise/plan identical to
+  pre-refactor plus correct ranking; ledger transactions carry correct
+  participants/shares/group names; non-member group access still 404s.
+
+## 2026-07-23 — Perf: kill serial N+1 queries in group actions, pin Vercel region
+
+Vercel deploys were slow loading any balance-bearing page. Root cause: the
+group actions were written as many small sequential queries — invisible
+against localhost Postgres (sub-ms round trips) but multiplied by real
+network latency on Vercel, worst when the function region didn't match the
+Supabase region. A user in G groups with N transactions each paid roughly
+`(N + 7) × G` serial round trips just to render the groups list.
+
+### Done (`src/lib/actions/groups.ts` restructure)
+- `getGroupSimpleTransactions` — participants now fetched with **one IN
+  query** for all of a group's transactions instead of one query per
+  transaction (the dominant cost; previously `1 + N` serial round trips).
+- `getMembers` — single join query (was two round trips: ids, then users).
+- New pure `computeMemberNets(members, txs, settlements)` + shared
+  `getGroupLedger(groupId)` that fetches the (members, transactions,
+  settlements) trio **in parallel**. `getGroupNetBalances`,
+  `getGroupTransferPlan`, `getGroupDetail`, and `getGroupsForUser` are all
+  thin wrappers over it now — each endpoint fetches the ledger exactly once
+  (getGroupDetail previously fetched it ~3× via nested helpers; the
+  transfer plan fetched members twice).
+- `getGroupsForUser` — groups processed with `Promise.all` instead of a
+  serial for-loop; transaction count reuses the ledger's rows (dropped the
+  separate per-group count query and duplicate `getMembers` call).
+  Groups-list wall time is now ~4 round trips regardless of group count.
+- `vercel.json`: `"regions": ["syd1"]` — colocated with the **production**
+  Supabase project (Sydney). Staging's Supabase project is in Mumbai; staging
+  and production are one Vercel project (branch-based Preview/Production
+  environments), and Vercel's function region is project-level only — no
+  per-environment or per-branch override exists (confirmed against Vercel's
+  docs). So this is a deliberate compromise: production gets the colocation
+  win, staging keeps eating cross-region latency. Splitting staging into its
+  own Vercel project is the only way to give it a matching region too, if
+  that's ever worth doing. Default was iad1 (US East), which matched neither.
+
+### Verification
+- `tsc --noEmit` clean; `test:simplify` 10/10, `test:allocation` 10/10,
+  `test:settlement` 8/8, `test:security` 26/26; `next build` passes.
+- Live smoke test: `/api/groups` and `/api/groups/group-japan` outputs
+  verified against hand-computed seed values (nets, pairwise, transfer plan
+  all identical to pre-refactor behavior).
+
+### Known issue (not fixed here)
+The group page briefly flashes "Group not found" when navigating back from
+the payment/transaction pages: `loadData` in `groups/[id]/page.tsx` ties
+`setLoading(false)` to the *transactions* fetch, so a slower *group* fetch
+loses the race and the `!group` branch renders before data arrives. Faster
+queries mask it but the loading gate is still wrong.
+
+## 2026-07-23 — Group membership: add by exact email + shareable invite links
+
+How people get into groups, replacing the browse-the-whole-user-table picker.
+Model follows Splitwise/Splitpro: **no acceptance flow and no friendship
+system** — an existing member adds someone by their exact email, or shares an
+invite link the person uses to join themselves. Friendship-gated adds and
+invite/accept state machines were considered and rejected as strictly more
+work for more friction.
+
+### Done
+
+**Add by exact email:**
+- `getUserByEmail()` in `users.ts` — case-insensitive **exact** match via
+  `lower(email) =` (deliberately not `ilike`, whose `%`/`_` wildcards in user
+  input would allow pattern probing). No substring/name search anywhere, so
+  the user table can't be enumerated from the client.
+- `POST /api/groups/[id]/members` now accepts `{ email }` (alongside the old
+  `{ userIds }` for internal use): 404 `EMAIL_NOT_FOUND` with a "share the
+  invite link instead" message, 409 `ALREADY_MEMBER` for duplicates. Actor
+  must still be a signed-in group member.
+- MembersSheet on the group page: the all-users `UserPicker` (which listed
+  every account) is gone; replaced with an email input + "Copy invite link".
+- **Mock mode keeps a "Quick add (local dev)" picker** below the email/link
+  section — seeded users have fake emails nobody remembers, so local testing
+  can still add anyone directly (sends the `userIds` body the API retains).
+  Gated on `authMode() === "mock"`, so it never renders on staging/prod.
+
+**Invite links (`group_invites` table, migration `0002_sweet_maelstrom`):**
+- `token` (random UUID) is the whole credential; FK to group (cascade) +
+  creator; `expires_at` TEXT timestamp, 7-day TTL. `POST
+  /api/groups/[id]/invites` (members only) reuses the newest still-valid
+  token so repeated copies don't mint rows.
+- `GET /api/invites/[token]` — signed-in preview (group name/color, inviter,
+  member count, alreadyMember). `POST` joins: idempotent for existing
+  members, 404 for unknown/expired tokens.
+- `/join/[token]` page — signed-out visitors hit the AppShell LoginScreen in
+  place (URL preserved), then see a one-tap "Join group" preview card.
+- New `member_joined` activity type ("Ben joined via invite link", 🔗) —
+  distinct from `member_added` since the joiner is their own actor.
+
+**OAuth deep-link return:** `signInWithOAuth` now passes
+`?next=<current path>` to `/auth/callback`, which redirects there after the
+code exchange (validated: must start with `/` and not `//`, else falls back
+to `/`). Mock mode needed nothing — its sign-in reloads the current URL.
+
+### Architecture decisions
+1. **No acceptance flow.** Email add is instant (Splitwise semantics); the
+   invite link *is* consent — the invitee performs the join themselves. If
+   approval is ever wanted, it slots in as a pending flag on `group_members`.
+2. **Invite link over user-creation-by-adder for unknown emails.** In
+   supabase mode app users only exist after first OAuth sign-in, so email-add
+   can't reach unregistered people; the link routes them through the normal
+   sign-in (`resolveAppUser` creates/links the row) and then into the group.
+3. **Token reuse per group.** One valid link at a time keeps the "copy link"
+   button idempotent and limits stray live credentials; expiry (7 days)
+   bounds link leakage instead of a revocation UI (deferred).
+
+### Verification
+- `tsc --noEmit` clean; `test:simplify` 10/10, `test:allocation` 10/10,
+  `test:settlement` 8/8, `test:security` 26/26; `next build` passes.
+- Live smoke test (mock mode): case-insensitive email add works, duplicate →
+  409, unknown → 404 with invite-link hint; invite token reused across
+  creates; non-member preview + join + idempotent re-join work; `member_joined`
+  activity logged; bad token → 404; anonymous → 401; non-member invite
+  creation and email-add → 403. DB reset to seed state afterwards.
+
+## 2026-07-23 — Dual-mode auth: server-verified identity (Supabase OAuth / mock cookie)
+
+Implements [docs/auth-implementation-plan.md](docs/auth-implementation-plan.md).
+Identity is now **server-verified on every API request** — no route reads
+`userId`/`actorId`/`creatorId` from the request body or query anymore. This makes
+the per-group authorization checks (deferred from the 2026-07-18 security
+hardening) real boundaries instead of spoofable ones.
+
+### Done
+
+**One codebase, two env-gated auth modes** (`src/lib/auth/mode.ts`):
+- `mock` (local dev): identity from an httpOnly `mock_user_id` cookie resolved
+  against the seeded users table. Active when `NEXT_PUBLIC_AUTH_MODE=mock` or
+  when no Supabase env vars exist — so a plain local checkout works untouched.
+- `supabase` (staging/prod): verified Supabase session (Google OAuth) mapped to
+  an app user via the new `users.auth_id uuid unique` column (migration
+  `drizzle/0001_thick_sasquatch.sql`). Activated purely by env vars set in
+  Vercel, so the master → staging → production promotion flow needs zero
+  per-branch edits.
+
+**Auth core** (`src/lib/auth/index.ts`, server-only):
+- `getCurrentUser()` — the single identity source. Supabase path calls
+  `auth.getUser()` (JWT verified against the auth server, not just decoded)
+  then `resolveAppUser`: match `auth_id` → else link existing row by verified
+  email → else create the app user from the Google profile. Mock path reads the
+  cookie and looks up the seeded user.
+- `@supabase/ssr` clients (`src/lib/supabase/server.ts` / `client.ts`), OAuth
+  callback (`src/app/auth/callback/route.ts`), and `src/middleware.ts` for
+  session-cookie refresh (pass-through in mock mode).
+- `GET /api/auth/me` (current user or null), `POST/DELETE /api/auth/session`
+  (mock cookie set/clear; POST 404s in supabase mode).
+
+**Route refactor — every route off request-supplied identity:**
+- `GET /api/groups`, `/api/activities`, `/api/balances`, `GET /api/transactions`
+  → scoped to `me.id`; client-sent `userId` params are ignored.
+- `GET /api/groups/[id]` and single-transaction reads → members only, **404**
+  (not 403) so ids can't be probed. Group-ledger reads and
+  `GET /api/settlements/optimize?groupId=` → members only (403).
+- `POST /api/groups` creator = `me.id`; `POST /api/groups/[id]/members` actor =
+  `me.id` and must already be a member (403).
+- `POST /api/transactions` → `me.id` must be a group member (alongside payer +
+  participants); `DELETE /api/transactions?id=` → members only.
+- `POST /api/settlements/mark-paid` → `me.id` must be payer or recipient — you
+  can't invent payments between two other people.
+- `POST /api/users` → mock mode only (supabase users are created by OAuth);
+  `GET /api/users` open in mock mode (pre-login picker needs it), signed-in
+  only in supabase mode. `POST /api/receipts/extract` → signed-in only (LLM
+  cost). Debug routes unchanged (already env-gated).
+
+**Frontend:**
+- `AppShell` resolves the session via `/api/auth/me` before rendering any page
+  and warms the `sessionStorage` cache `getSessionUser()` reads — so all pages
+  keep working unchanged. Signed out → new `LoginScreen` (seeded-user picker in
+  mock mode / "Continue with Google" in supabase mode). Header gained Sign out.
+- `src/lib/session.ts` rewritten: cache is display-only, populated from the
+  server session; `signOut()` is mode-aware. The old self-asserted
+  `setSessionUser` picker path is gone (home page's `UserPickerPage` deleted).
+
+**Deploy:**
+- `vercel.json` buildCommand is now `npm run db:migrate:deploy && npm run build`.
+  The new `scripts/db-migrate-deploy.ts` applies pending drizzle migrations
+  before every Vercel build using `DIRECT_URL`/`DATABASE_URL`, and **skips
+  (exit 0) when neither is configured** so preview builds of branches without
+  DB env vars still build. Staging/production env vars live in the Vercel
+  dashboard (Preview scope pinned to `staging` / Production scope).
+
+### Architecture decisions
+1. **Routes ignore client-sent ids instead of the frontend being rewritten.**
+   The security boundary is server-side; pages still append `userId=` to some
+   URLs and the server discards it. This kept the change surface to the routes
+   + shell instead of ~11 pages of fetch rewrites.
+2. **Mock identity is a cookie, not a request param.** Route code is
+   byte-identical in both modes, so local dev exercises the exact production
+   authz path (a spoofed body userId fails locally too).
+3. **404 over 403 for group/transaction membership failures** — non-members
+   can't distinguish "doesn't exist" from "not yours", so ids can't be probed.
+4. **`auth_id` nullable + email-linking on first OAuth login** — seeded users
+   keep working in mock mode, and a future real user whose email matches an
+   existing row inherits it instead of forking a duplicate identity.
+
+### Verification
+- `tsc --noEmit` clean; `test:simplify` 10/10, `test:allocation` 10/10,
+  `test:settlement` 8/8, `test:security` 26/26; `next build` passes.
+- Live smoke test (mock mode, local Postgres): anonymous → 401 on protected
+  routes; mock sign-in sets cookie and `/api/auth/me` reflects it; Alex reading
+  a group he's not in → 404; Alex spoofing `?userId=user-you` on balances →
+  response reflects Alex (param dead); non-member creating a transaction in
+  Roommates → 400 NOT_GROUP_MEMBER; member create/delete + sign-out all work.
+
 ## 2026-07-22 — Major UI overhaul: iOS-style interactions and visual refresh
 
 ### Done

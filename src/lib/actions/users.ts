@@ -1,5 +1,5 @@
 import { getDb, schema } from "@/lib/db";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 
 export type User = typeof schema.users.$inferSelect;
@@ -17,11 +17,26 @@ export async function getUser(id: string): Promise<User | undefined> {
   return rows[0];
 }
 
+/**
+ * Look up a user by exact email, case-insensitive. This is the only
+ * email-based lookup — deliberately no substring/name search, so the user
+ * table can't be enumerated from the client.
+ */
+export async function getUserByEmail(email: string): Promise<User | undefined> {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) return undefined;
+  const rows = await getDb()
+    .select()
+    .from(schema.users)
+    .where(sql`lower(${schema.users.email}) = ${normalized}`);
+  return rows[0];
+}
+
 /** Create a new user. */
 export async function createUser(name: string, email: string): Promise<User> {
   const id = `user-${uuid().slice(0, 8)}`;
   await getDb().insert(schema.users).values({ id, name, email });
-  return { id, name, email, avatarUrl: null, createdAt: new Date().toISOString() };
+  return { id, name, email, avatarUrl: null, authId: null, createdAt: new Date().toISOString() };
 }
 
 /** Get all friends for a user (with net balance). */

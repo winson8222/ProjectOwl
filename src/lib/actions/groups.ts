@@ -1,5 +1,5 @@
 import { getDb, schema } from "@/lib/db";
-import { eq, and, inArray, desc, asc } from "drizzle-orm";
+import { eq, and, inArray, desc, asc, getTableColumns } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 import { localTimestamp } from "@/lib/time";
 import { logActivity } from "./activities";
@@ -51,52 +51,71 @@ export async function areGroupMembers(groupId: string, userIds: string[]): Promi
 }
 
 async function getMembers(groupId: string): Promise<User[]> {
-  const db = getDb();
-  const ids = await getGroupMemberIds(groupId);
-  if (ids.length === 0) return [];
-  return db.select().from(schema.users).where(inArray(schema.users.id, ids));
+  return getDb()
+    .select(getTableColumns(schema.users))
+    .from(schema.users)
+    .innerJoin(schema.groupMembers, eq(schema.groupMembers.userId, schema.users.id))
+    .where(eq(schema.groupMembers.groupId, groupId));
 }
 
-/** Group transactions as SimpleTransactions (payer + participant shares). */
+/**
+ * Group transactions as SimpleTransactions (payer + participant shares).
+ * Two round trips total: all transactions, then all their participants in
+ * one IN query (previously one query per transaction — the dominant cost of
+ * every balance-reading page on a remote database).
+ */
 async function getGroupSimpleTransactions(groupId: string): Promise<SimpleTransaction[]> {
   const db = getDb();
   const txs = await db
     .select({ id: schema.transactions.id, paidBy: schema.transactions.paidByUserId })
     .from(schema.transactions)
     .where(and(eq(schema.transactions.groupId, groupId), eq(schema.transactions.isDeleted, false)));
+  if (txs.length === 0) return [];
 
-  const result: SimpleTransaction[] = [];
-  for (const tx of txs) {
-    result.push({
-      paidBy: tx.paidBy,
-      participants: await db
-        .select({ userId: schema.participants.userId, shareAmount: schema.participants.shareAmount })
-        .from(schema.participants)
-        .where(eq(schema.participants.transactionId, tx.id)),
-    });
+  const parts = await db
+    .select({
+      transactionId: schema.participants.transactionId,
+      userId: schema.participants.userId,
+      shareAmount: schema.participants.shareAmount,
+    })
+    .from(schema.participants)
+    .where(inArray(schema.participants.transactionId, txs.map((t) => t.id)));
+
+  const byTx = new Map<string, { userId: string; shareAmount: number }[]>();
+  for (const p of parts) {
+    const list = byTx.get(p.transactionId) ?? [];
+    list.push({ userId: p.userId, shareAmount: p.shareAmount });
+    byTx.set(p.transactionId, list);
   }
-  return result;
+  return txs.map((tx) => ({ paidBy: tx.paidBy, participants: byTx.get(tx.id) ?? [] }));
+}
+
+type PaidSettlement = typeof schema.settlements.$inferSelect;
+
+/** All PAID settlements of a group. */
+async function getPaidSettlements(groupId: string): Promise<PaidSettlement[]> {
+  return getDb()
+    .select()
+    .from(schema.settlements)
+    .where(and(eq(schema.settlements.groupId, groupId), eq(schema.settlements.settledAt, "PAID")));
 }
 
 /**
- * Net position of every group member, from the group's transactions and
- * settled payments. Positive = gets back money, negative = owes money.
+ * Pure fold of a group's raw data into per-member nets — callers fetch the
+ * (members, transactions, settlements) trio once, in parallel, and reuse it.
  */
-export async function getGroupNetBalances(groupId: string): Promise<MemberBalance[]> {
-  const db = getDb();
-  const members = await getMembers(groupId);
-
+function computeMemberNets(
+  members: User[],
+  txs: SimpleTransaction[],
+  settlements: PaidSettlement[]
+): MemberBalance[] {
   const net = new Map<string, number>();
   for (const m of members) net.set(m.id, 0);
-  for (const b of computeNetBalances(await getGroupSimpleTransactions(groupId))) {
+  for (const b of computeNetBalances(txs)) {
     net.set(b.userId, (net.get(b.userId) ?? 0) + b.amount);
   }
 
   // A paid settlement reduces the payer's debt and the recipient's credit.
-  const settlements = await db
-    .select()
-    .from(schema.settlements)
-    .where(and(eq(schema.settlements.groupId, groupId), eq(schema.settlements.settledAt, "PAID")));
   for (const s of settlements) {
     net.set(s.fromUserId, (net.get(s.fromUserId) ?? 0) + s.amount);
     net.set(s.toUserId, (net.get(s.toUserId) ?? 0) - s.amount);
@@ -109,24 +128,38 @@ export async function getGroupNetBalances(groupId: string): Promise<MemberBalanc
     .sort((a, b) => b.net - a.net);
 }
 
+/** The (members, transactions, PAID settlements) trio, fetched in parallel. */
+async function getGroupLedger(groupId: string) {
+  const [members, txs, settlements] = await Promise.all([
+    getMembers(groupId),
+    getGroupSimpleTransactions(groupId),
+    getPaidSettlements(groupId),
+  ]);
+  return { members, txs, settlements };
+}
+
 /**
- * "Most down bad" ranking: members who owe the most in this group,
- * biggest debtor first.
+ * Net position of every group member, from the group's transactions and
+ * settled payments. Positive = gets back money, negative = owes money.
  */
-export async function getGroupDownBadRanking(groupId: string): Promise<MemberBalance[]> {
-  return (await getGroupNetBalances(groupId))
-    .filter((b) => b.net < -0.005)
-    .sort((a, b) => a.net - b.net);
+export async function getGroupNetBalances(groupId: string): Promise<MemberBalance[]> {
+  const { members, txs, settlements } = await getGroupLedger(groupId);
+  return computeMemberNets(members, txs, settlements);
+}
+
+/** Transfer plan from already-computed nets (pure). */
+function planFromNets(members: User[], nets: MemberBalance[]): (Transfer & { fromUser: User; toUser: User })[] {
+  const transfers = minimizeTransfers(nets.map((b) => ({ userId: b.user.id, amount: b.net })));
+  const byId = new Map(members.map((m) => [m.id, m]));
+  return transfers
+    .filter((t) => byId.has(t.from) && byId.has(t.to))
+    .map((t) => ({ ...t, fromUser: byId.get(t.from)!, toUser: byId.get(t.to)! }));
 }
 
 /** Minimum-transfer settlement plan within one group (settlements included). */
 export async function getGroupTransferPlan(groupId: string): Promise<(Transfer & { fromUser: User; toUser: User })[]> {
-  const balances = (await getGroupNetBalances(groupId)).map((b) => ({ userId: b.user.id, amount: b.net }));
-  const transfers = minimizeTransfers(balances);
-  const members = new Map((await getMembers(groupId)).map((m) => [m.id, m]));
-  return transfers
-    .filter((t) => members.has(t.from) && members.has(t.to))
-    .map((t) => ({ ...t, fromUser: members.get(t.from)!, toUser: members.get(t.to)! }));
+  const { members, txs, settlements } = await getGroupLedger(groupId);
+  return planFromNets(members, computeMemberNets(members, txs, settlements));
 }
 
 /** All groups a user belongs to, with members and the user's net position. */
@@ -144,38 +177,52 @@ export async function getGroupsForUser(userId: string): Promise<GroupSummary[]> 
     .where(inArray(schema.groups.id, memberships.map((m) => m.groupId)))
     .orderBy(asc(schema.groups.displayOrder));
 
-  const summaries: GroupSummary[] = [];
-  for (const g of groups) {
-    const balances = await getGroupNetBalances(g.id);
-    const yourNet = balances.find((b) => b.user.id === userId)?.net ?? 0;
-    const txRows = await db
-      .select({ id: schema.transactions.id })
-      .from(schema.transactions)
-      .where(and(eq(schema.transactions.groupId, g.id), eq(schema.transactions.isDeleted, false)));
-    const transactionCount = txRows.length;
-    summaries.push({
-      ...g,
-      members: await getMembers(g.id),
-      yourNet,
-      transactionCount,
-      isSettled: transactionCount > 0 && Math.abs(yourNet) < 0.005,
-    });
-  }
-  return summaries;
+  // All groups in parallel; each group's ledger is one parallel trio and
+  // doubles as members list + transaction count (no extra queries).
+  return Promise.all(
+    groups.map(async (g): Promise<GroupSummary> => {
+      const { members, txs, settlements } = await getGroupLedger(g.id);
+      const yourNet = computeMemberNets(members, txs, settlements)
+        .find((b) => b.user.id === userId)?.net ?? 0;
+      return {
+        ...g,
+        members,
+        yourNet,
+        transactionCount: txs.length,
+        isSettled: txs.length > 0 && Math.abs(yourNet) < 0.005,
+      };
+    })
+  );
 }
 
-/** Full detail for the group page. */
-export async function getGroupDetail(groupId: string, currentUserId: string): Promise<GroupDetail | undefined> {
+export interface GroupPage extends GroupDetail {
+  transferPlan: (Transfer & { fromUser: User; toUser: User })[];
+  /** Members who owe the most in this group, biggest debtor first. */
+  downBadRanking: MemberBalance[];
+}
+
+/**
+ * Everything the group page (and home-page ranking) needs, from a single
+ * parallel ledger fetch: detail, member balances, pairwise nets vs. the
+ * viewer, transfer plan, and down-bad ranking. Previously the route
+ * assembled this from three actions that each re-fetched the same ledger.
+ * Undefined = no such group. Membership is NOT checked here — callers
+ * decide (the route 404s non-members via `members`).
+ */
+export async function getGroupPage(groupId: string, currentUserId: string): Promise<GroupPage | undefined> {
   const db = getDb();
-  const group = (await db.select().from(schema.groups).where(eq(schema.groups.id, groupId)))[0];
+  const [groupRows, { members, txs, settlements }] = await Promise.all([
+    db.select().from(schema.groups).where(eq(schema.groups.id, groupId)),
+    getGroupLedger(groupId),
+  ]);
+  const group = groupRows[0];
   if (!group) return undefined;
 
-  const members = await getMembers(groupId);
-  const memberBalances = await getGroupNetBalances(groupId);
+  const memberBalances = computeMemberNets(members, txs, settlements);
 
   // Pairwise nets vs. the current user: who owes you / you owe within the group.
   const pairwise = new Map<string, number>();
-  for (const tx of await getGroupSimpleTransactions(groupId)) {
+  for (const tx of txs) {
     for (const p of tx.participants) {
       if (p.userId === tx.paidBy) continue;
       if (tx.paidBy === currentUserId && p.userId !== currentUserId) {
@@ -185,10 +232,6 @@ export async function getGroupDetail(groupId: string, currentUserId: string): Pr
       }
     }
   }
-  const settlements = await db
-    .select()
-    .from(schema.settlements)
-    .where(and(eq(schema.settlements.groupId, groupId), eq(schema.settlements.settledAt, "PAID")));
   for (const s of settlements) {
     if (s.toUserId === currentUserId) {
       pairwise.set(s.fromUserId, (pairwise.get(s.fromUserId) ?? 0) - s.amount);
@@ -202,7 +245,14 @@ export async function getGroupDetail(groupId: string, currentUserId: string): Pr
     .map(([id, amt]) => ({ user: byId.get(id)!, amount: round2(amt) }))
     .sort((a, b) => b.amount - a.amount);
 
-  return { ...group, members, memberBalances, yourPairwise };
+  return {
+    ...group,
+    members,
+    memberBalances,
+    yourPairwise,
+    transferPlan: planFromNets(members, memberBalances),
+    downBadRanking: memberBalances.filter((b) => b.net < -0.005).sort((a, b) => a.net - b.net),
+  };
 }
 
 /** Create a group with its initial members (creator always included). */

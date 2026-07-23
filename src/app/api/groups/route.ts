@@ -1,23 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getGroupsForUser, createGroup } from "@/lib/actions/groups";
+import { getCurrentUser } from "@/lib/auth";
+import { unauthorized } from "@/lib/auth/guard";
+import { createTimer } from "@/lib/server-timing";
 import { CODES, ERROR_MESSAGES, apiError, mapErrorMessage, type ApiErrorResponse } from "@/lib/constants";
 
 /**
- * GET /api/groups?userId=xxx
- * List the groups a user belongs to, with members and the user's net position.
+ * GET /api/groups
+ * List the signed-in user's groups, with members and their net position.
+ * Identity comes from the session — any client-sent userId param is ignored.
  */
-export async function GET(request: NextRequest) {
+export async function GET() {
+  const t = createTimer();
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get("userId");
-    if (!userId) {
-      return NextResponse.json<ApiErrorResponse>(
-        apiError(ERROR_MESSAGES.USER_ID_REQUIRED, CODES.MISSING_USER_ID),
-        { status: 400 }
-      );
-    }
+    const me = await t.time("auth", () => getCurrentUser());
+    if (!me) return unauthorized();
 
-    return NextResponse.json({ success: true, data: await getGroupsForUser(userId) });
+    const groups = await t.time("db", () => getGroupsForUser(me.id));
+    return NextResponse.json({ success: true, data: groups }, { headers: t.headers() });
   } catch (err) {
     console.error("GET /api/groups error:", err);
     return NextResponse.json<ApiErrorResponse>(
@@ -29,13 +29,16 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/groups
- * Create a group. Body: { name, creatorId, memberIds?, color? }
- * The creator is always added as a member.
+ * Create a group. Body: { name, memberIds?, color? }
+ * The signed-in user is the creator and always a member; any client-sent
+ * creatorId is ignored.
  */
 export async function POST(request: NextRequest) {
   try {
-    const body: { name?: string; creatorId?: string; memberIds?: string[]; color?: string } =
-      await request.json();
+    const me = await getCurrentUser();
+    if (!me) return unauthorized();
+
+    const body: { name?: string; memberIds?: string[]; color?: string } = await request.json();
 
     if (!body.name?.trim()) {
       return NextResponse.json<ApiErrorResponse>(
@@ -43,14 +46,8 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    if (!body.creatorId) {
-      return NextResponse.json<ApiErrorResponse>(
-        apiError(ERROR_MESSAGES.USER_ID_REQUIRED, CODES.MISSING_USER_ID),
-        { status: 400 }
-      );
-    }
 
-    const group = await createGroup(body.name.trim(), body.creatorId, body.memberIds ?? [], body.color);
+    const group = await createGroup(body.name.trim(), me.id, body.memberIds ?? [], body.color);
     return NextResponse.json({ success: true, data: group }, { status: 201 });
   } catch (err) {
     console.error("POST /api/groups error:", err);

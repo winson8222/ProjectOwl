@@ -1,5 +1,5 @@
 import { getDb, schema } from "@/lib/db";
-import { eq, desc, and, inArray } from "drizzle-orm";
+import { eq, desc, and, inArray, getTableColumns } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 import { localTimestamp } from "@/lib/time";
 import { logActivity } from "./activities";
@@ -241,56 +241,73 @@ export async function getTransactions(params: {
     .limit(limit)
     .offset(offset);
 
-  const result: TransactionWithDetails[] = [];
-  for (const tx of txs) {
-    const items = await db
-      .select()
-      .from(schema.transactionItems)
-      .where(eq(schema.transactionItems.transactionId, tx.id));
+  if (txs.length === 0) return [];
 
-    const participantRows = await db
-      .select()
-      .from(schema.participants)
-      .where(eq(schema.participants.transactionId, tx.id));
-
-    const paidByUser = (await db.select().from(schema.users).where(eq(schema.users.id, tx.paidByUserId)))[0];
-
-    const userShares = [];
-    for (const p of participantRows) {
-      const user = (await db.select().from(schema.users).where(eq(schema.users.id, p.userId)))[0];
-      userShares.push({ user: user!, shareAmount: p.shareAmount });
-    }
-
-    // Load item-level assignments
-    const rawAssignments = items.length === 0 ? [] : await db
-      .select()
+  // Batch everything: previously each transaction cost 5+ serial queries
+  // (items, participants, payer, one per participant user, one per
+  // assignment user, group name) — ~180 round trips for a 20-tx ledger.
+  // Now it's three stages of IN queries regardless of list size.
+  const listIds = txs.map((t) => t.id);
+  const [allItems, allParticipants, allAssignments] = await Promise.all([
+    db.select().from(schema.transactionItems)
+      .where(inArray(schema.transactionItems.transactionId, listIds)),
+    db.select().from(schema.participants)
+      .where(inArray(schema.participants.transactionId, listIds)),
+    db.select({
+        ...getTableColumns(schema.itemAssignments),
+        transactionId: schema.transactionItems.transactionId,
+      })
       .from(schema.itemAssignments)
-      .where(
-        inArray(
-          schema.itemAssignments.itemId,
-          items.map((i) => i.id)
-        )
-      );
+      .innerJoin(schema.transactionItems, eq(schema.itemAssignments.itemId, schema.transactionItems.id))
+      .where(inArray(schema.transactionItems.transactionId, listIds)),
+  ]);
 
-    const itemAssignments = [];
-    for (const a of rawAssignments) {
-      const u = (await db.select().from(schema.users).where(eq(schema.users.id, a.userId)))[0];
-      itemAssignments.push({ ...a, userName: u?.name ?? "Unknown" });
+  const userIds = [...new Set([
+    ...txs.map((t) => t.paidByUserId),
+    ...allParticipants.map((p) => p.userId),
+    ...allAssignments.map((a) => a.userId),
+  ])];
+  const groupIds = [...new Set(txs.map((t) => t.groupId).filter((g): g is string => g !== null))];
+  const [userRows, groupRows] = await Promise.all([
+    db.select().from(schema.users).where(inArray(schema.users.id, userIds)),
+    groupIds.length > 0
+      ? db.select().from(schema.groups).where(inArray(schema.groups.id, groupIds))
+      : Promise.resolve([]),
+  ]);
+  const usersById = new Map(userRows.map((u) => [u.id, u]));
+  const groupNamesById = new Map(groupRows.map((g) => [g.id, g.name]));
+
+  const groupByTx = <T extends { transactionId: string }>(rows: T[]): Map<string, T[]> => {
+    const map = new Map<string, T[]>();
+    for (const row of rows) {
+      const list = map.get(row.transactionId) ?? [];
+      list.push(row);
+      map.set(row.transactionId, list);
     }
+    return map;
+  };
+  const itemsByTx = groupByTx(allItems);
+  const participantsByTx = groupByTx(allParticipants);
+  const assignmentsByTx = groupByTx(allAssignments);
 
-    const userShare = participantRows.find((p) => p.userId === userId)?.shareAmount ?? 0;
-
-    result.push({
+  return txs.map((tx) => {
+    const participantRows = participantsByTx.get(tx.id) ?? [];
+    return {
       ...tx,
-      items,
-      paidByUser,
-      participants: userShares,
-      itemAssignments,
-      userShare,
-      groupName: await groupNameFor(tx.groupId),
-    });
-  }
-  return result;
+      items: itemsByTx.get(tx.id) ?? [],
+      paidByUser: usersById.get(tx.paidByUserId),
+      participants: participantRows.map((p) => ({
+        user: usersById.get(p.userId)!,
+        shareAmount: p.shareAmount,
+      })),
+      itemAssignments: (assignmentsByTx.get(tx.id) ?? []).map(({ transactionId: _txId, ...a }) => ({
+        ...a,
+        userName: usersById.get(a.userId)?.name ?? "Unknown",
+      })),
+      userShare: participantRows.find((p) => p.userId === userId)?.shareAmount ?? 0,
+      groupName: tx.groupId ? groupNamesById.get(tx.groupId) ?? null : null,
+    };
+  });
 }
 
 /** Soft-delete a transaction — the row (and its items/participants) stays for

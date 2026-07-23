@@ -1,26 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBalance } from "@/lib/actions/balances";
-import { CODES, ERROR_MESSAGES, apiError, mapErrorMessage, type ApiErrorResponse } from "@/lib/constants";
+import { getCurrentUser } from "@/lib/auth";
+import { unauthorized } from "@/lib/auth/guard";
+import { createTimer } from "@/lib/server-timing";
+import { CODES, apiError, mapErrorMessage, type ApiErrorResponse } from "@/lib/constants";
 
 /**
- * GET /api/balances?userId=xxx[&groupId=yyy]
- * Returns balance summary for a user — overall, or scoped to one group.
+ * GET /api/balances[?groupId=yyy]
+ * Balance summary for the signed-in user — overall, or scoped to one group.
+ * Identity comes from the session — any client-sent userId param is ignored.
  */
 export async function GET(request: NextRequest) {
+  const t = createTimer();
   try {
+    const me = await t.time("auth", () => getCurrentUser());
+    if (!me) return unauthorized();
+
     const { searchParams } = new URL(request.url);
-    const userId = searchParams.get("userId");
-
-    if (!userId) {
-      return NextResponse.json<ApiErrorResponse>(
-        apiError(ERROR_MESSAGES.USER_ID_REQUIRED, CODES.MISSING_USER_ID),
-        { status: 400 }
-      );
-    }
-
     const groupId = searchParams.get("groupId") || undefined;
-    const balance = await getBalance(userId, undefined, groupId);
-    return NextResponse.json({ success: true, data: balance });
+    const balance = await t.time("db", () => getBalance(me.id, undefined, groupId));
+    return NextResponse.json({ success: true, data: balance }, { headers: t.headers() });
   } catch (err) {
     console.error("GET /api/balances error:", err);
     return NextResponse.json<ApiErrorResponse>(

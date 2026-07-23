@@ -1,4 +1,4 @@
-import { pgTable, text, doublePrecision, integer, boolean, index } from "drizzle-orm/pg-core";
+import { pgTable, text, doublePrecision, integer, boolean, index, uuid } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 // Timestamps are stored as TEXT ("YYYY-MM-DD HH:MM:SS", UTC) to match the
@@ -13,6 +13,9 @@ export const users = pgTable("users", {
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
   avatarUrl: text("avatar_url"),
+  // Supabase auth identity (auth.users.id UUID). Nullable: seeded/mock users
+  // and legacy rows have no auth identity; set on first OAuth sign-in.
+  authId: uuid("auth_id").unique(),
   createdAt: text("created_at").default(textTimestamp()).notNull(),
 });
 
@@ -46,6 +49,20 @@ export const groupMembers = pgTable("group_members", {
 }, (t) => [
   index("idx_group_members_group").on(t.groupId),
   index("idx_group_members_user").on(t.userId),
+]);
+
+// ── Group Invites (shareable join links) ────────────────────────────
+// A token is the whole credential: anyone who has it and is signed in can
+// join the group via /join/[token]. No acceptance flow — joining is the
+// invitee's own action. expiresAt null = never expires.
+export const groupInvites = pgTable("group_invites", {
+  token: text("token").primaryKey(),
+  groupId: text("group_id").notNull().references(() => groups.id, { onDelete: "cascade" }),
+  createdByUserId: text("created_by_user_id").notNull().references(() => users.id),
+  expiresAt: text("expires_at"), // same TEXT timestamp format as createdAt
+  createdAt: text("created_at").default(textTimestamp()).notNull(),
+}, (t) => [
+  index("idx_group_invites_group").on(t.groupId),
 ]);
 
 // ── Activities (feed of everything that happens in a group) ─────────
