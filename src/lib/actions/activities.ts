@@ -3,7 +3,13 @@ import { eq, desc, inArray } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 import { localTimestamp } from "@/lib/time";
 
-export type ActivityType = "transaction" | "payment" | "settlement" | "group_created" | "member_added";
+export type ActivityType =
+  | "transaction"
+  | "payment"
+  | "settlement"
+  | "group_created"
+  | "member_added"
+  | "member_joined"; // joined on their own via an invite link
 
 export interface ActivityWithDetails {
   id: string;

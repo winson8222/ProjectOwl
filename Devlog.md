@@ -1,5 +1,71 @@
 # ProjectOwl — Devlog
 
+## 2026-07-23 — Group membership: add by exact email + shareable invite links
+
+How people get into groups, replacing the browse-the-whole-user-table picker.
+Model follows Splitwise/Splitpro: **no acceptance flow and no friendship
+system** — an existing member adds someone by their exact email, or shares an
+invite link the person uses to join themselves. Friendship-gated adds and
+invite/accept state machines were considered and rejected as strictly more
+work for more friction.
+
+### Done
+
+**Add by exact email:**
+- `getUserByEmail()` in `users.ts` — case-insensitive **exact** match via
+  `lower(email) =` (deliberately not `ilike`, whose `%`/`_` wildcards in user
+  input would allow pattern probing). No substring/name search anywhere, so
+  the user table can't be enumerated from the client.
+- `POST /api/groups/[id]/members` now accepts `{ email }` (alongside the old
+  `{ userIds }` for internal use): 404 `EMAIL_NOT_FOUND` with a "share the
+  invite link instead" message, 409 `ALREADY_MEMBER` for duplicates. Actor
+  must still be a signed-in group member.
+- MembersSheet on the group page: the all-users `UserPicker` (which listed
+  every account) is gone; replaced with an email input + "Copy invite link".
+- **Mock mode keeps a "Quick add (local dev)" picker** below the email/link
+  section — seeded users have fake emails nobody remembers, so local testing
+  can still add anyone directly (sends the `userIds` body the API retains).
+  Gated on `authMode() === "mock"`, so it never renders on staging/prod.
+
+**Invite links (`group_invites` table, migration `0002_sweet_maelstrom`):**
+- `token` (random UUID) is the whole credential; FK to group (cascade) +
+  creator; `expires_at` TEXT timestamp, 7-day TTL. `POST
+  /api/groups/[id]/invites` (members only) reuses the newest still-valid
+  token so repeated copies don't mint rows.
+- `GET /api/invites/[token]` — signed-in preview (group name/color, inviter,
+  member count, alreadyMember). `POST` joins: idempotent for existing
+  members, 404 for unknown/expired tokens.
+- `/join/[token]` page — signed-out visitors hit the AppShell LoginScreen in
+  place (URL preserved), then see a one-tap "Join group" preview card.
+- New `member_joined` activity type ("Ben joined via invite link", 🔗) —
+  distinct from `member_added` since the joiner is their own actor.
+
+**OAuth deep-link return:** `signInWithOAuth` now passes
+`?next=<current path>` to `/auth/callback`, which redirects there after the
+code exchange (validated: must start with `/` and not `//`, else falls back
+to `/`). Mock mode needed nothing — its sign-in reloads the current URL.
+
+### Architecture decisions
+1. **No acceptance flow.** Email add is instant (Splitwise semantics); the
+   invite link *is* consent — the invitee performs the join themselves. If
+   approval is ever wanted, it slots in as a pending flag on `group_members`.
+2. **Invite link over user-creation-by-adder for unknown emails.** In
+   supabase mode app users only exist after first OAuth sign-in, so email-add
+   can't reach unregistered people; the link routes them through the normal
+   sign-in (`resolveAppUser` creates/links the row) and then into the group.
+3. **Token reuse per group.** One valid link at a time keeps the "copy link"
+   button idempotent and limits stray live credentials; expiry (7 days)
+   bounds link leakage instead of a revocation UI (deferred).
+
+### Verification
+- `tsc --noEmit` clean; `test:simplify` 10/10, `test:allocation` 10/10,
+  `test:settlement` 8/8, `test:security` 26/26; `next build` passes.
+- Live smoke test (mock mode): case-insensitive email add works, duplicate →
+  409, unknown → 404 with invite-link hint; invite token reused across
+  creates; non-member preview + join + idempotent re-join work; `member_joined`
+  activity logged; bad token → 404; anonymous → 401; non-member invite
+  creation and email-add → 403. DB reset to seed state afterwards.
+
 ## 2026-07-23 — Dual-mode auth: server-verified identity (Supabase OAuth / mock cookie)
 
 Implements [docs/auth-implementation-plan.md](docs/auth-implementation-plan.md).
