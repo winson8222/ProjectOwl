@@ -235,15 +235,14 @@ export default function GroupsPage() {
   // Add global mouse event listeners for drag operations
   useEffect(() => {
     if (draggingIndex !== null) {
-      const handleGlobalMouseMove = (e: MouseEvent) => {
-        if (handleMouseMove) {
-          handleMouseMove(e as any);
-        }
+      const handleGlobalMouseMove = () => {
+        // Mouse move tracking is handled by document-level listeners
+        // Just exist for cleanup reference
       };
 
-      const handleGlobalMouseUp = (e: MouseEvent) => {
+      const handleGlobalMouseUp = () => {
         if (handleMouseUp) {
-          handleMouseUp(e as any);
+          handleMouseUp();
         }
       };
 
