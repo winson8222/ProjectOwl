@@ -20,6 +20,7 @@ export const CODES = {
   NOT_FOUND: "NOT_FOUND",
   MISSING_FIELDS: "MISSING_FIELDS",
   MISSING_ID: "MISSING_ID",
+  UNAUTHORIZED: "UNAUTHORIZED",
   FORBIDDEN: "FORBIDDEN",
   INVALID_AMOUNT: "INVALID_AMOUNT",
 
@@ -59,6 +60,7 @@ export const ERROR_MESSAGES = {
   UNKNOWN: "An unexpected error occurred",
   FAILED_TO_SAVE: "Failed to save. Please try again.",
   FAILED_TO_CONNECT: "Failed to connect to the server. Is it running?",
+  NOT_SIGNED_IN: "Not signed in",
   FORBIDDEN: "You don't have access to this resource",
   INVALID_AMOUNT: "Amounts must be valid non-negative numbers",
 

@@ -335,7 +335,7 @@ function MembersSheet({
       const res = await fetch(`/api/groups/${group.id}/members`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userIds: toAdd, actorId: currentUser.id }),
+        body: JSON.stringify({ userIds: toAdd }),
       });
       const json = await res.json();
       if (json.success) {

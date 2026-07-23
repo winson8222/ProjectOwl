@@ -1,0 +1,43 @@
+name: Promote to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      title:
+        description: 'PR title'
+        required: false
+        default: 'chore: promote staging to production'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create or reuse promotion PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          EXISTING=$(gh pr list --repo "${{ github.repository }}" --base production --head staging --state open --json url --jq '.[0].url // empty')
+          if [ -n "$EXISTING" ]; then
+            echo "A promotion PR is already open: $EXISTING"
+            exit 0
+          fi
+          gh pr create \
+            --repo "${{ github.repository }}" \
+            --base production \
+            --head staging \
+            --title "${{ github.event.inputs.title }}" \
+            --body "Automated promotion from staging to production.
+
+          ⚠️ **Please review carefully before merging to production.**
+          - Verify all staging tests passed
+          - Confirm no regressions in staging
+          - Check Vercel preview is stable
+
+          Merge only when ready to deploy to production."

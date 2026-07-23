@@ -1,4 +1,4 @@
-import { pgTable, text, doublePrecision, integer, boolean, index } from "drizzle-orm/pg-core";
+import { pgTable, text, doublePrecision, integer, boolean, index, uuid } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 // Timestamps are stored as TEXT ("YYYY-MM-DD HH:MM:SS", UTC) to match the
@@ -13,6 +13,9 @@ export const users = pgTable("users", {
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
   avatarUrl: text("avatar_url"),
+  // Supabase auth identity (auth.users.id UUID). Nullable: seeded/mock users
+  // and legacy rows have no auth identity; set on first OAuth sign-in.
+  authId: uuid("auth_id").unique(),
   createdAt: text("created_at").default(textTimestamp()).notNull(),
 });
 

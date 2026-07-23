@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createLLMClient } from "@/lib/llm";
+import { getCurrentUser } from "@/lib/auth";
+import { unauthorized } from "@/lib/auth/guard";
 import { AppError } from "@/lib/errors";
 import { CODES, ERROR_MESSAGES, apiError, mapErrorMessage, type ApiErrorResponse } from "@/lib/constants";
 import type { ExtractApiResponse } from "@/lib/schemas/receipt";
@@ -22,6 +24,9 @@ export async function POST(
   request: NextRequest
 ): Promise<NextResponse<ExtractApiResponse | ApiErrorResponse>> {
   try {
+    // Each scan costs LLM quota — signed-in users only.
+    if (!(await getCurrentUser())) return unauthorized();
+
     const formData = await request.formData().catch(() => null);
     if (!formData) {
       return NextResponse.json<ApiErrorResponse>(

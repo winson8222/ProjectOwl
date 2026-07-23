@@ -63,7 +63,6 @@ export default function GroupsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: newName.trim(),
-          creatorId: user.id,
           memberIds: newMembers,
         }),
       });

@@ -1,5 +1,162 @@
 # ProjectOwl — Devlog
 
+## 2026-07-23 — Dual-mode auth: server-verified identity (Supabase OAuth / mock cookie)
+
+Implements [docs/auth-implementation-plan.md](docs/auth-implementation-plan.md).
+Identity is now **server-verified on every API request** — no route reads
+`userId`/`actorId`/`creatorId` from the request body or query anymore. This makes
+the per-group authorization checks (deferred from the 2026-07-18 security
+hardening) real boundaries instead of spoofable ones.
+
+### Done
+
+**One codebase, two env-gated auth modes** (`src/lib/auth/mode.ts`):
+- `mock` (local dev): identity from an httpOnly `mock_user_id` cookie resolved
+  against the seeded users table. Active when `NEXT_PUBLIC_AUTH_MODE=mock` or
+  when no Supabase env vars exist — so a plain local checkout works untouched.
+- `supabase` (staging/prod): verified Supabase session (Google OAuth) mapped to
+  an app user via the new `users.auth_id uuid unique` column (migration
+  `drizzle/0001_thick_sasquatch.sql`). Activated purely by env vars set in
+  Vercel, so the master → staging → production promotion flow needs zero
+  per-branch edits.
+
+**Auth core** (`src/lib/auth/index.ts`, server-only):
+- `getCurrentUser()` — the single identity source. Supabase path calls
+  `auth.getUser()` (JWT verified against the auth server, not just decoded)
+  then `resolveAppUser`: match `auth_id` → else link existing row by verified
+  email → else create the app user from the Google profile. Mock path reads the
+  cookie and looks up the seeded user.
+- `@supabase/ssr` clients (`src/lib/supabase/server.ts` / `client.ts`), OAuth
+  callback (`src/app/auth/callback/route.ts`), and `src/middleware.ts` for
+  session-cookie refresh (pass-through in mock mode).
+- `GET /api/auth/me` (current user or null), `POST/DELETE /api/auth/session`
+  (mock cookie set/clear; POST 404s in supabase mode).
+
+**Route refactor — every route off request-supplied identity:**
+- `GET /api/groups`, `/api/activities`, `/api/balances`, `GET /api/transactions`
+  → scoped to `me.id`; client-sent `userId` params are ignored.
+- `GET /api/groups/[id]` and single-transaction reads → members only, **404**
+  (not 403) so ids can't be probed. Group-ledger reads and
+  `GET /api/settlements/optimize?groupId=` → members only (403).
+- `POST /api/groups` creator = `me.id`; `POST /api/groups/[id]/members` actor =
+  `me.id` and must already be a member (403).
+- `POST /api/transactions` → `me.id` must be a group member (alongside payer +
+  participants); `DELETE /api/transactions?id=` → members only.
+- `POST /api/settlements/mark-paid` → `me.id` must be payer or recipient — you
+  can't invent payments between two other people.
+- `POST /api/users` → mock mode only (supabase users are created by OAuth);
+  `GET /api/users` open in mock mode (pre-login picker needs it), signed-in
+  only in supabase mode. `POST /api/receipts/extract` → signed-in only (LLM
+  cost). Debug routes unchanged (already env-gated).
+
+**Frontend:**
+- `AppShell` resolves the session via `/api/auth/me` before rendering any page
+  and warms the `sessionStorage` cache `getSessionUser()` reads — so all pages
+  keep working unchanged. Signed out → new `LoginScreen` (seeded-user picker in
+  mock mode / "Continue with Google" in supabase mode). Header gained Sign out.
+- `src/lib/session.ts` rewritten: cache is display-only, populated from the
+  server session; `signOut()` is mode-aware. The old self-asserted
+  `setSessionUser` picker path is gone (home page's `UserPickerPage` deleted).
+
+**Deploy:**
+- `vercel.json` buildCommand is now `npm run db:migrate:deploy && npm run build`.
+  The new `scripts/db-migrate-deploy.ts` applies pending drizzle migrations
+  before every Vercel build using `DIRECT_URL`/`DATABASE_URL`, and **skips
+  (exit 0) when neither is configured** so preview builds of branches without
+  DB env vars still build. Staging/production env vars live in the Vercel
+  dashboard (Preview scope pinned to `staging` / Production scope).
+
+### Architecture decisions
+1. **Routes ignore client-sent ids instead of the frontend being rewritten.**
+   The security boundary is server-side; pages still append `userId=` to some
+   URLs and the server discards it. This kept the change surface to the routes
+   + shell instead of ~11 pages of fetch rewrites.
+2. **Mock identity is a cookie, not a request param.** Route code is
+   byte-identical in both modes, so local dev exercises the exact production
+   authz path (a spoofed body userId fails locally too).
+3. **404 over 403 for group/transaction membership failures** — non-members
+   can't distinguish "doesn't exist" from "not yours", so ids can't be probed.
+4. **`auth_id` nullable + email-linking on first OAuth login** — seeded users
+   keep working in mock mode, and a future real user whose email matches an
+   existing row inherits it instead of forking a duplicate identity.
+
+### Verification
+- `tsc --noEmit` clean; `test:simplify` 10/10, `test:allocation` 10/10,
+  `test:settlement` 8/8, `test:security` 26/26; `next build` passes.
+- Live smoke test (mock mode, local Postgres): anonymous → 401 on protected
+  routes; mock sign-in sets cookie and `/api/auth/me` reflects it; Alex reading
+  a group he's not in → 404; Alex spoofing `?userId=user-you` on balances →
+  response reflects Alex (param dead); non-member creating a transaction in
+  Roommates → 400 NOT_GROUP_MEMBER; member create/delete + sign-out all work.
+
+## 2026-07-22 — Major UI overhaul: iOS-style interactions and visual refresh
+
+### Done
+
+**Color palette refresh:**
+- Updated entire app color scheme to match photo reference with blue-based theme
+- Primary color: `#3a85c5` (blue accent from reference image)
+- Background: `#f2f2fd` (light blue-gray tint)
+- Text: `#2a2a2a` (soft black)
+- Borders: `#b0b0b0` (medium gray)
+- Cards: `#fbfbff` (off-white with subtle blue tint)
+- All CSS custom properties in `globals.css` updated
+
+**iOS-style group picker wheel:**
+- Replaced native `<select>` dropdowns with custom `GroupPickerWheel` component
+- Collapsed state: single group card with colored circle, name, chevron
+- Long-press (300ms) expands to vertical scroll wheel
+- Scroll wheel: translucent (`bg-white/70`) with backdrop blur, centered item highlighted
+- Auto-centering on selection, smooth animations
+- Applied to home page ("Most down bad" group selector) and "Add Transaction" page
+- Uses group's assigned color for avatar circles
+
+**Page transitions and spacing:**
+- Added slide-up animation (700ms ease-out) to New Transaction and New Payment pages
+- Pages now "layer on top" with smooth vertical slide from bottom
+- Reduced top spacing on home page: `pt-6` → `pt-2` for tighter header-to-content gap
+
+**Navigation refinements:**
+- Bottom navigation bar made slimmer: `px-6 py-4` → `px-4 py-2`
+- Fixed header at top showing "ItreSplit" branding
+- Content spacing adjusted via `.content-with-nav` CSS class
+
+**Transaction/Payment unified form:**
+- Replaced "Paying someone back? Record a payment →" link with toggle
+- Toggle switches between "Add Expense" (default) and "Add Payment" modes
+- Single page with two modes instead of separate routes
+- Form state resets appropriately when toggling between modes
+- Combined save handler supports both transaction and payment creation
+
+**Label and copy updates:**
+- Transaction form: "Description" → "Title"
+- Removed emojis throughout: scan button, debug labels, payment headers
+- Scan receipt button: "Scan a receipt" → "Use ItreAI"
+- Toggle buttons: "💰 Split expense" / "💸 Pay someone back" → "Add Expense" / "Add Payment"
+
+**ItreAI button premium treatment:**
+- Gradient background (primary → primary-hover)
+- Animated flowing border: rotating gradient (purple → pink → blue) with blur
+- Hover effects: scale to 105%, enhanced shadow, horizontal shine sweep
+- Added sparkle emoji (✨) for visual appeal
+- CSS animation `@keyframes gradientPan` for continuous 3s rotation
+
+**Components added:**
+- `src/components/GroupPickerWheel.tsx`: iOS-style picker with press-and-hold expansion
+
+### Architecture decisions
+1. **Component-based picker over native select** — custom component enables iOS-style interactions (long-press, scroll wheel) that native `<select>` cannot provide, while maintaining accessibility via keyboard/touch handlers.
+2. **Unified transaction/payment form** — single route with mode toggle reduces navigation complexity and keeps split/payment features contextually adjacent; state reset on toggle prevents cross-mode contamination.
+3. **CSS animations over JavaScript** — gradient border animation uses pure CSS (`@keyframes`) for performance and smoothness, avoiding requestAnimationFrame churn.
+
+### Verification
+- All UI changes tested interactively in dev mode
+- Color palette applied consistently across all pages
+- Group picker works on home page and transaction form
+- Transaction/payment toggle functions correctly
+- Slide-up animations smooth at 700ms duration
+- No TypeScript or build errors
+
 ## 2026-07-19 — Full PostgreSQL migration (feature/postgres-migration)
 
 ### Done
