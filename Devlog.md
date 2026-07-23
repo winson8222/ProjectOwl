@@ -25,9 +25,15 @@ Supabase region. A user in G groups with N transactions each paid roughly
   serial for-loop; transaction count reuses the ledger's rows (dropped the
   separate per-group count query and duplicate `getMembers` call).
   Groups-list wall time is now ~4 round trips regardless of group count.
-- `vercel.json`: `"regions": ["sin1"]` — functions colocated with the
-  Supabase project (ap-southeast-1, Singapore). Default was iad1 (US East),
-  putting ~200 ms of Pacific round trip under every query.
+- `vercel.json`: `"regions": ["syd1"]` — colocated with the **production**
+  Supabase project (Sydney). Staging's Supabase project is in Mumbai; staging
+  and production are one Vercel project (branch-based Preview/Production
+  environments), and Vercel's function region is project-level only — no
+  per-environment or per-branch override exists (confirmed against Vercel's
+  docs). So this is a deliberate compromise: production gets the colocation
+  win, staging keeps eating cross-region latency. Splitting staging into its
+  own Vercel project is the only way to give it a matching region too, if
+  that's ever worth doing. Default was iad1 (US East), which matched neither.
 
 ### Verification
 - `tsc --noEmit` clean; `test:simplify` 10/10, `test:allocation` 10/10,
