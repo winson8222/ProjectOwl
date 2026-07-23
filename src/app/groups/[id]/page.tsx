@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import TransactionCard from "@/components/TransactionCard";
 import UserAvatar from "@/components/UserAvatar";
-import UserPicker from "@/components/UserPicker";
 import ErrorDialog from "@/components/ErrorDialog";
 import { getSessionUser } from "@/lib/session";
 
@@ -299,7 +298,7 @@ function BalancesSheet({
   );
 }
 
-/** Member list + add-participants form. */
+/** Member list + add-by-email + shareable invite link. */
 function MembersSheet({
   group,
   currentUser,
@@ -311,44 +310,62 @@ function MembersSheet({
   onClose: () => void;
   onMembersChanged: () => void;
 }) {
-  const [allUsers, setAllUsers] = useState<any[]>([]);
-  const [toAdd, setToAdd] = useState<string[]>([]);
+  const [email, setEmail] = useState("");
   const [adding, setAdding] = useState(false);
+  const [addedName, setAddedName] = useState<string | null>(null);
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [inviteCopied, setInviteCopied] = useState(false);
   const [dialogError, setDialogError] = useState<{ title: string; message: string } | null>(null);
 
-  useEffect(() => {
-    fetch("/api/users")
-      .then((r) => r.json())
-      .then((json) => {
-        if (json.success) setAllUsers(json.data);
-      })
-      .catch(console.error);
-  }, []);
-
-  const memberIds = new Set(group.members.map((m: any) => m.id));
-  const addable = allUsers.filter((u) => !memberIds.has(u.id));
-
-  const addMembers = async () => {
-    if (toAdd.length === 0) return;
+  const addByEmail = async () => {
+    if (!email.trim()) return;
     setAdding(true);
+    setAddedName(null);
     try {
       const res = await fetch(`/api/groups/${group.id}/members`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userIds: toAdd }),
+        body: JSON.stringify({ email: email.trim() }),
       });
       const json = await res.json();
       if (json.success) {
-        setToAdd([]);
+        setEmail("");
+        const before = new Set(group.members.map((m: any) => m.id));
+        const added = json.data.find((m: any) => !before.has(m.id));
+        setAddedName(added?.name ?? "Member");
         onMembersChanged();
-        onClose();
       } else {
-        setDialogError({ title: "Add failed", message: json.error || "Failed to add members" });
+        setDialogError({ title: "Add failed", message: json.error || "Failed to add member" });
       }
     } catch {
       setDialogError({ title: "Add failed", message: "Failed to connect to the server" });
     } finally {
       setAdding(false);
+    }
+  };
+
+  const copyInviteLink = async () => {
+    setInviteBusy(true);
+    try {
+      const res = await fetch(`/api/groups/${group.id}/invites`, { method: "POST" });
+      const json = await res.json();
+      if (!json.success) {
+        setDialogError({ title: "Invite failed", message: json.error || "Failed to create invite link" });
+        return;
+      }
+      const url = `${window.location.origin}${json.data.path}`;
+      try {
+        await navigator.clipboard.writeText(url);
+        setInviteCopied(true);
+        setTimeout(() => setInviteCopied(false), 2000);
+      } catch {
+        // Clipboard blocked (e.g. non-HTTPS) — show the link so it can be copied manually.
+        setDialogError({ title: "Invite link", message: url });
+      }
+    } catch {
+      setDialogError({ title: "Invite failed", message: "Failed to connect to the server" });
+    } finally {
+      setInviteBusy(false);
     }
   };
 
@@ -371,30 +388,46 @@ function MembersSheet({
           ))}
         </div>
 
-        {/* Add participants */}
+        {/* Add by email */}
         <div className="px-4 py-4 border-t border-[var(--border)] bg-gray-50">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-            Add participants
+            Add by email
           </p>
-          {addable.length === 0 ? (
-            <p className="text-sm text-gray-400">Everyone is already in this group</p>
-          ) : (
-            <>
-              <UserPicker
-                selectedUserIds={toAdd}
-                onChange={setToAdd}
-                users={addable}
-                label=""
-              />
-              <button
-                onClick={addMembers}
-                disabled={adding || toAdd.length === 0}
-                className="w-full mt-3 px-4 py-2.5 text-sm font-semibold text-white bg-[var(--primary)] rounded-lg hover:bg-[var(--primary-hover)] disabled:opacity-50 transition-colors"
-              >
-                {adding ? "Adding..." : `Add ${toAdd.length || ""} member${toAdd.length === 1 ? "" : "s"}`}
-              </button>
-            </>
+          <div className="flex gap-2">
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setAddedName(null);
+              }}
+              onKeyDown={(e) => e.key === "Enter" && addByEmail()}
+              placeholder="friend@example.com"
+              className="flex-1 px-3 py-2.5 text-sm border border-[var(--border)] rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+            />
+            <button
+              onClick={addByEmail}
+              disabled={adding || !email.trim()}
+              className="px-4 py-2.5 text-sm font-semibold text-white bg-[var(--primary)] rounded-lg hover:bg-[var(--primary-hover)] disabled:opacity-50 transition-colors"
+            >
+              {adding ? "Adding..." : "Add"}
+            </button>
+          </div>
+          {addedName && (
+            <p className="mt-2 text-sm text-emerald-600">✓ {addedName} added to the group</p>
           )}
+
+          {/* Invite link for people without an account yet */}
+          <p className="mt-4 text-xs text-gray-400">
+            Don&apos;t know their email, or they don&apos;t have an account yet?
+          </p>
+          <button
+            onClick={copyInviteLink}
+            disabled={inviteBusy}
+            className="w-full mt-2 px-4 py-2.5 text-sm font-semibold text-[var(--primary)] border border-[var(--primary)] rounded-lg hover:bg-blue-50 disabled:opacity-50 transition-colors"
+          >
+            {inviteCopied ? "✓ Link copied" : inviteBusy ? "Creating link..." : "Copy invite link"}
+          </button>
         </div>
       </div>
 

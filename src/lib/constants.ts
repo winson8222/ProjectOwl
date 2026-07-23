@@ -44,6 +44,9 @@ export const CODES = {
   MISSING_GROUP: "MISSING_GROUP",
   GROUP_NOT_FOUND: "GROUP_NOT_FOUND",
   NOT_GROUP_MEMBER: "NOT_GROUP_MEMBER",
+  EMAIL_NOT_FOUND: "EMAIL_NOT_FOUND",
+  ALREADY_MEMBER: "ALREADY_MEMBER",
+  INVITE_INVALID: "INVITE_INVALID",
 
   // Settlements
   MISSING_SETTLEMENT_ID: "MISSING_SETTLEMENT_ID",
@@ -94,6 +97,9 @@ export const ERROR_MESSAGES = {
   GROUP_NOT_FOUND: "Group not found",
   GROUP_NAME_REQUIRED: "Group name is required",
   NOT_GROUP_MEMBER: "Everyone involved must be a member of the group",
+  EMAIL_NOT_FOUND: "No account with that email yet — share the group invite link instead",
+  ALREADY_MEMBER: "That person is already in this group",
+  INVITE_INVALID: "This invite link is invalid or has expired",
 
   // Settlements
   SETTLEMENT_ID_REQUIRED: "settlementId is required",

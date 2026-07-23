@@ -50,6 +50,20 @@ export const groupMembers = pgTable("group_members", {
   index("idx_group_members_user").on(t.userId),
 ]);
 
+// ── Group Invites (shareable join links) ────────────────────────────
+// A token is the whole credential: anyone who has it and is signed in can
+// join the group via /join/[token]. No acceptance flow — joining is the
+// invitee's own action. expiresAt null = never expires.
+export const groupInvites = pgTable("group_invites", {
+  token: text("token").primaryKey(),
+  groupId: text("group_id").notNull().references(() => groups.id, { onDelete: "cascade" }),
+  createdByUserId: text("created_by_user_id").notNull().references(() => users.id),
+  expiresAt: text("expires_at"), // same TEXT timestamp format as createdAt
+  createdAt: text("created_at").default(textTimestamp()).notNull(),
+}, (t) => [
+  index("idx_group_invites_group").on(t.groupId),
+]);
+
 // ── Activities (feed of everything that happens in a group) ─────────
 // type: "transaction" | "settlement" | "group_created" | "member_added"
 export const activities = pgTable("activities", {
