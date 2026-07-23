@@ -479,17 +479,10 @@ export default function NewTransactionPage() {
 
   return (
     <main
-      className={`min-h-dvh px-4 pt-6 pb-8 max-w-lg mx-auto transition-all duration-700 ease-out ${
+      className={`min-h-dvh px-4 pt-6 max-w-lg mx-auto transition-all duration-700 ease-out content-with-floating-nav ${
         isMounted ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0'
       }`}
     >
-      <button
-        onClick={() => router.back()}
-        className="text-sm text-gray-500 hover:text-gray-700 mb-4 block"
-      >
-        ← Back
-      </button>
-
       <h1 className="text-xl font-bold text-gray-900 mb-1">New Transaction</h1>
 
       {/* Toggle between transaction and payment mode */}

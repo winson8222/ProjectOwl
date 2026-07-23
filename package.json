@@ -17,11 +17,13 @@
     "db:seed": "tsx scripts/db-seed.ts"
   },
   "dependencies": {
+    "@react-spring/web": "^10.1.2",
     "drizzle-orm": "^0.45.2",
     "next": "^15.2.0",
     "postgres": "^3.4.9",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-swipeable": "^7.0.2",
     "uuid": "^14.0.1",
     "zod": "^3.24.0"
   },

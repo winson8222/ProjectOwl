@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getGroupDetail, getGroupTransferPlan, getGroupDownBadRanking } from "@/lib/actions/groups";
+import { getGroupDetail, getGroupTransferPlan } from "@/lib/actions/groups";
 import { CODES, ERROR_MESSAGES, apiError, mapErrorMessage, type ApiErrorResponse } from "@/lib/constants";
 
 /**
@@ -36,7 +36,7 @@ export async function GET(
       data: {
         ...detail,
         transferPlan: await getGroupTransferPlan(id),
-        downBadRanking: await getGroupDownBadRanking(id),
+        memberBalances: detail.memberBalances,
       },
     });
   } catch (err) {

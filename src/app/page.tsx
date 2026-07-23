@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import BalanceCard from "@/components/BalanceCard";
 import UserAvatar from "@/components/UserAvatar";
 import GroupPickerWheel from "@/components/GroupPickerWheel";
 import { getSessionUser } from "@/lib/session";
@@ -16,7 +15,7 @@ export default function HomePage() {
   const [balance, setBalance] = useState<BalanceSummary | null>(null);
   const [groups, setGroups] = useState<any[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>("");
-  const [ranking, setRanking] = useState<any[] | null>(null);
+  const [memberBalances, setMemberBalances] = useState<any[] | null>(null);
   const [rankingLoading, setRankingLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +60,7 @@ export default function HomePage() {
     fetch(`/api/groups/${selectedGroupId}?userId=${user.id}`)
       .then((r) => r.json())
       .then((json) => {
-        if (json.success) setRanking(json.data.downBadRanking);
+        if (json.success) setMemberBalances(json.data.memberBalances);
         else setError((prev) => prev || json.error || "Failed to load ranking");
       })
       .catch(() => setError((prev) => prev || "Failed to connect to the server"))
@@ -85,8 +84,7 @@ export default function HomePage() {
       {/* Greeting */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Hello, {user.name}</h1>
-          <p className="text-xs text-gray-400">Here&apos;s the damage</p>
+          <h1 className="text-3xl font-bold text-gray-500">Hello, {user.name}</h1>
         </div>
         <UserAvatar name={user.name} size="md" />
       </div>
@@ -98,14 +96,83 @@ export default function HomePage() {
         </div>
       )}
 
+      {/* Net balance sentence */}
+      {balance && memberBalances && (
+        <div className="mb-6">
+          {/* Calculate user's rank in the group */}
+          {(() => {
+            const sortedByNet = [...memberBalances].sort((a, b) => b.net - a.net);
+            const userRank = sortedByNet.findIndex(entry => entry.user.id === user.id) + 1;
+
+            return (
+              <>
+                {/* Hero number card with animated background */}
+                <div
+                  className={`rounded-2xl p-6 text-center mb-4 relative overflow-hidden border ${
+                    balance.netBalance >= 0 ? 'border-gray-200' : 'border-red-100'
+                  }`}
+                  style={{
+                    background: balance.netBalance >= 0
+                      ? 'linear-gradient(135deg, rgba(255,255,255,0.4) 0%, rgba(248,250,252,0.3) 100%)'
+                      : 'linear-gradient(135deg, rgba(254,226,226,0.4) 0%, rgba(253,242,242,0.3) 100%)',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03), 0 4px 8px rgba(0,0,0,0.02)'
+                  }}
+                >
+                  {/* Animated background based on rank and status */}
+                  {balance.netBalance > 0 ? (
+                    <div className="absolute inset-0 pointer-events-none">
+                      <div className={`raining-cash rank-${userRank}`}>
+                        {Array.from({ length: Math.min(Math.max(Math.floor(balance.netBalance / 2), 6), 30) }).map((_, i) => (
+                          <span key={i}>💵</span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : balance.netBalance < 0 ? (
+                    <div className="absolute inset-0 pointer-events-none">
+                      <div className="falling-gandhi">
+                        {Array.from({ length: Math.min(Math.max(Math.floor(Math.abs(balance.netBalance) / 2), 6), 30) }).map((_, i) => (
+                          <img key={i} src="/gandhi.png" alt="Gandhi" className="gandhi-icon" />
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <p className="text-sm text-gray-400 uppercase tracking-wider mb-2 relative z-10">
+                    {balance.netBalance >= 0 ? "UP GOOD" : "DOWN BAD"}
+                  </p>
+                  <p className={`text-4xl font-bold ${balance.netBalance >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]"} relative z-10`}>
+                    {balance.netBalance >= 0 ? "+" : "-"}${Math.abs(balance.netBalance).toFixed(2)}
+                  </p>
+
+                  {/* Breakdown sentence */}
+                  <div className="text-center text-sm relative z-10">
+                    You are owed <span className="text-[var(--success)] font-bold">
+                      ${balance.totalOwed.toFixed(2)}
+                    </span>, and you owe <span className="text-[var(--danger)] font-bold">
+                      ${balance.totalOwe.toFixed(2)}
+                    </span>.
+                  </div>
+                </div>
+              </>
+            );
+          })()}
+        </div>
+      )}
+
       {/* Most down bad ranking */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-1">
-          <h2 className="text-lg font-bold text-gray-900">Most down bad</h2>
+          <h2 className="text-lg font-bold text-gray-900">Down Bad Leaderboard</h2>
         </div>
 
         {groups.length === 0 ? (
-          <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl px-4 py-8 text-center">
+          <div
+            className="border border-gray-200 rounded-xl px-5 py-8 text-center backdrop-blur-sm"
+            style={{
+              background: 'linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(248,250,252,0.25) 100%)',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.04), 0 2px 4px rgba(0,0,0,0.02)'
+            }}
+          >
             <p className="text-sm text-gray-400 mb-2">You&apos;re not in any group yet</p>
             <Link href="/groups" className="text-sm font-medium text-[var(--primary)]">
               Create your first group →
@@ -120,24 +187,33 @@ export default function HomePage() {
               onGroupChange={(groupId) => setSelectedGroupId(groupId)}
             />
 
-            <DownBadRanking ranking={ranking} loading={rankingLoading} currentUserId={user.id} />
+            <DownBadRanking ranking={memberBalances} loading={rankingLoading} currentUserId={user.id} />
           </>
         )}
       </div>
-
-      {/* Overall balance card */}
-      {balance && (
-        <BalanceCard
-          netBalance={balance.netBalance}
-          totalOwed={balance.totalOwed}
-          totalOwe={balance.totalOwe}
-        />
-      )}
     </main>
   );
 }
 
-/** Podium-style ranking of who owes the most in the selected group. */
+/** Get color based on amount type (no intensity gradient) */
+function getColorIntensity(isOwed: boolean): { barColor: React.CSSProperties; textColor: React.CSSProperties } {
+  // Same colors as BalanceCard: --success and --danger
+  if (isOwed) {
+    // Green: #3aa542 (same as var(--success))
+    return {
+      barColor: { backgroundColor: '#3aa542' },
+      textColor: { color: '#2a7a32' }, // darker green for text
+    };
+  } else {
+    // Red: #c5423a (same as var(--danger))
+    return {
+      barColor: { backgroundColor: '#c5423a' },
+      textColor: { color: '#a5322a' }, // darker red for text
+    };
+  }
+}
+
+/** Bidirectional ranking chart showing who owes (left) vs who's owed (right) */
 function DownBadRanking({
   ranking,
   loading,
@@ -150,54 +226,100 @@ function DownBadRanking({
   if (loading || ranking === null) {
     return (
       <div className="space-y-2 animate-pulse">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="h-9 bg-gray-100 rounded-full" />
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="h-10 bg-gray-100 rounded-xl" />
         ))}
       </div>
     );
   }
 
-  if (ranking.length === 0) {
+  // Sort by net value (most negative first, most positive last)
+  const sortedRanking = [...ranking].sort((a, b) => a.net - b.net);
+
+  // Show top 6 (3 most negative, 3 most positive)
+  const top = sortedRanking.slice(0, 6);
+
+  // Calculate max absolute value for scaling
+  const maxAbs = Math.max(...sortedRanking.map((entry) => Math.abs(entry.net)));
+
+  if (top.length === 0) {
     return (
-      <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl px-4 py-6 text-center">
+      <div
+        className="border border-gray-200 rounded-xl px-5 py-6 text-center backdrop-blur-sm"
+        style={{
+          background: 'linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(248,250,252,0.25) 100%)',
+          boxShadow: '0 1px 2px rgba(0,0,0,0.04), 0 2px 4px rgba(0,0,0,0.02)'
+        }}
+      >
         <p className="text-sm text-gray-500 font-medium">No one is down bad 🎉</p>
         <p className="text-xs text-gray-400 mt-1">Everyone in this group is settled</p>
       </div>
     );
   }
 
-  const top = ranking.slice(0, 3);
-  const maxOwed = Math.abs(top[0].net);
-  const barColors = ["bg-lime-400", "bg-sky-400", "bg-rose-400"];
-  const badgeColors = ["bg-lime-500", "bg-sky-500", "bg-rose-500"];
-
   return (
-    <div className="space-y-2">
-      {top.map((entry, i) => {
-        const owed = Math.abs(entry.net);
-        const widthPct = Math.max(30, Math.round((owed / maxOwed) * 100));
-        const isYou = entry.user.id === currentUserId;
-        return (
-          <div key={entry.user.id} className="flex items-center gap-2">
-            <span
-              className={`w-8 h-8 ${badgeColors[i]} rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0 border-2 border-white shadow`}
-            >
-              {i + 1}
-            </span>
-            <div
-              className={`${barColors[i]} h-9 rounded-r-full rounded-l-md flex items-center justify-between px-3 min-w-0`}
-              style={{ width: `${widthPct}%` }}
-            >
-              <span className="text-sm font-semibold text-white truncate">
+    <div
+      className="border border-gray-200 rounded-xl p-5 backdrop-blur-sm"
+      style={{
+        background: 'linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(248,250,252,0.25) 100%)',
+        boxShadow: '0 1px 2px rgba(0,0,0,0.04), 0 2px 4px rgba(0,0,0,0.02)'
+      }}
+    >
+      <div className="space-y-3">
+        {top.map((entry) => {
+          const amount = entry.net;
+          const absAmount = Math.abs(amount);
+          const isOwed = amount > 0;
+          const isYou = entry.user.id === currentUserId;
+
+          // Get colors based on type
+          const { barColor, textColor } = getColorIntensity(isOwed);
+
+          // Calculate bar width and position
+          // Bar grows from center: negative goes left, positive goes right
+          // Cap at 40% to ensure bar never reaches the numbers on either side
+          const maxBarWidth = 40;
+          const barWidth = maxAbs > 0 ? (absAmount / maxAbs) * maxBarWidth : 0;
+
+          return (
+            <div key={entry.user.id} className="relative h-8 flex items-center">
+              {/* Name on left */}
+              <span className={`text-sm font-semibold w-20 truncate z-10 ${isYou ? "text-[var(--primary)]" : "text-gray-700"}`}>
                 {isYou ? "You" : entry.user.name}
               </span>
+
+              {/* Background bar container - centered */}
+              <div className="absolute left-20 right-20 h-6 flex items-center">
+                {/* Center reference line (subtle) */}
+                <div className="absolute left-1/2 top-0 bottom-0 w-px bg-gray-200 -translate-x-1/2" />
+
+                {/* Bar track with inset shadow */}
+                <div className="absolute left-0 right-0 top-1 bottom-1 bg-gray-100/50 rounded-sm"
+                     style={{ boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.08)' }} />
+
+                {/* Colored bar - grows from center with soft shadow */}
+                {Math.abs(amount) >= 0.01 && (
+                  <div
+                    className="absolute top-1/2 -translate-y-1/2 h-4 rounded-sm"
+                    style={{
+                      ...barColor,
+                      left: amount > 0 ? '50%' : `${50 - barWidth}%`,
+                      right: amount < 0 ? '50%' : `${50 - barWidth}%`,
+                      opacity: 0.7,
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                    }}
+                  />
+                )}
+              </div>
+
+              {/* Amount on right */}
+              <div className="absolute right-4 text-sm font-bold z-10" style={textColor}>
+                ${Math.abs(amount).toFixed(2)}
+              </div>
             </div>
-            <span className="text-xs font-semibold text-gray-500 shrink-0">
-              owes ${owed.toFixed(2)}
-            </span>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }

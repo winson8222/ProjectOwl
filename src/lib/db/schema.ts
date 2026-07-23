@@ -34,6 +34,7 @@ export const groups = pgTable("groups", {
   color: text("color"), // hex color for the group's avatar circle
   createdByUserId: text("created_by_user_id").notNull().references(() => users.id),
   createdAt: text("created_at").default(textTimestamp()).notNull(),
+  displayOrder: integer("display_order").default(0).notNull(), // for custom ordering in UI
 });
 
 // ── Group Members (user ↔ group edges) ──────────────────────────────
