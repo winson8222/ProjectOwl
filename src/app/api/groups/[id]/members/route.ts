@@ -1,27 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addGroupMembers } from "@/lib/actions/groups";
-import { CODES, ERROR_MESSAGES, apiError, mapErrorMessage, type ApiErrorResponse } from "@/lib/constants";
+import { addGroupMembers, areGroupMembers } from "@/lib/actions/groups";
+import { getCurrentUser } from "@/lib/auth";
+import { unauthorized, forbidden } from "@/lib/auth/guard";
+import { CODES, apiError, mapErrorMessage, type ApiErrorResponse } from "@/lib/constants";
 
 /**
  * POST /api/groups/[id]/members
- * Add users to a group. Body: { userIds: string[], actorId: string }
+ * Add users to a group. Body: { userIds: string[] }.
+ * The signed-in user is the actor and must already be a member; any
+ * client-sent actorId is ignored.
  */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params;
-    const body: { userIds?: string[]; actorId?: string } = await request.json();
+    const me = await getCurrentUser();
+    if (!me) return unauthorized();
 
-    if (!body.userIds || body.userIds.length === 0 || !body.actorId) {
+    const { id } = await params;
+    const body: { userIds?: string[] } = await request.json();
+
+    if (!body.userIds || body.userIds.length === 0) {
       return NextResponse.json<ApiErrorResponse>(
-        apiError("userIds and actorId are required", CODES.MISSING_FIELDS),
+        apiError("userIds is required", CODES.MISSING_FIELDS),
         { status: 400 }
       );
     }
 
-    const members = await addGroupMembers(id, body.userIds, body.actorId);
+    if (!(await areGroupMembers(id, [me.id]))) {
+      return forbidden();
+    }
+
+    const members = await addGroupMembers(id, body.userIds, me.id);
     return NextResponse.json({ success: true, data: members });
   } catch (err) {
     console.error("POST /api/groups/[id]/members error:", err);

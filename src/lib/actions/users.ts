@@ -21,7 +21,7 @@ export async function getUser(id: string): Promise<User | undefined> {
 export async function createUser(name: string, email: string): Promise<User> {
   const id = `user-${uuid().slice(0, 8)}`;
   await getDb().insert(schema.users).values({ id, name, email });
-  return { id, name, email, avatarUrl: null, createdAt: new Date().toISOString() };
+  return { id, name, email, avatarUrl: null, authId: null, createdAt: new Date().toISOString() };
 }
 
 /** Get all friends for a user (with net balance). */
