@@ -1,5 +1,55 @@
 # ProjectOwl — Devlog
 
+## 2026-07-23 — Perf round 2: transactions/balances N+1s, one-fetch group page, single auth round trip
+
+Follow-up to the groups.ts batching — Vercel was still slow because three
+more hot paths had the same serial-query shape, plus every API request paid
+auth twice.
+
+### Done
+- **`getTransactions` batched** (the worst offender — untouched last round).
+  Per transaction it ran items + participants + payer + one query *per
+  participant user* + one *per assignment user* + group name: ~180 serial
+  round trips for a 20-tx ledger. Now three stages of IN queries (txs →
+  items ∥ participants ∥ assignments-joined-to-items → users ∥ groups)
+  regardless of list size.
+- **`getBalance` batched** (homepage fetch #1; the earlier attempt was
+  reverted before landing). Participants for all transactions in one IN
+  query — the scan is unscoped (every group) for the overall balance —
+  and all counterparty user rows in one IN query.
+- **`GET /api/groups/[id]` = one ledger fetch.** New `getGroupPage()`
+  computes detail + pairwise + transfer plan + down-bad ranking from a
+  single parallel (members, txs, settlements) trio; the route previously
+  called three actions that each re-fetched the ledger, plus a separate
+  `areGroupMembers` query (membership now checked against the fetched
+  members). `getGroupDetail`/`getGroupDownBadRanking` folded in;
+  `getGroupTransferPlan` kept (settlements/optimize uses it) sharing a pure
+  `planFromNets`.
+- **Middleware skips `/api`.** It ran `supabase.auth.getUser()` (a network
+  round trip to the auth server) on every API request, and then
+  `getCurrentUser()` verified again inside the route — double auth per
+  request. Route handlers can write refreshed session cookies themselves
+  (the server client's setAll works there), so pages keep middleware
+  refresh and API routes verify exactly once.
+
+### Not fixed (known, deferred)
+- Frontend waterfalls: AppShell gates every page behind `/api/auth/me`,
+  and the homepage waits for `/api/groups` before fetching the ranking.
+- Activity feed resolves names with serial per-row lookups.
+- Staging latency: functions are pinned to syd1 (production's region);
+  staging's DB is in Mumbai and pays ~140 ms per round trip by design.
+- "Group not found" flash on back-navigation (loading gate tied to the
+  wrong fetch — see previous entry).
+
+### Verification
+- `tsc --noEmit` clean; `test:simplify` 10/10, `test:allocation` 10/10,
+  `test:settlement` 8/8 (directly exercises the rewritten `getBalance`),
+  `test:security` 26/26; `next build` passes.
+- Live smoke test: overall balance per-person amounts verified against
+  hand-computed seed math; group page nets/pairwise/plan identical to
+  pre-refactor plus correct ranking; ledger transactions carry correct
+  participants/shares/group names; non-member group access still 404s.
+
 ## 2026-07-23 — Perf: kill serial N+1 queries in group actions, pin Vercel region
 
 Vercel deploys were slow loading any balance-bearing page. Root cause: the

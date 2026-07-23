@@ -1,49 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getGroupDetail, getGroupTransferPlan, getGroupDownBadRanking, areGroupMembers } from "@/lib/actions/groups";
+import { getGroupPage } from "@/lib/actions/groups";
 import { getCurrentUser } from "@/lib/auth";
 import { unauthorized } from "@/lib/auth/guard";
+import { createTimer } from "@/lib/server-timing";
 import { CODES, ERROR_MESSAGES, apiError, mapErrorMessage, type ApiErrorResponse } from "@/lib/constants";
 
 /**
  * GET /api/groups/[id]
  * Group detail: members, per-member net balances, pairwise nets vs. the
  * signed-in user, the minimal settle-up transfer plan, and the "most down
- * bad" ranking. Members only — non-members get 404 (not 403) so group ids
- * can't be probed.
+ * bad" ranking — all from one ledger fetch. Members only — non-members and
+ * unknown ids both get 404 so group ids can't be probed.
  */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const t = createTimer();
   try {
-    const me = await getCurrentUser();
+    const me = await t.time("auth", () => getCurrentUser());
     if (!me) return unauthorized();
 
     const { id } = await params;
-
-    if (!(await areGroupMembers(id, [me.id]))) {
+    const page = await t.time("db", () => getGroupPage(id, me.id));
+    if (!page || !page.members.some((m) => m.id === me.id)) {
       return NextResponse.json<ApiErrorResponse>(
         apiError(ERROR_MESSAGES.GROUP_NOT_FOUND, CODES.GROUP_NOT_FOUND),
         { status: 404 }
       );
     }
 
-    const detail = await getGroupDetail(id, me.id);
-    if (!detail) {
-      return NextResponse.json<ApiErrorResponse>(
-        apiError(ERROR_MESSAGES.GROUP_NOT_FOUND, CODES.GROUP_NOT_FOUND),
-        { status: 404 }
-      );
-    }
-
-    return NextResponse.json({
-      success: true,
-      data: {
-        ...detail,
-        transferPlan: await getGroupTransferPlan(id),
-        downBadRanking: await getGroupDownBadRanking(id),
-      },
-    });
+    return NextResponse.json({ success: true, data: page }, { headers: t.headers() });
   } catch (err) {
     console.error("GET /api/groups/[id] error:", err);
     return NextResponse.json<ApiErrorResponse>(
