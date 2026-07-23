@@ -22,6 +22,10 @@ work for more friction.
   must still be a signed-in group member.
 - MembersSheet on the group page: the all-users `UserPicker` (which listed
   every account) is gone; replaced with an email input + "Copy invite link".
+- **Mock mode keeps a "Quick add (local dev)" picker** below the email/link
+  section — seeded users have fake emails nobody remembers, so local testing
+  can still add anyone directly (sends the `userIds` body the API retains).
+  Gated on `authMode() === "mock"`, so it never renders on staging/prod.
 
 **Invite links (`group_invites` table, migration `0002_sweet_maelstrom`):**
 - `token` (random UUID) is the whole credential; FK to group (cascade) +

@@ -5,8 +5,10 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import TransactionCard from "@/components/TransactionCard";
 import UserAvatar from "@/components/UserAvatar";
+import UserPicker from "@/components/UserPicker";
 import ErrorDialog from "@/components/ErrorDialog";
 import { getSessionUser } from "@/lib/session";
+import { authMode } from "@/lib/auth/mode";
 
 /**
  * Group detail page — members / balances / settle-up actions, pairwise
@@ -317,6 +319,49 @@ function MembersSheet({
   const [inviteCopied, setInviteCopied] = useState(false);
   const [dialogError, setDialogError] = useState<{ title: string; message: string } | null>(null);
 
+  // Mock mode only: quick-add picker over all seeded users, for easy local
+  // testing. GET /api/users is open in mock mode but signed-in-gated (and
+  // enumerable-by-design) in supabase mode, so this never renders there.
+  const isMock = authMode() === "mock";
+  const [allUsers, setAllUsers] = useState<any[]>([]);
+  const [toAdd, setToAdd] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!isMock) return;
+    fetch("/api/users")
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success) setAllUsers(json.data);
+      })
+      .catch(console.error);
+  }, [isMock]);
+
+  const memberIds = new Set(group.members.map((m: any) => m.id));
+  const addable = allUsers.filter((u) => !memberIds.has(u.id));
+
+  const quickAdd = async () => {
+    if (toAdd.length === 0) return;
+    setAdding(true);
+    try {
+      const res = await fetch(`/api/groups/${group.id}/members`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userIds: toAdd }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setToAdd([]);
+        onMembersChanged();
+      } else {
+        setDialogError({ title: "Add failed", message: json.error || "Failed to add members" });
+      }
+    } catch {
+      setDialogError({ title: "Add failed", message: "Failed to connect to the server" });
+    } finally {
+      setAdding(false);
+    }
+  };
+
   const addByEmail = async () => {
     if (!email.trim()) return;
     setAdding(true);
@@ -429,6 +474,34 @@ function MembersSheet({
             {inviteCopied ? "✓ Link copied" : inviteBusy ? "Creating link..." : "Copy invite link"}
           </button>
         </div>
+
+        {/* Mock mode: pick any seeded user directly (local testing shortcut) */}
+        {isMock && (
+          <div className="px-4 py-4 border-t border-[var(--border)] bg-gray-50">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+              Quick add (local dev)
+            </p>
+            {addable.length === 0 ? (
+              <p className="text-sm text-gray-400">Everyone is already in this group</p>
+            ) : (
+              <>
+                <UserPicker
+                  selectedUserIds={toAdd}
+                  onChange={setToAdd}
+                  users={addable}
+                  label=""
+                />
+                <button
+                  onClick={quickAdd}
+                  disabled={adding || toAdd.length === 0}
+                  className="w-full mt-3 px-4 py-2.5 text-sm font-semibold text-white bg-[var(--primary)] rounded-lg hover:bg-[var(--primary-hover)] disabled:opacity-50 transition-colors"
+                >
+                  {adding ? "Adding..." : `Add ${toAdd.length || ""} member${toAdd.length === 1 ? "" : "s"}`}
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       <ErrorDialog
