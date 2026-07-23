@@ -147,25 +147,19 @@ export async function getGroupNetBalances(groupId: string): Promise<MemberBalanc
   return computeMemberNets(members, txs, settlements);
 }
 
-/**
- * "Most down bad" ranking: members who owe the most in this group,
- * biggest debtor first.
- */
-export async function getGroupDownBadRanking(groupId: string): Promise<MemberBalance[]> {
-  return (await getGroupNetBalances(groupId))
-    .filter((b) => b.net < -0.005)
-    .sort((a, b) => a.net - b.net);
+/** Transfer plan from already-computed nets (pure). */
+function planFromNets(members: User[], nets: MemberBalance[]): (Transfer & { fromUser: User; toUser: User })[] {
+  const transfers = minimizeTransfers(nets.map((b) => ({ userId: b.user.id, amount: b.net })));
+  const byId = new Map(members.map((m) => [m.id, m]));
+  return transfers
+    .filter((t) => byId.has(t.from) && byId.has(t.to))
+    .map((t) => ({ ...t, fromUser: byId.get(t.from)!, toUser: byId.get(t.to)! }));
 }
 
 /** Minimum-transfer settlement plan within one group (settlements included). */
 export async function getGroupTransferPlan(groupId: string): Promise<(Transfer & { fromUser: User; toUser: User })[]> {
   const { members, txs, settlements } = await getGroupLedger(groupId);
-  const balances = computeMemberNets(members, txs, settlements).map((b) => ({ userId: b.user.id, amount: b.net }));
-  const transfers = minimizeTransfers(balances);
-  const byId = new Map(members.map((m) => [m.id, m]));
-  return transfers
-    .filter((t) => byId.has(t.from) && byId.has(t.to))
-    .map((t) => ({ ...t, fromUser: byId.get(t.from)!, toUser: byId.get(t.to)! }));
+  return planFromNets(members, computeMemberNets(members, txs, settlements));
 }
 
 /** All groups a user belongs to, with members and the user's net position. */
@@ -201,8 +195,21 @@ export async function getGroupsForUser(userId: string): Promise<GroupSummary[]> 
   );
 }
 
-/** Full detail for the group page. */
-export async function getGroupDetail(groupId: string, currentUserId: string): Promise<GroupDetail | undefined> {
+export interface GroupPage extends GroupDetail {
+  transferPlan: (Transfer & { fromUser: User; toUser: User })[];
+  /** Members who owe the most in this group, biggest debtor first. */
+  downBadRanking: MemberBalance[];
+}
+
+/**
+ * Everything the group page (and home-page ranking) needs, from a single
+ * parallel ledger fetch: detail, member balances, pairwise nets vs. the
+ * viewer, transfer plan, and down-bad ranking. Previously the route
+ * assembled this from three actions that each re-fetched the same ledger.
+ * Undefined = no such group. Membership is NOT checked here — callers
+ * decide (the route 404s non-members via `members`).
+ */
+export async function getGroupPage(groupId: string, currentUserId: string): Promise<GroupPage | undefined> {
   const db = getDb();
   const [groupRows, { members, txs, settlements }] = await Promise.all([
     db.select().from(schema.groups).where(eq(schema.groups.id, groupId)),
@@ -238,7 +245,14 @@ export async function getGroupDetail(groupId: string, currentUserId: string): Pr
     .map(([id, amt]) => ({ user: byId.get(id)!, amount: round2(amt) }))
     .sort((a, b) => b.amount - a.amount);
 
-  return { ...group, members, memberBalances, yourPairwise };
+  return {
+    ...group,
+    members,
+    memberBalances,
+    yourPairwise,
+    transferPlan: planFromNets(members, memberBalances),
+    downBadRanking: memberBalances.filter((b) => b.net < -0.005).sort((a, b) => a.net - b.net),
+  };
 }
 
 /** Create a group with its initial members (creator always included). */
