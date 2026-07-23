@@ -1,5 +1,54 @@
 # ProjectOwl — Devlog
 
+## 2026-07-23 — Perf: kill serial N+1 queries in group actions, pin Vercel region
+
+Vercel deploys were slow loading any balance-bearing page. Root cause: the
+group actions were written as many small sequential queries — invisible
+against localhost Postgres (sub-ms round trips) but multiplied by real
+network latency on Vercel, worst when the function region didn't match the
+Supabase region. A user in G groups with N transactions each paid roughly
+`(N + 7) × G` serial round trips just to render the groups list.
+
+### Done (`src/lib/actions/groups.ts` restructure)
+- `getGroupSimpleTransactions` — participants now fetched with **one IN
+  query** for all of a group's transactions instead of one query per
+  transaction (the dominant cost; previously `1 + N` serial round trips).
+- `getMembers` — single join query (was two round trips: ids, then users).
+- New pure `computeMemberNets(members, txs, settlements)` + shared
+  `getGroupLedger(groupId)` that fetches the (members, transactions,
+  settlements) trio **in parallel**. `getGroupNetBalances`,
+  `getGroupTransferPlan`, `getGroupDetail`, and `getGroupsForUser` are all
+  thin wrappers over it now — each endpoint fetches the ledger exactly once
+  (getGroupDetail previously fetched it ~3× via nested helpers; the
+  transfer plan fetched members twice).
+- `getGroupsForUser` — groups processed with `Promise.all` instead of a
+  serial for-loop; transaction count reuses the ledger's rows (dropped the
+  separate per-group count query and duplicate `getMembers` call).
+  Groups-list wall time is now ~4 round trips regardless of group count.
+- `vercel.json`: `"regions": ["syd1"]` — colocated with the **production**
+  Supabase project (Sydney). Staging's Supabase project is in Mumbai; staging
+  and production are one Vercel project (branch-based Preview/Production
+  environments), and Vercel's function region is project-level only — no
+  per-environment or per-branch override exists (confirmed against Vercel's
+  docs). So this is a deliberate compromise: production gets the colocation
+  win, staging keeps eating cross-region latency. Splitting staging into its
+  own Vercel project is the only way to give it a matching region too, if
+  that's ever worth doing. Default was iad1 (US East), which matched neither.
+
+### Verification
+- `tsc --noEmit` clean; `test:simplify` 10/10, `test:allocation` 10/10,
+  `test:settlement` 8/8, `test:security` 26/26; `next build` passes.
+- Live smoke test: `/api/groups` and `/api/groups/group-japan` outputs
+  verified against hand-computed seed values (nets, pairwise, transfer plan
+  all identical to pre-refactor behavior).
+
+### Known issue (not fixed here)
+The group page briefly flashes "Group not found" when navigating back from
+the payment/transaction pages: `loadData` in `groups/[id]/page.tsx` ties
+`setLoading(false)` to the *transactions* fetch, so a slower *group* fetch
+loses the race and the `!group` branch renders before data arrives. Faster
+queries mask it but the loading gate is still wrong.
+
 ## 2026-07-23 — Group membership: add by exact email + shareable invite links
 
 How people get into groups, replacing the browse-the-whole-user-table picker.
