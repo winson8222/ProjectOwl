@@ -4,6 +4,7 @@ import type { CreateTransactionInput } from "@/lib/actions/transactions";
 import { areGroupMembers } from "@/lib/actions/groups";
 import { getCurrentUser } from "@/lib/auth";
 import { unauthorized, forbidden } from "@/lib/auth/guard";
+import { createTimer } from "@/lib/server-timing";
 import { CODES, ERROR_MESSAGES, apiError, mapErrorMessage, type ApiErrorResponse } from "@/lib/constants";
 import { debugEndpointsEnabled } from "@/lib/debug-guard";
 import { transactionAmountsValid, clampLimit } from "@/lib/security";
@@ -118,8 +119,9 @@ export async function POST(request: NextRequest) {
  * Identity comes from the session — any client-sent userId param is ignored.
  */
 export async function GET(request: NextRequest) {
+  const t = createTimer();
   try {
-    const me = await getCurrentUser();
+    const me = await t.time("auth", () => getCurrentUser());
     if (!me) return unauthorized();
 
     const { searchParams } = new URL(request.url);
@@ -143,15 +145,17 @@ export async function GET(request: NextRequest) {
     const groupId = searchParams.get("groupId") || undefined;
 
     // Reading a group's full ledger requires membership.
-    if (groupId && !(await areGroupMembers(groupId, [me.id]))) {
+    if (groupId && !(await t.time("authz", () => areGroupMembers(groupId, [me.id])))) {
       return forbidden();
     }
 
     // Clamp limit to a sane range so a huge/NaN value can't exhaust the server.
     const limit = clampLimit(searchParams.get("limit"));
 
-    const transactions = await getTransactions({ userId: me.id, groupId, payer, payees, limit });
-    return NextResponse.json({ success: true, data: transactions });
+    const transactions = await t.time("db", () =>
+      getTransactions({ userId: me.id, groupId, payer, payees, limit })
+    );
+    return NextResponse.json({ success: true, data: transactions }, { headers: t.headers() });
   } catch (err) {
     console.error("GET /api/transactions error:", err);
     return NextResponse.json<ApiErrorResponse>(
