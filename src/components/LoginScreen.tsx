@@ -35,9 +35,15 @@ function GoogleLogin() {
     try {
       const { createSupabaseBrowserClient } = await import("@/lib/supabase/client");
       const supabase = createSupabaseBrowserClient();
+      // Carry the current path through the OAuth round-trip so deep links
+      // (e.g. /join/[token] invites) land back where the user started.
+      const next = window.location.pathname + window.location.search;
+      const redirectTo =
+        `${window.location.origin}/auth/callback` +
+        (next !== "/" ? `?next=${encodeURIComponent(next)}` : "");
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: `${window.location.origin}/auth/callback` },
+        options: { redirectTo },
       });
       if (error) setError(error.message);
       // On success the browser navigates away to Google — no state to reset.
