@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import UserPicker from "@/components/UserPicker";
 import SplitInput from "@/components/SplitInput";
@@ -11,6 +11,7 @@ import ErrorAlert from "@/components/ErrorAlert";
 import ErrorDialog from "@/components/ErrorDialog";
 import FormField from "@/components/FormField";
 import UserAvatar from "@/components/UserAvatar";
+import GroupPickerWheel from "@/components/GroupPickerWheel";
 import { getSessionUser } from "@/lib/session";
 import { ERROR_MESSAGES, mapErrorMessage } from "@/lib/constants";
 import { DEBUG_UI, MOCK_SCAN_ENABLED } from "@/lib/debug-config";
@@ -32,17 +33,30 @@ type ScanStatus = "idle" | "choosing" | "uploading" | "extracted" | "error";
  */
 export default function NewTransactionPage() {
   const router = useRouter();
+  const [isMounted, setIsMounted] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [participantsMeta, setParticipantsMeta] = useState<{ id: string; name: string }[]>([]);
+
+  // Slide-up animation on mount
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   // ── Group (transactions always happen within a group) ─────────────
   const [groups, setGroups] = useState<any[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>("");
   const [groupsLoaded, setGroupsLoaded] = useState(false);
+  const [isPaymentMode, setIsPaymentMode] = useState(false);
+
+  // ── Payment mode state ───────────────────────────────────────────
+  const [toUserId, setToUserId] = useState<string>("");
+  const [recipients, setRecipients] = useState<any[]>([]);
+  const [plan, setPlan] = useState<any[]>([]);
 
   // ── Base form fields ───────────────────────────────────────────────
   const [title, setTitle] = useState("");
   const [totalAmount, setTotalAmount] = useState<number>(0);
+  const [amount, setAmount] = useState<number>(0);
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
   const [paidBy, setPaidBy] = useState("");
@@ -123,6 +137,48 @@ export default function NewTransactionPage() {
       setSplitValues(newValues);
     }
   }, [splitMode, selectedParticipants, totalAmount]);
+
+  // Load recipients and settle-up plan when in payment mode
+  useEffect(() => {
+    if (!isPaymentMode || !selectedGroupId || !user) return;
+
+    const group = groups.find((g) => g.id === selectedGroupId);
+    if (!group) return;
+
+    // Load recipients (group members except current user)
+    setRecipients(group.members.filter((m: any) => m.id !== user.id));
+
+    // Load settle-up plan
+    fetch(`/api/groups/${selectedGroupId}?userId=${user.id}`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success) {
+          setPlan(json.data.settleUpPlan || []);
+        }
+      })
+      .catch(console.error);
+  }, [isPaymentMode, selectedGroupId, groups, user]);
+
+  // Reset payment fields when toggling modes
+  useEffect(() => {
+    if (isPaymentMode) {
+      setToUserId("");
+      setRecipients([]);
+      setPlan([]);
+      setAmount(0);
+      // Reset transaction fields
+      setTitle("");
+      setTotalAmount(0);
+      setSelectedParticipants([]);
+      setPaidBy(user?.id || "");
+    } else {
+      // Reset payment fields
+      setToUserId("");
+      setRecipients([]);
+      setPlan([]);
+      setAmount(0);
+    }
+  }, [isPaymentMode, user]);
 
   // ── Scan flow ──────────────────────────────────────────────────────
 
@@ -256,6 +312,52 @@ export default function NewTransactionPage() {
 
   const handleSave = useCallback(async () => {
     setShowAllErrors(true);
+
+    // Payment mode validation and save
+    if (isPaymentMode) {
+      if (!user || amount <= 0 || !toUserId) return;
+      if (!selectedGroupId) {
+        setError("Pick a group — payments happen within a group");
+        return;
+      }
+
+      setSaving(true);
+      setError(null);
+
+      try {
+        const response = await fetch("/api/payments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fromUserId: user.id,
+            toUserId,
+            amount,
+            groupId: selectedGroupId,
+            settledAt: "PAID",
+          }),
+        });
+
+        const json = await response.json();
+        if (json.success) {
+          window.location.href = `/groups/${selectedGroupId}`;
+        } else {
+          setDialogError({
+            title: "Save failed",
+            message: json.error || ERROR_MESSAGES.FAILED_TO_SAVE,
+          });
+        }
+      } catch (err) {
+        setDialogError({
+          title: "Save failed",
+          message: mapErrorMessage(err),
+        });
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
+    // Transaction mode validation and save
     if (!user || !title.trim() || totalAmount <= 0 || selectedParticipants.length === 0) return;
 
     if (!selectedGroupId) {
@@ -360,6 +462,9 @@ export default function NewTransactionPage() {
     splitValues,
     scanItems,
     savedAssignments,
+    isPaymentMode,
+    toUserId,
+    amount,
   ]);
 
   const totalFromItems = scanItems.reduce((s, i) => s + i.price, 0);
@@ -373,7 +478,11 @@ export default function NewTransactionPage() {
   }
 
   return (
-    <main className="min-h-dvh px-4 pt-6 pb-8 max-w-lg mx-auto">
+    <main
+      className={`min-h-dvh px-4 pt-6 pb-8 max-w-lg mx-auto transition-all duration-700 ease-out ${
+        isMounted ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0'
+      }`}
+    >
       <button
         onClick={() => router.back()}
         className="text-sm text-gray-500 hover:text-gray-700 mb-4 block"
@@ -382,12 +491,30 @@ export default function NewTransactionPage() {
       </button>
 
       <h1 className="text-xl font-bold text-gray-900 mb-1">New Transaction</h1>
-      <a
-        href={`/payments/new${selectedGroupId ? `?groupId=${selectedGroupId}` : ""}`}
-        className="text-sm font-medium text-[var(--primary)] mb-6 block"
-      >
-        💸 Paying someone back? Record a payment →
-      </a>
+
+      {/* Toggle between transaction and payment mode */}
+      <div className="flex items-center justify-between mb-6 bg-gray-100 rounded-xl p-1">
+        <button
+          onClick={() => setIsPaymentMode(false)}
+          className={`flex-1 py-2.5 px-4 text-sm font-medium rounded-lg transition-all ${
+            !isPaymentMode
+              ? "bg-white text-gray-900 shadow-sm"
+              : "text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          Add Expense
+        </button>
+        <button
+          onClick={() => setIsPaymentMode(true)}
+          className={`flex-1 py-2.5 px-4 text-sm font-medium rounded-lg transition-all ${
+            isPaymentMode
+              ? "bg-white text-emerald-600 shadow-sm"
+              : "text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          Add Payment
+        </button>
+      </div>
 
       {groupsLoaded && groups.length === 0 ? (
         <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl px-4 py-8 text-center">
@@ -401,27 +528,140 @@ export default function NewTransactionPage() {
             Create a group first →
           </button>
         </div>
+      ) : isPaymentMode ? (
+        // ── Payment mode ───────────────────────────────────────────────
+        <div className="space-y-6">
+          {/* Green money-transfer hero — visually distinct from the expense form */}
+          <div className="rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white px-5 py-5 mb-6 shadow-md">
+            <h1 className="text-xl font-bold">
+              Record a Payment
+            </h1>
+            <p className="text-sm text-white/85 mt-1">
+              Pay someone back — this reduces what you owe them
+            </p>
+          </div>
+
+          {/* ── You → recipient visual ─────────────────────────────── */}
+          <div className="flex items-center justify-center gap-5 py-2">
+            <div className="flex flex-col items-center gap-1.5">
+              <UserAvatar name={user?.name} size="lg" />
+              <span className="text-xs font-medium text-gray-600">You</span>
+            </div>
+            <span className="text-2xl text-emerald-500 font-bold">→</span>
+            <div className="flex flex-col items-center gap-1.5">
+              {toUserId ? (() => {
+                const recipient = recipients.find((r) => r.id === toUserId);
+                return recipient ? (
+                  <>
+                    <UserAvatar name={recipient.name} size="lg" />
+                    <span className="text-xs font-medium text-gray-600">{recipient.name}</span>
+                  </>
+                ) : null;
+              })() : (
+                <>
+                  <div className="w-12 h-12 rounded-full border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-300 text-xl">
+                    ?
+                  </div>
+                  <span className="text-xs text-gray-400">Pick below</span>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* ── Amount — big and centered ──────────────────────────── */}
+          <div className="bg-emerald-50 border border-emerald-200 rounded-2xl px-4 py-5">
+            <p className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wider text-center mb-2">
+              Amount
+            </p>
+            <div className="flex items-center justify-center gap-1">
+              <span className="text-2xl font-semibold text-emerald-600">$</span>
+              <input
+                type="number"
+                value={amount || ""}
+                onChange={(e) => setAmount(parseFloat(e.target.value) || 0)}
+                step="0.01"
+                min="0"
+                placeholder="0.00"
+                className="w-40 text-4xl font-bold text-gray-900 text-center bg-transparent focus:outline-none placeholder:text-gray-300"
+              />
+            </div>
+            {showAllErrors && amount <= 0 && (
+              <p className="text-xs text-[var(--danger)] text-center mt-2">
+                Enter an amount greater than $0
+              </p>
+            )}
+          </div>
+
+          {/* ── Recipient ──────────────────────────────────────────── */}
+          <div>
+            <label className="text-xs font-medium text-gray-500 mb-2 block">Pay to</label>
+            <div className="flex flex-wrap gap-2">
+              {recipients.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => setToUserId(m.id)}
+                  className={`flex items-center gap-2 px-3 py-2 text-sm rounded-xl border transition-colors ${
+                    toUserId === m.id
+                      ? "border-emerald-500 bg-emerald-50 text-emerald-700 font-semibold"
+                      : "border-[var(--border)] bg-white text-gray-700 hover:bg-gray-50"
+                  }`}
+                >
+                  <UserAvatar name={m.name} size="sm" />
+                  {m.name}
+                </button>
+              ))}
+              {recipients.length === 0 && (
+                <p className="text-sm text-gray-400">No other members in this group</p>
+              )}
+            </div>
+            {showAllErrors && !toUserId && (
+              <p className="text-xs text-[var(--danger)] mt-1.5">Pick who you&apos;re paying</p>
+            )}
+          </div>
+
+          {/* ── Date ───────────────────────────────────────────────── */}
+          <div>
+            <label className="text-xs font-medium text-gray-500 mb-1 block">Date</label>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+          </div>
+
+          {/* ── Error ──────────────────────────────────────────────── */}
+          {error && <p className="text-sm text-[var(--danger)]">{error}</p>}
+
+          {/* ── Save ───────────────────────────────────────────────── */}
+          <button
+            onClick={handleSave}
+            disabled={saving || !toUserId || amount <= 0}
+            className="w-full px-4 py-3.5 text-sm font-semibold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+          >
+            {saving
+              ? "Saving..."
+              : toUserId && recipients.find((r) => r.id === toUserId)
+                ? `Pay ${recipients.find((r) => r.id === toUserId)?.name} $${amount > 0 ? amount.toFixed(2) : "0.00"}`
+                : "Record payment"}
+          </button>
+        </div>
       ) : (
+      // ── Transaction mode ───────────────────────────────────────────
       <div className="space-y-5">
         {/* ── Group ──────────────────────────────────────────────── */}
-        <div>
-          <label className="text-xs font-medium text-gray-500 mb-1 block">Group</label>
-          <select
-            value={selectedGroupId}
-            onChange={(e) => setSelectedGroupId(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
-          >
-            {groups.map((g) => (
-              <option key={g.id} value={g.id}>{g.name}</option>
-            ))}
-          </select>
-        </div>
+        <GroupPickerWheel
+          groups={groups}
+          selectedGroupId={selectedGroupId}
+          onGroupChange={(groupId) => setSelectedGroupId(groupId)}
+        />
 
         {/* ── Description ────────────────────────────────────────── */}
         <FormField
-          label="Description"
+          label="Title"
           value={title}
-          validate={(v) => (!(v as string)?.trim() ? "Enter a description" : null)}
+          validate={(v) => (!(v as string)?.trim() ? "Enter a title" : null)}
           showError={showAllErrors}
         >
           <input
@@ -436,13 +676,21 @@ export default function NewTransactionPage() {
         {/* ── Scan receipt button ────────────────────────────────── */}
         {scanStatus === "idle" && (
           <div>
-            <p className="text-xs font-medium text-gray-500 mb-2">Scan a receipt instead?</p>
             <button
               onClick={() => setScanStatus("choosing")}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-[var(--primary)] border-2 border-dashed border-[var(--border)] rounded-xl hover:border-[var(--primary)] hover:bg-blue-50 transition-colors"
+              className="relative w-full px-4 py-4 text-sm font-bold text-white bg-gradient-to-r from-[var(--primary)] to-[var(--primary-hover)] rounded-xl overflow-hidden transition-all hover:scale-105 hover:shadow-lg group"
             >
-              <span className="text-lg">📸</span>
-              Scan a receipt
+              {/* Animated gradient border effect */}
+              <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-purple-500 via-pink-500 to-blue-500 opacity-75 blur-sm animate-gradient-pan" />
+
+              {/* Inner content container */}
+              <div className="relative z-10 flex items-center justify-center gap-2">
+                <span className="text-lg">✨</span>
+                Use ItreAI
+              </div>
+
+              {/* Shine effect on hover */}
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
             </button>
 
             {/* Debug toggle: mock scan (skip the LLM API) */}
@@ -453,7 +701,7 @@ export default function NewTransactionPage() {
                   checked={mockScan}
                   onChange={(e) => setMockScan(e.target.checked)}
                 />
-                🐛 Mock scan (load test data, no API call)
+                Mock scan (load test data, no API call)
               </label>
             )}
           </div>
@@ -469,7 +717,7 @@ export default function NewTransactionPage() {
           <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="px-4 py-2.5 border-b border-[var(--border)] bg-amber-50 flex items-center justify-between">
               <h2 className="text-xs font-semibold text-amber-700 uppercase tracking-wider">
-                🐛 Load test receipt
+                Load test receipt
               </h2>
               <button
                 onClick={() => setScanStatus("idle")}
