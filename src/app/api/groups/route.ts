@@ -17,7 +17,10 @@ export async function GET() {
     if (!me) return unauthorized();
 
     const groups = await t.time("db", () => getGroupsForUser(me.id));
-    return NextResponse.json({ success: true, data: groups }, { headers: t.headers() });
+    return NextResponse.json(
+      { success: true, data: groups, _timing: t.toJSON() },
+      { headers: t.headers() }
+    );
   } catch (err) {
     console.error("GET /api/groups error:", err);
     return NextResponse.json<ApiErrorResponse>(

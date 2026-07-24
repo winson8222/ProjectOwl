@@ -22,7 +22,9 @@ export async function GET(
     if (!me) return unauthorized();
 
     const { id } = await params;
-    const page = await t.time("db", () => getGroupPage(id, me.id));
+    // Passing `t` splits the db bucket into its parallel legs
+    // (db.group / db.members / db.txs / db.settlements).
+    const page = await t.time("db", () => getGroupPage(id, me.id, t));
     if (!page || !page.members.some((m) => m.id === me.id)) {
       return NextResponse.json<ApiErrorResponse>(
         apiError(ERROR_MESSAGES.GROUP_NOT_FOUND, CODES.GROUP_NOT_FOUND),
@@ -30,7 +32,10 @@ export async function GET(
       );
     }
 
-    return NextResponse.json({ success: true, data: page }, { headers: t.headers() });
+    return NextResponse.json(
+      { success: true, data: page, _timing: t.toJSON() },
+      { headers: t.headers() }
+    );
   } catch (err) {
     console.error("GET /api/groups/[id] error:", err);
     return NextResponse.json<ApiErrorResponse>(

@@ -4,6 +4,7 @@ import { v4 as uuid } from "uuid";
 import { localTimestamp } from "@/lib/time";
 import { logActivity } from "./activities";
 import { computeNetBalances, minimizeTransfers, type SimpleTransaction, type Transfer } from "@/lib/simplify";
+import type { ServerTimer } from "@/lib/server-timing";
 import type { User } from "./users";
 
 export type Group = typeof schema.groups.$inferSelect;
@@ -34,6 +35,10 @@ export interface GroupDetail extends Group {
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Run fn under the request's phase timer when one is threaded in. */
+const timed = <T>(t: ServerTimer | undefined, name: string, fn: () => Promise<T>) =>
+  t ? t.time(name, fn) : fn();
 
 /** All member user-ids of a group. */
 export async function getGroupMemberIds(groupId: string): Promise<string[]> {
@@ -128,12 +133,17 @@ function computeMemberNets(
     .sort((a, b) => b.net - a.net);
 }
 
-/** The (members, transactions, PAID settlements) trio, fetched in parallel. */
-async function getGroupLedger(groupId: string) {
+/**
+ * The (members, transactions, PAID settlements) trio, fetched in parallel.
+ * Pass a timer to record each leg separately (they overlap — the marks are
+ * per-query wall times, not additive). Only single-ledger callers should
+ * thread one in; getGroupsForUser fetches many ledgers concurrently.
+ */
+async function getGroupLedger(groupId: string, t?: ServerTimer) {
   const [members, txs, settlements] = await Promise.all([
-    getMembers(groupId),
-    getGroupSimpleTransactions(groupId),
-    getPaidSettlements(groupId),
+    timed(t, "db.members", () => getMembers(groupId)),
+    timed(t, "db.txs", () => getGroupSimpleTransactions(groupId)),
+    timed(t, "db.settlements", () => getPaidSettlements(groupId)),
   ]);
   return { members, txs, settlements };
 }
@@ -209,11 +219,11 @@ export interface GroupPage extends GroupDetail {
  * Undefined = no such group. Membership is NOT checked here — callers
  * decide (the route 404s non-members via `members`).
  */
-export async function getGroupPage(groupId: string, currentUserId: string): Promise<GroupPage | undefined> {
+export async function getGroupPage(groupId: string, currentUserId: string, t?: ServerTimer): Promise<GroupPage | undefined> {
   const db = getDb();
   const [groupRows, { members, txs, settlements }] = await Promise.all([
-    db.select().from(schema.groups).where(eq(schema.groups.id, groupId)),
-    getGroupLedger(groupId),
+    timed(t, "db.group", () => db.select().from(schema.groups).where(eq(schema.groups.id, groupId))),
+    getGroupLedger(groupId, t),
   ]);
   const group = groupRows[0];
   if (!group) return undefined;
