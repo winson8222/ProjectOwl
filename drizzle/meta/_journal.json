@@ -22,6 +22,13 @@
       "when": 1784798813578,
       "tag": "0002_sweet_maelstrom",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784825094387,
+      "tag": "0003_wise_elektra",
+      "breakpoints": true
     }
   ]
 }

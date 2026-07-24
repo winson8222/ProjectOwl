@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getGroupsForUser, createGroup } from "@/lib/actions/groups";
 import { getCurrentUser } from "@/lib/auth";
 import { unauthorized } from "@/lib/auth/guard";
+import { createTimer } from "@/lib/server-timing";
 import { CODES, ERROR_MESSAGES, apiError, mapErrorMessage, type ApiErrorResponse } from "@/lib/constants";
 
 /**
@@ -10,11 +11,16 @@ import { CODES, ERROR_MESSAGES, apiError, mapErrorMessage, type ApiErrorResponse
  * Identity comes from the session — any client-sent userId param is ignored.
  */
 export async function GET() {
+  const t = createTimer();
   try {
-    const me = await getCurrentUser();
+    const me = await t.time("auth", () => getCurrentUser());
     if (!me) return unauthorized();
 
-    return NextResponse.json({ success: true, data: await getGroupsForUser(me.id) });
+    const groups = await t.time("db", () => getGroupsForUser(me.id));
+    return NextResponse.json(
+      { success: true, data: groups, _timing: t.toJSON() },
+      { headers: t.headers() }
+    );
   } catch (err) {
     console.error("GET /api/groups error:", err);
     return NextResponse.json<ApiErrorResponse>(

@@ -37,6 +37,9 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Skip static assets; run on pages and API routes.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"],
+  // Skip static assets AND /api: API routes verify the session themselves in
+  // getCurrentUser() (and can write refreshed cookies from route handlers),
+  // so running the middleware there doubled the auth-server round trip on
+  // every request for no benefit. Pages still get cookie refresh here.
+  matcher: ["/((?!api/|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"],
 };

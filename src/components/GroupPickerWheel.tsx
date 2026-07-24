@@ -145,17 +145,26 @@ export default function GroupPickerWheel({
           onMouseMove={handleDragMove}
           onMouseUp={handlePressEnd}
           onMouseLeave={handlePressEnd}
-          className={`bg-white rounded-xl border transition-all duration-200 ${
+          className={`rounded-xl border transition-all duration-200 ${
             isPressed
-              ? "border-[var(--primary)] scale-105 shadow-md"
-              : "border-gray-200 shadow-sm"
+              ? "border-[var(--primary)] scale-105"
+              : "border-gray-200"
           }`}
+          style={{
+            background: 'linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(248,250,252,0.25) 100%)',
+            boxShadow: isPressed
+              ? '0 2px 4px rgba(58, 133, 197, 0.15), 0 4px 8px rgba(58, 133, 197, 0.1), 0 8px 16px rgba(58, 133, 197, 0.05)'
+              : '0 2px 4px rgba(0,0,0,0.06), 0 4px 8px rgba(0,0,0,0.04), 0 8px 12px rgba(0,0,0,0.02)'
+          }}
         >
           <div className="flex items-center gap-3 px-4 py-3">
             {/* Colored circle icon */}
             <div
-              className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-sm flex-shrink-0"
-              style={{ backgroundColor: groupColor }}
+              className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0"
+              style={{
+                background: `linear-gradient(135deg, ${groupColor} 0%, ${groupColor}dd 100%)`,
+                boxShadow: '0 2px 4px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.3)'
+              }}
             >
               {selectedGroup?.name.charAt(0).toUpperCase()}
             </div>
@@ -191,8 +200,12 @@ export default function GroupPickerWheel({
             style={{ width: '300px' }}
           >
             <div
-              className="bg-white/70 rounded-3xl shadow-2xl border border-gray-200/60 overflow-hidden backdrop-blur-md"
-              style={{ height: `${containerHeight}px` }}
+              className="rounded-3xl border border-gray-200/60 overflow-hidden backdrop-blur-md"
+              style={{
+                height: `${containerHeight}px`,
+                background: 'linear-gradient(135deg, rgba(255,255,255,0.4) 0%, rgba(248,250,252,0.3) 100%)',
+                boxShadow: '0 4px 8px rgba(0,0,0,0.08), 0 8px 16px rgba(0,0,0,0.06), 0 16px 32px rgba(0,0,0,0.04)'
+              }}
             >
               {/* Selection indicator in center */}
               <div className="absolute top-1/2 left-0 right-0 -translate-y-1/2 h-[80px] bg-[var(--primary)]/10 border-y-2 border-[var(--primary)] pointer-events-none z-10" />
