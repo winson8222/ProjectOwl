@@ -159,7 +159,7 @@ export default function NewPaymentPage() {
 
   return (
     <main
-      className={`min-h-dvh px-4 pt-6 pb-8 max-w-lg mx-auto transition-all duration-700 ease-out ${
+      className={`min-h-dvh px-4 pt-6 max-w-lg mx-auto transition-all duration-700 ease-out content-with-floating-nav ${
         isMounted ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0'
       }`}
     >

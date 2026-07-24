@@ -2,7 +2,7 @@
 
 :root {
   --foreground: #2a2a2a;
-  --background: #f2f2fd;
+  --background: radial-gradient(ellipse at center, #c4e0f5 0%, #d0ebf9 40%, #e5f3fc 70%, #ffffff 100%);
   --primary: #3a85c5;
   --primary-hover: #2a6ba5;
   --danger: #c5423a;
@@ -15,6 +15,30 @@ body {
   color: var(--foreground);
   background: var(--background);
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  min-height: 100vh;
+  background-size: 300% 300%;
+  animation: gradientBounce 12s ease-in-out infinite;
+}
+
+@keyframes gradientBounce {
+  0% {
+    background-position: 0% 50%;
+  }
+  20% {
+    background-position: 80% 20%;
+  }
+  40% {
+    background-position: 100% 80%;
+  }
+  60% {
+    background-position: 20% 100%;
+  }
+  80% {
+    background-position: 40% 30%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
 }
 
 /* Bottom nav safe area (iOS home indicator) */
@@ -66,4 +90,201 @@ body {
 }
 .animate-gradient-pan {
   animation: gradientPan 3s linear infinite;
+}
+
+/* iOS-style page transitions */
+.page-transition-wrapper {
+  width: 100%;
+  min-height: 100vh;
+}
+
+.page-transition-wrapper.is-animating {
+  animation: iosSlideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes iosSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateX(30px) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+/* Smooth page transitions for all main elements */
+main {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  height: 100%;
+}
+
+/* Page slider container styles */
+.page-slider-container main {
+  height: 100%;
+  min-height: 100vh;
+}
+
+.page-slider-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+.page-slider-track {
+  will-change: transform;
+}
+
+.page-slide {
+  will-change: transform;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+
+/* Raining cash animation for UP GOOD state */
+.raining-cash {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.raining-cash span {
+  position: absolute;
+  top: -20px;
+  font-size: 24px;
+  animation: fall linear infinite;
+  opacity: 0.6;
+}
+
+/* Dynamic positions for varying numbers of elements */
+.raining-cash span:nth-child(1) { left: 5%; animation-duration: 2s; animation-delay: 0s; }
+.raining-cash span:nth-child(2) { left: 12%; animation-duration: 2.3s; animation-delay: 0.15s; }
+.raining-cash span:nth-child(3) { left: 20%; animation-duration: 1.8s; animation-delay: 0.3s; }
+.raining-cash span:nth-child(4) { left: 28%; animation-duration: 2.5s; animation-delay: 0.45s; }
+.raining-cash span:nth-child(5) { left: 35%; animation-duration: 2.1s; animation-delay: 0.6s; }
+.raining-cash span:nth-child(6) { left: 42%; animation-duration: 2.4s; animation-delay: 0.75s; }
+.raining-cash span:nth-child(7) { left: 50%; animation-duration: 1.9s; animation-delay: 0.9s; }
+.raining-cash span:nth-child(8) { left: 58%; animation-duration: 2.2s; animation-delay: 1.05s; }
+.raining-cash span:nth-child(9) { left: 65%; animation-duration: 2.6s; animation-delay: 1.2s; }
+.raining-cash span:nth-child(10) { left: 72%; animation-duration: 2.0s; animation-delay: 1.35s; }
+.raining-cash span:nth-child(11) { left: 80%; animation-duration: 2.3s; animation-delay: 1.5s; }
+.raining-cash span:nth-child(12) { left: 88%; animation-duration: 2.1s; animation-delay: 1.65s; }
+.raining-cash span:nth-child(13) { left: 8%; animation-duration: 2.2s; animation-delay: 1.8s; }
+.raining-cash span:nth-child(14) { left: 22%; animation-duration: 2.4s; animation-delay: 1.95s; }
+.raining-cash span:nth-child(15) { left: 33%; animation-duration: 2.0s; animation-delay: 2.1s; }
+.raining-cash span:nth-child(16) { left: 45%; animation-duration: 2.5s; animation-delay: 2.25s; }
+.raining-cash span:nth-child(17) { left: 55%; animation-duration: 2.1s; animation-delay: 2.4s; }
+.raining-cash span:nth-child(18) { left: 68%; animation-duration: 2.3s; animation-delay: 2.55s; }
+.raining-cash span:nth-child(19) { left: 75%; animation-duration: 2.6s; animation-delay: 2.7s; }
+.raining-cash span:nth-child(20) { left: 82%; animation-duration: 2.0s; animation-delay: 2.85s; }
+.raining-cash span:nth-child(21) { left: 95%; animation-duration: 2.4s; animation-delay: 3.0s; }
+.raining-cash span:nth-child(22) { left: 15%; animation-duration: 2.2s; animation-delay: 3.15s; }
+.raining-cash span:nth-child(23) { left: 30%; animation-duration: 2.5s; animation-delay: 3.3s; }
+.raining-cash span:nth-child(24) { left: 48%; animation-duration: 2.1s; animation-delay: 3.45s; }
+.raining-cash span:nth-child(25) { left: 60%; animation-duration: 2.7s; animation-delay: 3.6s; }
+.raining-cash span:nth-child(26) { left: 78%; animation-duration: 2.0s; animation-delay: 3.75s; }
+.raining-cash span:nth-child(27) { left: 92%; animation-duration: 2.3s; animation-delay: 3.9s; }
+.raining-cash span:nth-child(28) { left: 18%; animation-duration: 2.6s; animation-delay: 4.05s; }
+.raining-cash span:nth-child(29) { left: 38%; animation-duration: 2.2s; animation-delay: 4.2s; }
+.raining-cash span:nth-child(30) { left: 62%; animation-duration: 2.4s; animation-delay: 4.35s; }
+
+@keyframes fall {
+  0% {
+    top: -20px;
+    transform: translateX(0) rotate(0deg);
+  }
+  100% {
+    top: 100%;
+    transform: translateX(30px) rotate(360deg);
+  }
+}
+
+/* Falling Gandhi animation for DOWN BAD state */
+.falling-gandhi {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.gandhi-icon {
+  position: absolute;
+  top: -40px;
+  width: 32px;
+  height: 32px;
+  animation: fall-gandhi linear infinite;
+  opacity: 0.6;
+}
+
+/* Dynamic positions for varying numbers of Gandhi elements */
+.gandhi-icon:nth-child(1) { left: 5%; animation-duration: 5s; animation-delay: 0s; }
+.gandhi-icon:nth-child(2) { left: 15%; animation-duration: 6s; animation-delay: 0.5s; }
+.gandhi-icon:nth-child(3) { left: 25%; animation-duration: 5.5s; animation-delay: 1s; }
+.gandhi-icon:nth-child(4) { left: 35%; animation-duration: 6.5s; animation-delay: 1.5s; }
+.gandhi-icon:nth-child(5) { left: 45%; animation-duration: 5.2s; animation-delay: 2s; }
+.gandhi-icon:nth-child(6) { left: 55%; animation-duration: 5.8s; animation-delay: 2.5s; }
+.gandhi-icon:nth-child(7) { left: 65%; animation-duration: 5.3s; animation-delay: 3s; }
+.gandhi-icon:nth-child(8) { left: 75%; animation-duration: 6.2s; animation-delay: 3.5s; }
+.gandhi-icon:nth-child(9) { left: 85%; animation-duration: 5.7s; animation-delay: 4s; }
+.gandhi-icon:nth-child(10) { left: 95%; animation-duration: 5.9s; animation-delay: 4.5s; }
+.gandhi-icon:nth-child(11) { left: 10%; animation-duration: 5.4s; animation-delay: 5s; }
+.gandhi-icon:nth-child(12) { left: 30%; animation-duration: 6.1s; animation-delay: 5.5s; }
+.gandhi-icon:nth-child(13) { left: 50%; animation-duration: 5.6s; animation-delay: 6s; }
+.gandhi-icon:nth-child(14) { left: 70%; animation-duration: 6.3s; animation-delay: 6.5s; }
+.gandhi-icon:nth-child(15) { left: 90%; animation-duration: 5.1s; animation-delay: 7s; }
+.gandhi-icon:nth-child(16) { left: 20%; animation-duration: 5.8s; animation-delay: 7.5s; }
+.gandhi-icon:nth-child(17) { left: 40%; animation-duration: 6.0s; animation-delay: 8s; }
+.gandhi-icon:nth-child(18) { left: 60%; animation-duration: 5.4s; animation-delay: 8.5s; }
+.gandhi-icon:nth-child(19) { left: 80%; animation-duration: 6.4s; animation-delay: 9s; }
+.gandhi-icon:nth-child(20) { left: 8%; animation-duration: 5.7s; animation-delay: 9.5s; }
+.gandhi-icon:nth-child(21) { left: 28%; animation-duration: 5.9s; animation-delay: 10s; }
+.gandhi-icon:nth-child(22) { left: 48%; animation-duration: 6.2s; animation-delay: 10.5s; }
+.gandhi-icon:nth-child(23) { left: 68%; animation-duration: 5.3s; animation-delay: 11s; }
+.gandhi-icon:nth-child(24) { left: 88%; animation-duration: 5.6s; animation-delay: 11.5s; }
+.gandhi-icon:nth-child(25) { left: 12%; animation-duration: 6.1s; animation-delay: 12s; }
+.gandhi-icon:nth-child(26) { left: 32%; animation-duration: 5.8s; animation-delay: 12.5s; }
+.gandhi-icon:nth-child(27) { left: 52%; animation-duration: 6.5s; animation-delay: 13s; }
+.gandhi-icon:nth-child(28) { left: 72%; animation-duration: 5.2s; animation-delay: 13.5s; }
+.gandhi-icon:nth-child(29) { left: 92%; animation-duration: 5.9s; animation-delay: 14s; }
+.gandhi-icon:nth-child(30) { left: 22%; animation-duration: 6.0s; animation-delay: 14.5s; }
+
+@keyframes fall-gandhi {
+  0% {
+    top: -40px;
+    transform: translateX(0) rotate(0deg);
+  }
+  100% {
+    top: 100%;
+    transform: translateX(-25px) rotate(-180deg);
+  }
+}
+
+/* Page slide-in animations */
+.animate-slide-in-right {
+  animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideInRight {
+  0% {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Content clearance for fixed bottom nav */
+.content-with-floating-nav {
+  padding-bottom: calc(160px + env(safe-area-inset-bottom, 0px));
 }

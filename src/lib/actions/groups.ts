@@ -1,5 +1,5 @@
 import { getDb, schema } from "@/lib/db";
-import { eq, and, inArray, desc, getTableColumns } from "drizzle-orm";
+import { eq, and, inArray, desc, asc, getTableColumns } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 import { localTimestamp } from "@/lib/time";
 import { logActivity } from "./activities";
@@ -19,9 +19,10 @@ export interface GroupSummary extends Group {
   transactionCount: number;
   /** True when the group has history but the current user's net is ~zero. */
   isSettled: boolean;
-  /** Members who owe money in this group, biggest debtor first. Derived from
-   * the same nets as yourNet — costs no extra queries. */
-  downBadRanking: MemberBalance[];
+  /** Every member's net in this group, biggest creditor first. Derived from
+   * the same nets as yourNet — costs no extra queries. The homepage's hero
+   * rank + leaderboard read this, so no per-group follow-up fetch. */
+  memberBalances: MemberBalance[];
 }
 
 export interface MemberBalance {
@@ -192,7 +193,7 @@ export async function getGroupsForUser(userId: string): Promise<GroupSummary[]> 
     .select()
     .from(schema.groups)
     .where(inArray(schema.groups.id, memberships.map((m) => m.groupId)))
-    .orderBy(desc(schema.groups.createdAt));
+    .orderBy(asc(schema.groups.displayOrder));
 
   // All groups in parallel; each group's ledger is one parallel trio and
   // doubles as members list + transaction count (no extra queries).
@@ -207,7 +208,7 @@ export async function getGroupsForUser(userId: string): Promise<GroupSummary[]> 
         yourNet,
         transactionCount: txs.length,
         isSettled: txs.length > 0 && Math.abs(yourNet) < 0.005,
-        downBadRanking: downBadFromNets(nets),
+        memberBalances: nets,
       };
     })
   );
@@ -281,6 +282,14 @@ export async function createGroup(name: string, createdByUserId: string, memberI
   const chosenColor =
     color ?? GROUP_COLORS[Math.floor(Math.random() * GROUP_COLORS.length)];
 
+  // Get the next display_order value
+  const maxOrderResult = await db
+    .select({ maxOrder: schema.groups.displayOrder })
+    .from(schema.groups)
+    .orderBy(desc(schema.groups.displayOrder))
+    .limit(1);
+  const nextOrder = (maxOrderResult[0]?.maxOrder ?? -1) + 1;
+
   await db.transaction(async (tx) => {
     await tx.insert(schema.groups).values({
       id,
@@ -288,6 +297,7 @@ export async function createGroup(name: string, createdByUserId: string, memberI
       color: chosenColor,
       createdByUserId,
       createdAt: localTimestamp(),
+      displayOrder: nextOrder,
     });
     for (const userId of allMembers) {
       await tx.insert(schema.groupMembers).values({
@@ -325,4 +335,32 @@ export async function addGroupMembers(groupId: string, userIds: string[], actorI
   }
 
   return getMembers(groupId);
+}
+
+/** Reorder groups for a user. Takes an array of group IDs in the desired order. */
+export async function reorderGroupsForUser(userId: string, groupIds: string[]): Promise<void> {
+  const db = getDb();
+  // Verify all groups belong to the user
+  const memberships = await db
+    .select({ groupId: schema.groupMembers.groupId })
+    .from(schema.groupMembers)
+    .where(eq(schema.groupMembers.userId, userId));
+  const userGroupIds = new Set(memberships.map((m) => m.groupId));
+
+  // Validate that all provided group IDs belong to the user
+  for (const groupId of groupIds) {
+    if (!userGroupIds.has(groupId)) {
+      throw new Error(`Group ${groupId} does not belong to user ${userId}`);
+    }
+  }
+
+  // Update display_order for each group
+  await db.transaction(async (tx) => {
+    for (let i = 0; i < groupIds.length; i++) {
+      await tx
+        .update(schema.groups)
+        .set({ displayOrder: i })
+        .where(eq(schema.groups.id, groupIds[i]));
+    }
+  });
 }

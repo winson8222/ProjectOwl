@@ -85,7 +85,7 @@ export default function GroupDetailPage() {
   }
 
   return (
-    <main className="min-h-dvh px-4 pt-6 pb-24 max-w-lg mx-auto">
+    <main className="min-h-dvh px-4 pt-6 max-w-lg mx-auto animate-slide-in-right content-with-floating-nav">
       <Link href="/groups" className="text-sm text-gray-500 hover:text-gray-700 mb-4 block">
         ← Groups
       </Link>
@@ -108,19 +108,34 @@ export default function GroupDetailPage() {
       <div className="flex gap-2 mb-4">
         <button
           onClick={() => setShowMembers(true)}
-          className="px-3 py-1.5 text-xs font-semibold text-[var(--primary)] border border-[var(--primary)] rounded-lg hover:bg-blue-50"
+          className="px-3 py-1.5 text-xs font-semibold text-[var(--primary)] rounded-lg backdrop-blur-sm transition-all hover:scale-[1.05]"
+          style={{
+            border: '1px solid rgba(58,133,197,0.3)',
+            background: 'linear-gradient(135deg, rgba(58,133,197,0.08) 0%, rgba(58,133,197,0.04) 100%)',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03)'
+          }}
         >
           members
         </button>
         <button
           onClick={() => setShowBalances(true)}
-          className="px-3 py-1.5 text-xs font-semibold text-[var(--primary)] border border-[var(--primary)] rounded-lg hover:bg-blue-50"
+          className="px-3 py-1.5 text-xs font-semibold text-[var(--primary)] rounded-lg backdrop-blur-sm transition-all hover:scale-[1.05]"
+          style={{
+            border: '1px solid rgba(58,133,197,0.3)',
+            background: 'linear-gradient(135deg, rgba(58,133,197,0.08) 0%, rgba(58,133,197,0.04) 100%)',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03)'
+          }}
         >
           balances
         </button>
         <Link
           href={`/groups/${groupId}/settle-up`}
-          className="px-3 py-1.5 text-xs font-semibold text-white bg-[var(--primary)] rounded-lg hover:bg-[var(--primary-hover)]"
+          className="px-3 py-1.5 text-xs font-semibold text-white rounded-lg backdrop-blur-sm transition-all hover:scale-[1.05]"
+          style={{
+            background: 'linear-gradient(135deg, rgba(58,133,197,0.9) 0%, rgba(42,107,165,0.85) 100%)',
+            border: '1px solid rgba(58,133,197,0.4)',
+            boxShadow: '0 2px 4px rgba(58,133,197,0.2), 0 4px 8px rgba(58,133,197,0.15), 0 1px 2px rgba(0,0,0,0.05)'
+          }}
         >
           settle up
         </Link>
