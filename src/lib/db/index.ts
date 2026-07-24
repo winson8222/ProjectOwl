@@ -25,7 +25,12 @@ export function getDb(): Db {
 
   // prepare:false keeps the client compatible with transaction-mode poolers
   // (Supabase pgbouncer on port 6543); harmless against a direct connection.
-  const client = postgres(url, { prepare: false });
+  const client = postgres(url, {
+    prepare: false,
+    max: 1, // Use single connection for serverless/Next.js
+    idle_timeout: 20, // Close idle connections after 20 seconds
+    connect_timeout: 10,
+  });
   dbInstance = drizzle(client, { schema });
 
   return dbInstance;

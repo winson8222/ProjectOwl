@@ -88,7 +88,7 @@ export default function SettleUpPage() {
   const owedToYou = balance?.perPerson?.filter((p: any) => p.amount > 0) ?? [];
 
   return (
-    <main className="min-h-dvh px-4 pt-6 pb-8 max-w-lg mx-auto">
+    <main className="min-h-dvh px-4 pt-6 max-w-lg mx-auto content-with-floating-nav">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Settle Up</h1>

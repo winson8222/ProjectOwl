@@ -98,7 +98,7 @@ export default function TransactionDetailPage() {
   const youOwe = !isPayer && !isPayment && tx.userShare > 0;
 
   return (
-    <main className="min-h-dvh px-4 pt-6 pb-8 max-w-lg mx-auto">
+    <main className="min-h-dvh px-4 pt-6 max-w-lg mx-auto animate-slide-in-right content-with-floating-nav">
       {/* Back */}
       <button
         onClick={() => router.back()}
@@ -134,8 +134,13 @@ export default function TransactionDetailPage() {
 
       {/* Itemized breakdown (with scan assignments if available) */}
       {tx.items && tx.items.length > 0 && (
-        <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl overflow-hidden mb-4">
-          <div className="px-4 py-2.5 border-b border-[var(--border)] bg-gray-50">
+        <div className="rounded-xl overflow-hidden mb-4 backdrop-blur-sm"
+             style={{
+               background: 'linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(248,250,252,0.25) 100%)',
+               border: '1px solid rgba(176,176,176,0.2)',
+               boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03), 0 4px 8px rgba(0,0,0,0.02)'
+             }}>
+          <div className="px-4 py-2.5 border-b border-[var(--border)] bg-gray-50/80">
             <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Items</h2>
           </div>
           <div className="divide-y divide-[var(--border)]">
@@ -183,13 +188,18 @@ export default function TransactionDetailPage() {
 
       {/* Per-person totals */}
       {tx.participants && tx.participants.length > 0 && (
-        <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl overflow-hidden mb-4">
-          <div className="px-4 py-2.5 border-b border-[var(--border)] bg-gray-50">
+        <div className="rounded-xl overflow-hidden mb-4 backdrop-blur-sm"
+             style={{
+               background: 'linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(248,250,252,0.25) 100%)',
+               border: '1px solid rgba(176,176,176,0.2)',
+               boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03), 0 4px 8px rgba(0,0,0,0.02)'
+             }}>
+          <div className="px-4 py-2.5 border-b border-[var(--border)] bg-gray-50/80">
             <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Split</h2>
           </div>
           <div className="divide-y divide-[var(--border)]">
             {tx.participants.map((p: any) => (
-              <div key={p.user.id} className="px-4 py-2.5 flex items-center justify-between">
+              <div key={p.user.id} className="px-4 py-2.5 flex items-center justify-between backdrop-blur-sm" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.15) 0%, rgba(248,250,252,0.08) 100%)' }}>
                 <div className="flex items-center gap-2">
                   <UserAvatar name={p.user.name} size="sm" />
                   <span className="text-sm text-gray-700">
@@ -207,7 +217,7 @@ export default function TransactionDetailPage() {
               </div>
             ))}
           </div>
-          <div className="px-4 py-2.5 border-t border-[var(--border)] bg-gray-50 flex justify-between">
+          <div className="px-4 py-2.5 border-t border-[var(--border)] flex justify-between backdrop-blur-sm" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.2) 0%, rgba(248,250,252,0.12) 100%)' }}>
             <span className="text-sm font-semibold text-gray-700">Total</span>
             <span className="text-sm font-mono font-bold text-gray-900">${tx.totalAmount.toFixed(2)}</span>
           </div>
@@ -219,14 +229,24 @@ export default function TransactionDetailPage() {
         {youOwe && tx.groupId && (
           <a
             href={`/payments/new?groupId=${tx.groupId}&toUserId=${tx.paidByUserId}&amount=${tx.userShare}`}
-            className="block w-full px-4 py-2.5 text-center text-sm font-semibold text-white bg-[var(--primary)] rounded-xl hover:bg-[var(--primary-hover)] transition-colors"
+            className="block w-full px-4 py-2.5 text-center text-sm font-semibold text-white rounded-xl backdrop-blur-sm transition-all hover:scale-[1.02]"
+            style={{
+              background: 'linear-gradient(135deg, rgba(58,133,197,0.9) 0%, rgba(42,107,165,0.85) 100%)',
+              border: '1px solid rgba(58,133,197,0.4)',
+              boxShadow: '0 2px 4px rgba(58,133,197,0.2), 0 4px 8px rgba(58,133,197,0.15), 0 1px 2px rgba(0,0,0,0.05)'
+            }}
           >
             💸 Pay {tx.paidByUser?.name ?? "them"} back ${tx.userShare.toFixed(2)}
           </a>
         )}
         <button
           onClick={() => setShowDeleteDialog(true)}
-          className="w-full px-4 py-2.5 text-sm font-medium text-[var(--danger)] border border-[var(--danger)] rounded-xl hover:bg-red-50 transition-colors"
+          className="w-full px-4 py-2.5 text-sm font-medium text-[var(--danger)] rounded-xl backdrop-blur-sm transition-all hover:scale-[1.02]"
+          style={{
+            border: '1px solid rgba(197,66,58,0.3)',
+            background: 'linear-gradient(135deg, rgba(197,66,58,0.08) 0%, rgba(197,66,58,0.04) 100%)',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03)'
+          }}
         >
           Delete transaction
         </button>

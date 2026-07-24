@@ -1,5 +1,93 @@
 # ProjectOwl — Devlog
 
+## 2026-07-24 — Merge master (timing body + waterfall fix) into UI-Changes
+
+Second master → UI-Changes merge of the day: master's two new commits
+(`_timing` in response bodies + homepage ranking waterfall removal) meet
+the redesigned homepage.
+
+### Done
+- **Conflict resolution: `GroupSummary` ships `memberBalances`, not
+  `downBadRanking`.** Master killed the homepage's dependent
+  `/api/groups/[id]` fetch by shipping the debtors-only ranking inside
+  `/api/groups`; but the UI-Changes homepage needs **every** member's net
+  (hero card ranks you among creditors too; the leaderboard chart is
+  bidirectional). Same zero-extra-queries trick, superset payload: the
+  nets `getGroupsForUser` already computes go out as `memberBalances`,
+  and the debtors-only field is dropped from the summary (no consumer
+  left; `downBadFromNets` remains for the group page). The redesigned
+  homepage keeps its look but reads the groups payload — no second fetch,
+  and group-picker switches stay instant.
+- Everything else merged clean: timer threading in `getGroupsForUser`
+  coexists with UI-Changes' `displayOrder` ordering; `_timing` routes and
+  Speed Insights came through untouched.
+
+### Verification
+- `tsc --noEmit` clean; `test:simplify` 10/10, `test:allocation` 10/10,
+  `test:settlement` 8/8, `test:security` 26/26; `next build` passes.
+
+## 2026-07-24 — Merge master (auth + perf) into UI-Changes
+
+UI-Changes (iOS-style UI overhaul + transaction wizard, branched before the
+auth/perf work) merged with master's 9 commits: dual-mode auth, group
+invites, the N+1 batching rounds, and Server-Timing.
+
+### Done
+- **Migration renumbered.** Both sides had created an idx-1 migration:
+  master's `0001_thick_sasquatch` (users.auth_id) + `0002_sweet_maelstrom`
+  (group_invites), and UI-Changes' `0001_last_avengers`
+  (groups.display_order). Master's numbering is canonical (already deployed
+  via `db:migrate:deploy`), so the display_order migration was deleted and
+  regenerated from the merged schema as `0003_wise_elektra` — identical SQL,
+  new slot. Anyone who ran `0001_last_avengers` locally must roll it back
+  (`ALTER TABLE groups DROP COLUMN display_order`) before migrating, or the
+  0003 apply will fail on the existing column.
+- **AppShell = both intents**: master's server-verified session gate
+  (LoginScreen / sign-out) wrapped around UI-Changes' PageSlider navigation
+  and translucent header.
+- **`GET /api/groups/[id]`** kept master's one-fetch `getGroupPage()` route;
+  its payload already contains the `memberBalances` the new UI reads (plus
+  `downBadRanking`, which UI-Changes had dropped — harmless extra, no extra
+  query).
+- **`getGroupsForUser`** kept master's parallel ledger fetch, ordered by
+  UI-Changes' `display_order` instead of `created_at`.
+
+### Fixed
+- **`PUT /api/groups/reorder` trusted a client-sent userId** — the pattern
+  master's auth work eliminated everywhere else. It came through the merge
+  without textual conflict, so it compiled but bypassed session identity.
+  Now `getCurrentUser()` + `unauthorized()` like every other route; the
+  groups page no longer sends `userId`.
+
+### Verification
+- `tsc --noEmit` clean; `test:simplify` 10/10, `test:allocation` 10/10,
+  `test:settlement` 8/8, `test:security` 26/26; `next build` passes.
+
+## 2026-07-24 — Homepage: kill the ranking request waterfall
+
+The `_timing` instrumentation made the deferred frontend waterfall visible
+in the wild: on staging the homepage's ranking request
+(`GET /api/groups/[id]`) consistently landed a full round trip after
+`/api/groups` and `/api/balances`, because it can't start until the groups
+response supplies `selectedGroupId`.
+
+### Done
+- **`GroupSummary.downBadRanking`** — `getGroupsForUser` already computed
+  every member's net per group (`computeMemberNets`) just to pluck out
+  `yourNet`; it now also returns the debtor ranking derived from those same
+  nets. Zero extra queries — the group page's formula extracted into a
+  shared `downBadFromNets()` used by both `getGroupsForUser` and
+  `getGroupPage`.
+- **Homepage second fetch deleted.** The ranking `useEffect` in
+  [src/app/page.tsx](src/app/page.tsx) is gone; the ranking is read
+  straight off the groups payload. One fewer request per homepage load
+  (on staging that's ~1–2 s of serialized latency), and switching groups
+  in the picker is now instant instead of a fetch per switch.
+
+### Verification
+- `tsc --noEmit` clean; `test:simplify` 10/10, `test:allocation` 10/10,
+  `test:settlement` 8/8, `test:security` 26/26; `next build` passes.
+
 ## 2026-07-24 — Timings in the response body (Vercel strips Server-Timing) + Speed Insights
 
 The Server-Timing headers added for the perf work show up fine on localhost

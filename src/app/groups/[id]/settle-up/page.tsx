@@ -94,7 +94,7 @@ export default function GroupSettleUpPage() {
   }
 
   return (
-    <main className="min-h-dvh px-4 pt-6 pb-24 max-w-lg mx-auto">
+    <main className="min-h-dvh px-4 pt-6 max-w-lg mx-auto content-with-floating-nav">
       <Link
         href={`/groups/${groupId}`}
         className="text-sm text-gray-500 hover:text-gray-700 mb-4 block"
