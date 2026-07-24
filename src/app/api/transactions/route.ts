@@ -155,7 +155,10 @@ export async function GET(request: NextRequest) {
     const transactions = await t.time("db", () =>
       getTransactions({ userId: me.id, groupId, payer, payees, limit })
     );
-    return NextResponse.json({ success: true, data: transactions }, { headers: t.headers() });
+    return NextResponse.json(
+      { success: true, data: transactions, _timing: t.toJSON() },
+      { headers: t.headers() }
+    );
   } catch (err) {
     console.error("GET /api/transactions error:", err);
     return NextResponse.json<ApiErrorResponse>(

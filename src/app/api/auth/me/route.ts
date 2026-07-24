@@ -13,7 +13,10 @@ export async function GET() {
   const t = createTimer();
   try {
     const user = await t.time("auth", () => getCurrentUser());
-    return NextResponse.json({ success: true, data: user }, { headers: t.headers() });
+    return NextResponse.json(
+      { success: true, data: user, _timing: t.toJSON() },
+      { headers: t.headers() }
+    );
   } catch (err) {
     console.error("GET /api/auth/me error:", err);
     return NextResponse.json<ApiErrorResponse>(
