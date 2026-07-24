@@ -15,8 +15,6 @@ export default function HomePage() {
   const [balance, setBalance] = useState<BalanceSummary | null>(null);
   const [groups, setGroups] = useState<any[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>("");
-  const [memberBalances, setMemberBalances] = useState<any[] | null>(null);
-  const [rankingLoading, setRankingLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [user, setUser] = useState<any>(null);
@@ -38,7 +36,10 @@ export default function HomePage() {
       })
       .catch(() => setError("Failed to connect to the server"));
 
-    // Groups for the ranking selector
+    // Groups for the ranking selector. Each group already carries its
+    // memberBalances, so there's no follow-up per-group fetch (that was a
+    // request waterfall: the ranking call couldn't start until this one
+    // resolved — an extra full round trip on every homepage load).
     fetch(`/api/groups?userId=${currentUser.id}`)
       .then((r) => r.json())
       .then((json) => {
@@ -53,19 +54,10 @@ export default function HomePage() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Load the "most down bad" ranking whenever the selected group changes
-  useEffect(() => {
-    if (!user || !selectedGroupId) return;
-    setRankingLoading(true);
-    fetch(`/api/groups/${selectedGroupId}?userId=${user.id}`)
-      .then((r) => r.json())
-      .then((json) => {
-        if (json.success) setMemberBalances(json.data.memberBalances);
-        else setError((prev) => prev || json.error || "Failed to load ranking");
-      })
-      .catch(() => setError((prev) => prev || "Failed to connect to the server"))
-      .finally(() => setRankingLoading(false));
-  }, [user, selectedGroupId]);
+  // Member balances come straight from the groups payload — switching groups
+  // in the picker is instant, no fetch.
+  const memberBalances =
+    groups.find((g) => g.id === selectedGroupId)?.memberBalances ?? null;
 
   if (loading) {
     return (
@@ -189,7 +181,7 @@ export default function HomePage() {
               onGroupChange={(groupId) => setSelectedGroupId(groupId)}
             />
 
-            <DownBadRanking ranking={memberBalances} loading={rankingLoading} currentUserId={user.id} />
+            <DownBadRanking ranking={memberBalances} currentUserId={user.id} />
           </>
         )}
       </div>
@@ -218,14 +210,12 @@ function getColorIntensity(isOwed: boolean): { barColor: React.CSSProperties; te
 /** Bidirectional ranking chart showing who owes (left) vs who's owed (right) */
 function DownBadRanking({
   ranking,
-  loading,
   currentUserId,
 }: {
   ranking: any[] | null;
-  loading: boolean;
   currentUserId: string;
 }) {
-  if (loading || ranking === null) {
+  if (ranking === null) {
     return (
       <div className="space-y-2 animate-pulse">
         {[1, 2, 3, 4].map((i) => (

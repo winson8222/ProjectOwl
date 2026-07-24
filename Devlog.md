@@ -1,5 +1,31 @@
 # ProjectOwl — Devlog
 
+## 2026-07-24 — Merge master (timing body + waterfall fix) into UI-Changes
+
+Second master → UI-Changes merge of the day: master's two new commits
+(`_timing` in response bodies + homepage ranking waterfall removal) meet
+the redesigned homepage.
+
+### Done
+- **Conflict resolution: `GroupSummary` ships `memberBalances`, not
+  `downBadRanking`.** Master killed the homepage's dependent
+  `/api/groups/[id]` fetch by shipping the debtors-only ranking inside
+  `/api/groups`; but the UI-Changes homepage needs **every** member's net
+  (hero card ranks you among creditors too; the leaderboard chart is
+  bidirectional). Same zero-extra-queries trick, superset payload: the
+  nets `getGroupsForUser` already computes go out as `memberBalances`,
+  and the debtors-only field is dropped from the summary (no consumer
+  left; `downBadFromNets` remains for the group page). The redesigned
+  homepage keeps its look but reads the groups payload — no second fetch,
+  and group-picker switches stay instant.
+- Everything else merged clean: timer threading in `getGroupsForUser`
+  coexists with UI-Changes' `displayOrder` ordering; `_timing` routes and
+  Speed Insights came through untouched.
+
+### Verification
+- `tsc --noEmit` clean; `test:simplify` 10/10, `test:allocation` 10/10,
+  `test:settlement` 8/8, `test:security` 26/26; `next build` passes.
+
 ## 2026-07-24 — Merge master (auth + perf) into UI-Changes
 
 UI-Changes (iOS-style UI overhaul + transaction wizard, branched before the
@@ -35,6 +61,80 @@ invites, the N+1 batching rounds, and Server-Timing.
 
 ### Verification
 - `tsc --noEmit` clean; `test:simplify` 10/10, `test:allocation` 10/10,
+  `test:settlement` 8/8, `test:security` 26/26; `next build` passes.
+
+## 2026-07-24 — Homepage: kill the ranking request waterfall
+
+The `_timing` instrumentation made the deferred frontend waterfall visible
+in the wild: on staging the homepage's ranking request
+(`GET /api/groups/[id]`) consistently landed a full round trip after
+`/api/groups` and `/api/balances`, because it can't start until the groups
+response supplies `selectedGroupId`.
+
+### Done
+- **`GroupSummary.downBadRanking`** — `getGroupsForUser` already computed
+  every member's net per group (`computeMemberNets`) just to pluck out
+  `yourNet`; it now also returns the debtor ranking derived from those same
+  nets. Zero extra queries — the group page's formula extracted into a
+  shared `downBadFromNets()` used by both `getGroupsForUser` and
+  `getGroupPage`.
+- **Homepage second fetch deleted.** The ranking `useEffect` in
+  [src/app/page.tsx](src/app/page.tsx) is gone; the ranking is read
+  straight off the groups payload. One fewer request per homepage load
+  (on staging that's ~1–2 s of serialized latency), and switching groups
+  in the picker is now instant instead of a fetch per switch.
+
+### Verification
+- `tsc --noEmit` clean; `test:simplify` 10/10, `test:allocation` 10/10,
+  `test:settlement` 8/8, `test:security` 26/26; `next build` passes.
+
+## 2026-07-24 — Timings in the response body (Vercel strips Server-Timing) + Speed Insights
+
+The Server-Timing headers added for the perf work show up fine on localhost
+but are stripped by Vercel's proxy, so deployed requests had no visible
+phase breakdown — exactly where the numbers matter. Since we control both
+ends of every API call, the fix is to carry the same marks in the JSON
+payload, which nothing can strip.
+
+### Done
+- **`ServerTimer.toJSON()`** ([src/lib/server-timing.ts](src/lib/server-timing.ts))
+  — same marks as `headers()` but as `{ auth: 12.3, db: 45.6, total: 60.1 }`.
+  The five instrumented GET routes (`/api/groups`, `/api/groups/[id]`,
+  `/api/balances`, `/api/transactions` list, `/api/auth/me`) now return
+  `_timing: t.toJSON()` in the body **alongside** the header (header still
+  works on localhost). `_timing` only exposes phase durations — no query
+  text or data — so it's safe to leave on in prod.
+- **`db` bucket split for the group page.** `getGroupPage`/`getGroupLedger`
+  accept an optional `ServerTimer`; the route threads its timer through, so
+  the group-page `db` mark decomposes into `db.group` / `db.members` /
+  `db.txs` / `db.settlements`. The legs run in parallel, so the sub-marks
+  overlap (per-query wall times, not additive). Only single-ledger callers
+  thread a timer — `getGroupsForUser` fetches many ledgers concurrently and
+  passes none.
+- **`timedFetch()`** ([src/lib/timed-fetch.ts](src/lib/timed-fetch.ts)) —
+  client-side fetch wrapper that pairs `_timing.total` (in-function time)
+  with the browser's resource timing (`responseStart − requestStart` =
+  TTFB, which survives Vercel) and backs out
+  `network = ttfb − server total` — the pipe + Vercel queue/cold-start
+  segment that the header used to hide. `console.table` output gated behind
+  test mode (`NEXT_PUBLIC_DEBUG_UI=true`), silent otherwise. Available as a
+  drop-in; call sites not rewired yet.
+- **Vercel Speed Insights** — `@vercel/speed-insights` installed,
+  `<SpeedInsights />` rendered in the root layout. Gives real-user TTFB /
+  Web Vitals per route on deploys (needs Speed Insights enabled once in the
+  Vercel dashboard; the component no-ops locally).
+
+### Architecture decisions
+1. **Body over header for deploy-visible timings.** We own every consumer
+   of these APIs, so `_timing` in the payload beats fighting the proxy;
+   the header stays because DevTools renders it natively on localhost.
+2. **Timer threaded as an optional param, not ambient state.** Actions stay
+   pure-ish and callable without a request context; `timed(t, …)` no-ops
+   when no timer is passed, so nothing changes for untimed callers.
+
+### Verification
+- `tsc --noEmit` clean (after clearing a stale `.next` from a branch
+  switch); `test:simplify` 10/10, `test:allocation` 10/10,
   `test:settlement` 8/8, `test:security` 26/26; `next build` passes.
 
 ## 2026-07-23 — Perf round 2: transactions/balances N+1s, one-fetch group page, single auth round trip

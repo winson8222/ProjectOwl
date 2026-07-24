@@ -19,7 +19,10 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const groupId = searchParams.get("groupId") || undefined;
     const balance = await t.time("db", () => getBalance(me.id, undefined, groupId));
-    return NextResponse.json({ success: true, data: balance }, { headers: t.headers() });
+    return NextResponse.json(
+      { success: true, data: balance, _timing: t.toJSON() },
+      { headers: t.headers() }
+    );
   } catch (err) {
     console.error("GET /api/balances error:", err);
     return NextResponse.json<ApiErrorResponse>(

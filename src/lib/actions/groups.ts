@@ -4,6 +4,7 @@ import { v4 as uuid } from "uuid";
 import { localTimestamp } from "@/lib/time";
 import { logActivity } from "./activities";
 import { computeNetBalances, minimizeTransfers, type SimpleTransaction, type Transfer } from "@/lib/simplify";
+import type { ServerTimer } from "@/lib/server-timing";
 import type { User } from "./users";
 
 export type Group = typeof schema.groups.$inferSelect;
@@ -18,6 +19,10 @@ export interface GroupSummary extends Group {
   transactionCount: number;
   /** True when the group has history but the current user's net is ~zero. */
   isSettled: boolean;
+  /** Every member's net in this group, biggest creditor first. Derived from
+   * the same nets as yourNet — costs no extra queries. The homepage's hero
+   * rank + leaderboard read this, so no per-group follow-up fetch. */
+  memberBalances: MemberBalance[];
 }
 
 export interface MemberBalance {
@@ -34,6 +39,10 @@ export interface GroupDetail extends Group {
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Run fn under the request's phase timer when one is threaded in. */
+const timed = <T>(t: ServerTimer | undefined, name: string, fn: () => Promise<T>) =>
+  t ? t.time(name, fn) : fn();
 
 /** All member user-ids of a group. */
 export async function getGroupMemberIds(groupId: string): Promise<string[]> {
@@ -128,12 +137,17 @@ function computeMemberNets(
     .sort((a, b) => b.net - a.net);
 }
 
-/** The (members, transactions, PAID settlements) trio, fetched in parallel. */
-async function getGroupLedger(groupId: string) {
+/**
+ * The (members, transactions, PAID settlements) trio, fetched in parallel.
+ * Pass a timer to record each leg separately (they overlap — the marks are
+ * per-query wall times, not additive). Only single-ledger callers should
+ * thread one in; getGroupsForUser fetches many ledgers concurrently.
+ */
+async function getGroupLedger(groupId: string, t?: ServerTimer) {
   const [members, txs, settlements] = await Promise.all([
-    getMembers(groupId),
-    getGroupSimpleTransactions(groupId),
-    getPaidSettlements(groupId),
+    timed(t, "db.members", () => getMembers(groupId)),
+    timed(t, "db.txs", () => getGroupSimpleTransactions(groupId)),
+    timed(t, "db.settlements", () => getPaidSettlements(groupId)),
   ]);
   return { members, txs, settlements };
 }
@@ -146,6 +160,10 @@ export async function getGroupNetBalances(groupId: string): Promise<MemberBalanc
   const { members, txs, settlements } = await getGroupLedger(groupId);
   return computeMemberNets(members, txs, settlements);
 }
+
+/** Debtors only (net < 0), biggest debtor first — the "most down bad" list. */
+const downBadFromNets = (nets: MemberBalance[]) =>
+  nets.filter((b) => b.net < -0.005).sort((a, b) => a.net - b.net);
 
 /** Transfer plan from already-computed nets (pure). */
 function planFromNets(members: User[], nets: MemberBalance[]): (Transfer & { fromUser: User; toUser: User })[] {
@@ -182,14 +200,15 @@ export async function getGroupsForUser(userId: string): Promise<GroupSummary[]> 
   return Promise.all(
     groups.map(async (g): Promise<GroupSummary> => {
       const { members, txs, settlements } = await getGroupLedger(g.id);
-      const yourNet = computeMemberNets(members, txs, settlements)
-        .find((b) => b.user.id === userId)?.net ?? 0;
+      const nets = computeMemberNets(members, txs, settlements);
+      const yourNet = nets.find((b) => b.user.id === userId)?.net ?? 0;
       return {
         ...g,
         members,
         yourNet,
         transactionCount: txs.length,
         isSettled: txs.length > 0 && Math.abs(yourNet) < 0.005,
+        memberBalances: nets,
       };
     })
   );
@@ -202,18 +221,18 @@ export interface GroupPage extends GroupDetail {
 }
 
 /**
- * Everything the group page (and home-page ranking) needs, from a single
+ * Everything the group page needs, from a single
  * parallel ledger fetch: detail, member balances, pairwise nets vs. the
  * viewer, transfer plan, and down-bad ranking. Previously the route
  * assembled this from three actions that each re-fetched the same ledger.
  * Undefined = no such group. Membership is NOT checked here — callers
  * decide (the route 404s non-members via `members`).
  */
-export async function getGroupPage(groupId: string, currentUserId: string): Promise<GroupPage | undefined> {
+export async function getGroupPage(groupId: string, currentUserId: string, t?: ServerTimer): Promise<GroupPage | undefined> {
   const db = getDb();
   const [groupRows, { members, txs, settlements }] = await Promise.all([
-    db.select().from(schema.groups).where(eq(schema.groups.id, groupId)),
-    getGroupLedger(groupId),
+    timed(t, "db.group", () => db.select().from(schema.groups).where(eq(schema.groups.id, groupId))),
+    getGroupLedger(groupId, t),
   ]);
   const group = groupRows[0];
   if (!group) return undefined;
@@ -251,7 +270,7 @@ export async function getGroupPage(groupId: string, currentUserId: string): Prom
     memberBalances,
     yourPairwise,
     transferPlan: planFromNets(members, memberBalances),
-    downBadRanking: memberBalances.filter((b) => b.net < -0.005).sort((a, b) => a.net - b.net),
+    downBadRanking: downBadFromNets(memberBalances),
   };
 }
 
