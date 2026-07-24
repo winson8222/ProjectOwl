@@ -1,5 +1,30 @@
 # ProjectOwl — Devlog
 
+## 2026-07-24 — Homepage: kill the ranking request waterfall
+
+The `_timing` instrumentation made the deferred frontend waterfall visible
+in the wild: on staging the homepage's ranking request
+(`GET /api/groups/[id]`) consistently landed a full round trip after
+`/api/groups` and `/api/balances`, because it can't start until the groups
+response supplies `selectedGroupId`.
+
+### Done
+- **`GroupSummary.downBadRanking`** — `getGroupsForUser` already computed
+  every member's net per group (`computeMemberNets`) just to pluck out
+  `yourNet`; it now also returns the debtor ranking derived from those same
+  nets. Zero extra queries — the group page's formula extracted into a
+  shared `downBadFromNets()` used by both `getGroupsForUser` and
+  `getGroupPage`.
+- **Homepage second fetch deleted.** The ranking `useEffect` in
+  [src/app/page.tsx](src/app/page.tsx) is gone; the ranking is read
+  straight off the groups payload. One fewer request per homepage load
+  (on staging that's ~1–2 s of serialized latency), and switching groups
+  in the picker is now instant instead of a fetch per switch.
+
+### Verification
+- `tsc --noEmit` clean; `test:simplify` 10/10, `test:allocation` 10/10,
+  `test:settlement` 8/8, `test:security` 26/26; `next build` passes.
+
 ## 2026-07-24 — Timings in the response body (Vercel strips Server-Timing) + Speed Insights
 
 The Server-Timing headers added for the perf work show up fine on localhost

@@ -19,6 +19,9 @@ export interface GroupSummary extends Group {
   transactionCount: number;
   /** True when the group has history but the current user's net is ~zero. */
   isSettled: boolean;
+  /** Members who owe money in this group, biggest debtor first. Derived from
+   * the same nets as yourNet — costs no extra queries. */
+  downBadRanking: MemberBalance[];
 }
 
 export interface MemberBalance {
@@ -157,6 +160,10 @@ export async function getGroupNetBalances(groupId: string): Promise<MemberBalanc
   return computeMemberNets(members, txs, settlements);
 }
 
+/** Debtors only (net < 0), biggest debtor first — the "most down bad" list. */
+const downBadFromNets = (nets: MemberBalance[]) =>
+  nets.filter((b) => b.net < -0.005).sort((a, b) => a.net - b.net);
+
 /** Transfer plan from already-computed nets (pure). */
 function planFromNets(members: User[], nets: MemberBalance[]): (Transfer & { fromUser: User; toUser: User })[] {
   const transfers = minimizeTransfers(nets.map((b) => ({ userId: b.user.id, amount: b.net })));
@@ -192,14 +199,15 @@ export async function getGroupsForUser(userId: string): Promise<GroupSummary[]> 
   return Promise.all(
     groups.map(async (g): Promise<GroupSummary> => {
       const { members, txs, settlements } = await getGroupLedger(g.id);
-      const yourNet = computeMemberNets(members, txs, settlements)
-        .find((b) => b.user.id === userId)?.net ?? 0;
+      const nets = computeMemberNets(members, txs, settlements);
+      const yourNet = nets.find((b) => b.user.id === userId)?.net ?? 0;
       return {
         ...g,
         members,
         yourNet,
         transactionCount: txs.length,
         isSettled: txs.length > 0 && Math.abs(yourNet) < 0.005,
+        downBadRanking: downBadFromNets(nets),
       };
     })
   );
@@ -212,7 +220,7 @@ export interface GroupPage extends GroupDetail {
 }
 
 /**
- * Everything the group page (and home-page ranking) needs, from a single
+ * Everything the group page needs, from a single
  * parallel ledger fetch: detail, member balances, pairwise nets vs. the
  * viewer, transfer plan, and down-bad ranking. Previously the route
  * assembled this from three actions that each re-fetched the same ledger.
@@ -261,7 +269,7 @@ export async function getGroupPage(groupId: string, currentUserId: string, t?: S
     memberBalances,
     yourPairwise,
     transferPlan: planFromNets(members, memberBalances),
-    downBadRanking: memberBalances.filter((b) => b.net < -0.005).sort((a, b) => a.net - b.net),
+    downBadRanking: downBadFromNets(memberBalances),
   };
 }
 

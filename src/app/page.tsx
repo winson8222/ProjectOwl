@@ -16,8 +16,6 @@ export default function HomePage() {
   const [balance, setBalance] = useState<BalanceSummary | null>(null);
   const [groups, setGroups] = useState<any[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>("");
-  const [ranking, setRanking] = useState<any[] | null>(null);
-  const [rankingLoading, setRankingLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [user, setUser] = useState<any>(null);
@@ -39,7 +37,10 @@ export default function HomePage() {
       })
       .catch(() => setError("Failed to connect to the server"));
 
-    // Groups for the ranking selector
+    // Groups for the ranking selector. Each group already carries its
+    // downBadRanking, so there's no follow-up per-group fetch (that was a
+    // request waterfall: the ranking call couldn't start until this one
+    // resolved — an extra full round trip on every homepage load).
     fetch(`/api/groups?userId=${currentUser.id}`)
       .then((r) => r.json())
       .then((json) => {
@@ -54,19 +55,10 @@ export default function HomePage() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Load the "most down bad" ranking whenever the selected group changes
-  useEffect(() => {
-    if (!user || !selectedGroupId) return;
-    setRankingLoading(true);
-    fetch(`/api/groups/${selectedGroupId}?userId=${user.id}`)
-      .then((r) => r.json())
-      .then((json) => {
-        if (json.success) setRanking(json.data.downBadRanking);
-        else setError((prev) => prev || json.error || "Failed to load ranking");
-      })
-      .catch(() => setError((prev) => prev || "Failed to connect to the server"))
-      .finally(() => setRankingLoading(false));
-  }, [user, selectedGroupId]);
+  // Ranking comes straight from the groups payload — switching groups in the
+  // picker is instant, no fetch.
+  const ranking =
+    groups.find((g) => g.id === selectedGroupId)?.downBadRanking ?? null;
 
   if (loading) {
     return (
@@ -122,7 +114,7 @@ export default function HomePage() {
               onGroupChange={(groupId) => setSelectedGroupId(groupId)}
             />
 
-            <DownBadRanking ranking={ranking} loading={rankingLoading} currentUserId={user.id} />
+            <DownBadRanking ranking={ranking} currentUserId={user.id} />
           </>
         )}
       </div>
@@ -142,14 +134,12 @@ export default function HomePage() {
 /** Podium-style ranking of who owes the most in the selected group. */
 function DownBadRanking({
   ranking,
-  loading,
   currentUserId,
 }: {
   ranking: any[] | null;
-  loading: boolean;
   currentUserId: string;
 }) {
-  if (loading || ranking === null) {
+  if (ranking === null) {
     return (
       <div className="space-y-2 animate-pulse">
         {[1, 2, 3].map((i) => (
