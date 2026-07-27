@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams } from "next/navigation";
 
 interface Step2_PaymentDetailsProps {
   amount: number;
