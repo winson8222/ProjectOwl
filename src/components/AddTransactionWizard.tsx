@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useState, useEffect, useMemo } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import UserPicker from "@/components/UserPicker";
 import SplitInput from "@/components/SplitInput";
 import ErrorDialog from "@/components/ErrorDialog";
@@ -24,9 +24,14 @@ import ItemAssigner from "@/components/ItemAssigner";
  */
 export default function AddTransactionWizard() {
   const router = useRouter();
-  const params = useParams();
+  const searchParams = useSearchParams();
   const [step, setStep] = useState(1);
   const [user, setUser] = useState<any>(null);
+
+  // Read query params for deep-link support (e.g. /transactions/new?groupId=…)
+  const queryGroupId = searchParams.get("groupId") || "";
+  const queryToUserId = searchParams.get("toUserId") || "";
+  const queryAmount = parseFloat(searchParams.get("amount") || "") || 0;
 
   // Transaction type state
   const [txType, setTxType] = useState<"expense" | "payment">("expense");
@@ -37,11 +42,11 @@ export default function AddTransactionWizard() {
   // Core transaction data
   const [amount, setAmount] = useState<number>(0);
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
-  const [selectedGroupId, setSelectedGroupId] = useState(params.groupId as string || "");
+  const [selectedGroupId, setSelectedGroupId] = useState(queryGroupId);
   const [paidBy, setPaidBy] = useState("");
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
   const [title, setTitle] = useState("");
-  const [toUserId, setToUserId] = useState(params.toUserId as string || "");
+  const [toUserId, setToUserId] = useState(queryToUserId);
   const [description, setDescription] = useState("");
 
   // Split state
@@ -65,8 +70,21 @@ export default function AddTransactionWizard() {
   // Derived states
   const [groups, setGroups] = useState<any[]>([]);
   const [groupsLoaded, setGroupsLoaded] = useState(false);
-  const [users, setUsers] = useState<any[]>([]);
-  const recipients = users; // All users can be payment recipients
+
+  // Group members for the currently selected group — used to scope
+  // the participant picker and payment recipients to group members only.
+  const groupMembers = useMemo(() => {
+    if (!selectedGroupId) return [];
+    const group = groups.find((g: any) => g.id === selectedGroupId);
+    return group?.members || [];
+  }, [selectedGroupId, groups]);
+
+  // Convenience: payment recipients = other group members (excludes current user)
+  const recipients = useMemo(
+    () => groupMembers.filter((m: any) => m.id !== user?.id),
+    [groupMembers, user]
+  );
+
   const plan = [] as any[];
   const balance = null as any;
 
@@ -76,15 +94,8 @@ export default function AddTransactionWizard() {
     setUser(currentUser);
     setPaidBy(currentUser.id);
 
-    // Load users
-    fetch("/api/users")
-      .then((r) => r.json())
-      .then((json) => {
-        if (json.success) setUsers(json.data);
-      })
-      .catch(() => setUsers([]));
-
-    // Load groups
+    // Load groups (each group includes its members — no separate /api/users
+    // fetch needed; participant lists are scoped to group members below).
     fetch(`/api/groups?userId=${currentUser.id}`)
       .then((r) => r.json())
       .then((json) => {
@@ -93,20 +104,8 @@ export default function AddTransactionWizard() {
       .catch(() => setGroups([]))
       .finally(() => setGroupsLoaded(true));
 
-    // If groupId is in URL params, pre-select it
-    if (params.groupId) {
-      setSelectedGroupId(params.groupId as string);
-    }
-
-    // If toUserId is in URL params, pre-select it
-    if (params.toUserId) {
-      setToUserId(params.toUserId as string);
-    }
-
-    // If amount is in URL params (from settle-up flow), pre-fill it
-    if (params.amount) {
-      setAmount(parseFloat(params.amount as string) || 0);
-    }
+    // Deep-link query params are consumed at init time (lines above via
+    // useSearchParams), so state is already seeded correctly.
   }, []);
 
   const handleNext = () => {
@@ -138,13 +137,13 @@ export default function AddTransactionWizard() {
     setStep(1);
     setTxType("expense");
     setInputMethod("manual");
-    setAmount(0);
+    setAmount(queryAmount);
     setDate(new Date().toISOString().split("T")[0]);
-    setSelectedGroupId(params.groupId as string || "");
+    setSelectedGroupId(queryGroupId);
     setPaidBy(currentUser?.id || "");
     setSelectedParticipants([]);
     setTitle("");
-    setToUserId(params.toUserId as string || "");
+    setToUserId(queryToUserId);
     setDescription("");
     setSplitMode("even");
     setSplitValues({});
@@ -349,7 +348,7 @@ export default function AddTransactionWizard() {
               saving={saving}
               user={user}
               groups={groups}
-              users={users}
+              users={groupMembers}
               inputMethod={inputMethod}
               assignmentResults={assignmentResults}
             />
@@ -399,7 +398,7 @@ export default function AddTransactionWizard() {
               selectedParticipants={selectedParticipants}
               setSelectedParticipants={setSelectedParticipants}
               user={user}
-              users={users}
+              users={groupMembers}
               selectedGroupId={selectedGroupId}
               onNext={handleNext}
               onBack={handleBack}
@@ -414,7 +413,7 @@ export default function AddTransactionWizard() {
             <Step4_ItemAssignment
               scanItems={scanItems}
               selectedParticipants={selectedParticipants}
-              users={users}
+              users={groupMembers}
               onAssign={(results) => {
                 setAssignmentResults(results);
                 handleNext();
@@ -432,8 +431,8 @@ export default function AddTransactionWizard() {
               splitValues={splitValues}
               onChange={setSplitValues}
               participants={selectedParticipants.map(id => {
-                const user = users.find((u: any) => u.id === id);
-                return { id, name: user?.name || "" };
+                const member = groupMembers.find((u: any) => u.id === id);
+                return { id, name: member?.name || "" };
               })}
               totalAmount={amount}
               onNext={handleNext}
@@ -460,7 +459,7 @@ export default function AddTransactionWizard() {
             saving={saving}
             user={user}
             groups={groups}
-            users={users}
+            users={groupMembers}
             inputMethod={inputMethod}
             assignmentResults={assignmentResults}
           />
