@@ -1,22 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { reorderGroupsForUser } from "@/lib/actions/groups";
-import { CODES, ERROR_MESSAGES, apiError, type ApiErrorResponse } from "@/lib/constants";
+import { getCurrentUser } from "@/lib/auth";
+import { unauthorized } from "@/lib/auth/guard";
+import { CODES, apiError, mapErrorMessage, type ApiErrorResponse } from "@/lib/constants";
 
 /**
  * PUT /api/groups/reorder
- * Reorder groups for a user. Body: { userId: string, groupIds: string[] }
- * groupIds should be in the desired display order.
+ * Reorder the signed-in user's groups. Body: { groupIds: string[] } in the
+ * desired display order. Identity comes from the session — any client-sent
+ * userId is ignored.
  */
 export async function PUT(request: NextRequest) {
   try {
-    const body: { userId?: string; groupIds?: string[] } = await request.json();
+    const me = await getCurrentUser();
+    if (!me) return unauthorized();
 
-    if (!body.userId) {
-      return NextResponse.json<ApiErrorResponse>(
-        apiError(ERROR_MESSAGES.USER_ID_REQUIRED, CODES.MISSING_USER_ID),
-        { status: 400 }
-      );
-    }
+    const body: { groupIds?: string[] } = await request.json();
 
     if (!body.groupIds || !Array.isArray(body.groupIds)) {
       return NextResponse.json<ApiErrorResponse>(
@@ -25,12 +24,12 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    await reorderGroupsForUser(body.userId, body.groupIds);
+    await reorderGroupsForUser(me.id, body.groupIds);
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("PUT /api/groups/reorder error:", err);
     return NextResponse.json<ApiErrorResponse>(
-      apiError((err as Error).message || "Failed to reorder groups", CODES.INTERNAL_ERROR),
+      apiError(mapErrorMessage(err), CODES.INTERNAL_ERROR),
       { status: 500 }
     );
   }

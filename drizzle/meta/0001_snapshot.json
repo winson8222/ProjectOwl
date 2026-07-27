@@ -1,5 +1,5 @@
 {
-  "id": "d61aaa45-cd60-4901-9a5d-9b32d622c158",
+  "id": "eacd5c29-b5ac-4ae3-987f-994c38be6b53",
   "prevId": "0dffbc3c-03c3-4e05-a05d-90d08b7ebd9f",
   "version": "7",
   "dialect": "postgresql",
@@ -345,13 +345,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "to_char(timezone('utc', now()), 'YYYY-MM-DD HH24:MI:SS')"
-        },
-        "display_order": {
-          "name": "display_order",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
         }
       },
       "indexes": {},
@@ -1033,6 +1026,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "auth_id": {
+          "name": "auth_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "text",
@@ -1050,6 +1049,13 @@
           "nullsNotDistinct": false,
           "columns": [
             "email"
+          ]
+        },
+        "users_auth_id_unique": {
+          "name": "users_auth_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "auth_id"
           ]
         }
       },

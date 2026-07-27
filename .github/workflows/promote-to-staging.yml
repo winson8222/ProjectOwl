@@ -8,26 +8,31 @@ on:
         required: false
         default: 'chore: promote master to staging'
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   promote:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v5
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: 'chore: promote master to staging'
-          title: ${{ github.event.inputs.title }}
-          body: |
-            Automated promotion from master to staging.
+      - name: Create or reuse promotion PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          EXISTING=$(gh pr list --repo "${{ github.repository }}" --base staging --head master --state open --json url --jq '.[0].url // empty')
+          if [ -n "$EXISTING" ]; then
+            echo "A promotion PR is already open: $EXISTING"
+            exit 0
+          fi
+          gh pr create \
+            --repo "${{ github.repository }}" \
+            --base staging \
+            --head master \
+            --title "${{ github.event.inputs.title }}" \
+            --body "Automated promotion from master to staging.
 
-            Please review the changes and merge to deploy to staging.
-          branch: chore/promote-to-staging
-          base: staging
-          head: master
-          delete-branch: true
+          Please review the changes and merge to deploy to staging."

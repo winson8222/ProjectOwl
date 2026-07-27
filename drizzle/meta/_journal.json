@@ -12,8 +12,22 @@
     {
       "idx": 1,
       "version": "7",
-      "when": 1784787286616,
-      "tag": "0001_last_avengers",
+      "when": 1784774805323,
+      "tag": "0001_thick_sasquatch",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784798813578,
+      "tag": "0002_sweet_maelstrom",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784825094387,
+      "tag": "0003_wise_elektra",
       "breakpoints": true
     }
   ]

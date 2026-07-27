@@ -124,6 +124,14 @@ function ActivityRow({ activity, currentUserId }: { activity: any; currentUserId
         </>
       );
       break;
+    case "member_joined":
+      icon = "🔗";
+      body = (
+        <>
+          <span className="font-medium">{actor}</span> joined via invite link
+        </>
+      );
+      break;
     default:
       body = <span className="font-medium">{actor}</span>;
   }

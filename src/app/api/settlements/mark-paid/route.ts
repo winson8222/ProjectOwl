@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAndMarkPaid } from "@/lib/actions/settlements";
-import { CODES, ERROR_MESSAGES, apiError, mapErrorMessage, type ApiErrorResponse } from "@/lib/constants";
+import { getCurrentUser } from "@/lib/auth";
+import { unauthorized, forbidden } from "@/lib/auth/guard";
+import { CODES, apiError, mapErrorMessage, type ApiErrorResponse } from "@/lib/constants";
 import { settlementAmountValid } from "@/lib/security";
 
 /**
@@ -8,10 +10,15 @@ import { settlementAmountValid } from "@/lib/security";
  * Create a settlement and mark it as paid.
  *
  * Body: { fromUserId: string, toUserId: string, amount: number, groupId?: string }
- * `groupId` scopes the payment to a group and records it in its activity feed.
+ * The signed-in user must be a party to the settlement (payer or recipient) —
+ * you can record that you paid someone, or that someone paid you, but not
+ * invent payments between two other people.
  */
 export async function POST(request: NextRequest) {
   try {
+    const me = await getCurrentUser();
+    if (!me) return unauthorized();
+
     const body: { fromUserId?: string; toUserId?: string; amount?: number; groupId?: string } =
       await request.json();
 
@@ -20,6 +27,10 @@ export async function POST(request: NextRequest) {
         apiError("Both fromUserId and toUserId are required.", CODES.MISSING_SETTLEMENT_ID),
         { status: 400 }
       );
+    }
+
+    if (me.id !== body.fromUserId && me.id !== body.toUserId) {
+      return forbidden();
     }
 
     // Reject non-positive, NaN, and Infinity amounts (Infinity > 0 is true,

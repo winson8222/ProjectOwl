@@ -15,8 +15,6 @@ export default function HomePage() {
   const [balance, setBalance] = useState<BalanceSummary | null>(null);
   const [groups, setGroups] = useState<any[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>("");
-  const [memberBalances, setMemberBalances] = useState<any[] | null>(null);
-  const [rankingLoading, setRankingLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [user, setUser] = useState<any>(null);
@@ -38,7 +36,10 @@ export default function HomePage() {
       })
       .catch(() => setError("Failed to connect to the server"));
 
-    // Groups for the ranking selector
+    // Groups for the ranking selector. Each group already carries its
+    // memberBalances, so there's no follow-up per-group fetch (that was a
+    // request waterfall: the ranking call couldn't start until this one
+    // resolved — an extra full round trip on every homepage load).
     fetch(`/api/groups?userId=${currentUser.id}`)
       .then((r) => r.json())
       .then((json) => {
@@ -53,19 +54,10 @@ export default function HomePage() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Load the "most down bad" ranking whenever the selected group changes
-  useEffect(() => {
-    if (!user || !selectedGroupId) return;
-    setRankingLoading(true);
-    fetch(`/api/groups/${selectedGroupId}?userId=${user.id}`)
-      .then((r) => r.json())
-      .then((json) => {
-        if (json.success) setMemberBalances(json.data.memberBalances);
-        else setError((prev) => prev || json.error || "Failed to load ranking");
-      })
-      .catch(() => setError((prev) => prev || "Failed to connect to the server"))
-      .finally(() => setRankingLoading(false));
-  }, [user, selectedGroupId]);
+  // Member balances come straight from the groups payload — switching groups
+  // in the picker is instant, no fetch.
+  const memberBalances =
+    groups.find((g) => g.id === selectedGroupId)?.memberBalances ?? null;
 
   if (loading) {
     return (
@@ -76,7 +68,9 @@ export default function HomePage() {
   }
 
   if (!user) {
-    return <UserPickerPage />;
+    // AppShell renders the login screen before any page mounts signed-out;
+    // reaching here means the cache was cleared mid-session — just blank out.
+    return null;
   }
 
   return (
@@ -187,7 +181,7 @@ export default function HomePage() {
               onGroupChange={(groupId) => setSelectedGroupId(groupId)}
             />
 
-            <DownBadRanking ranking={memberBalances} loading={rankingLoading} currentUserId={user.id} />
+            <DownBadRanking ranking={memberBalances} currentUserId={user.id} />
           </>
         )}
       </div>
@@ -216,14 +210,12 @@ function getColorIntensity(isOwed: boolean): { barColor: React.CSSProperties; te
 /** Bidirectional ranking chart showing who owes (left) vs who's owed (right) */
 function DownBadRanking({
   ranking,
-  loading,
   currentUserId,
 }: {
   ranking: any[] | null;
-  loading: boolean;
   currentUserId: string;
 }) {
-  if (loading || ranking === null) {
+  if (ranking === null) {
     return (
       <div className="space-y-2 animate-pulse">
         {[1, 2, 3, 4].map((i) => (
@@ -324,100 +316,3 @@ function DownBadRanking({
   );
 }
 
-/** Session picker — shown when no user is selected */
-function UserPickerPage() {
-  const [users, setUsers] = useState<any[]>([]);
-  const [showCreate, setShowCreate] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newEmail, setNewEmail] = useState("");
-  const [creating, setCreating] = useState(false);
-
-  useEffect(() => {
-    fetch("/api/users")
-      .then((r) => r.json())
-      .then((json) => {
-        if (json.success) setUsers(json.data);
-      })
-      .catch(console.error);
-  }, []);
-
-  const selectUser = (user: any) => {
-    sessionStorage.setItem("projectowl_user", JSON.stringify(user));
-    window.location.reload();
-  };
-
-  const createUser = async () => {
-    if (!newName.trim() || !newEmail.trim()) return;
-    setCreating(true);
-    try {
-      const res = await fetch("/api/users", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newName.trim(), email: newEmail.trim() }),
-      });
-      const json = await res.json();
-      if (json.success) {
-        selectUser(json.data);
-      }
-    } catch (err) {
-      console.error("Failed to create user:", err);
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  return (
-    <main className="min-h-dvh flex flex-col items-center justify-center px-4">
-      <div className="text-5xl mb-4">🦉</div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-2">ProjectOwl</h1>
-      <p className="text-sm text-gray-500 mb-8">Who are you?</p>
-
-      <div className="space-y-2 w-full max-w-xs">
-        {users.map((user: any) => (
-          <button
-            key={user.id}
-            onClick={() => selectUser(user)}
-            className="w-full flex items-center gap-3 px-4 py-3 bg-[var(--card)] border border-[var(--border)] rounded-xl hover:bg-gray-50 transition-colors"
-          >
-            <UserAvatar name={user.name} size="sm" />
-            <span className="text-sm font-medium text-gray-900">{user.name}</span>
-          </button>
-        ))}
-      </div>
-
-      {/* Toggle create form */}
-      <button
-        onClick={() => setShowCreate(!showCreate)}
-        className="mt-4 text-sm text-[var(--primary)] font-medium hover:underline"
-      >
-        {showCreate ? "Cancel" : "+ Create new user"}
-      </button>
-
-      {showCreate && (
-        <div className="mt-3 w-full max-w-xs space-y-2">
-          <input
-            type="text"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder="Name"
-            className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
-          />
-          <input
-            type="email"
-            value={newEmail}
-            onChange={(e) => setNewEmail(e.target.value)}
-            placeholder="Email"
-            className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
-          />
-          <button
-            onClick={createUser}
-            disabled={creating || !newName.trim() || !newEmail.trim()}
-            className="w-full px-4 py-2 text-sm font-semibold text-white bg-[var(--primary)] rounded-lg hover:bg-[var(--primary-hover)] disabled:opacity-50 transition-colors"
-          >
-            {creating ? "Creating..." : "Create & sign in"}
-          </button>
-        </div>
-      )}
-    </main>
-  );
-}
