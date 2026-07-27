@@ -33,7 +33,7 @@ export default function Step3_ScanDetails({
 }: Step3_ScanDetailsProps) {
   const [error, setError] = useState<string | null>(null);
 
-  const isValid = title && selectedGroupId;
+  const isValid = title && (selectedGroupId || groups.length === 0);
 
   return (
     <div className="space-y-4">

@@ -45,7 +45,7 @@ export default function Step3_ExpensePeople({
            }}>
         <label className="text-sm font-medium text-gray-700 block mb-2">Who paid?</label>
         <UserPicker
-          selectedUserIds={[paidBy]}
+          selectedUserIds={paidBy ? [paidBy] : []}
           onChange={(ids) => setPaidBy(ids[0] || "")}
           users={users}
           label=""
