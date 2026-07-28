@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 import type { User } from "@supabase/supabase-js";
 import { getDb, schema } from "@/lib/db";
+import { setRequestAuth } from "@/lib/db/rls";
 import { authMode } from "./mode";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -37,7 +38,18 @@ async function resolveViaSupabase(): Promise<AppUser | null> {
     error,
   } = await supabase.auth.getUser();
   if (error || !user) return null;
-  return resolveAppUser(user);
+
+  const appUser = await resolveAppUser(user);
+  if (!appUser) return null;
+
+  // Enable RLS scoping for this request.  All subsequent queries on the
+  // shared connection will see auth.uid() = this Supabase user's UUID.
+  // (Mock mode skips this — there is no Supabase auth identity.)
+  if (appUser.authId) {
+    await setRequestAuth(appUser.authId);
+  }
+
+  return appUser;
 }
 
 /**
