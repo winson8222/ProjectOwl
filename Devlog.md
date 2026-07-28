@@ -1,5 +1,84 @@
 # ProjectOwl — Devlog
 
+## 2026-07-27 — Multi-step transaction wizard with receipt scanning
+
+Replaced the 1000+ line single-page Add Transaction form with a focused,
+multi-step wizard. Each step asks 1–2 questions, mirroring how Splitwise
+and similar apps guide users through expense/payment entry. Receipt
+scanning (ItreAI) is now a first-class branch of the wizard rather than
+a separate page.
+
+### Done
+- **Wizard shell (`AddTransactionWizard.tsx`)** manages all transaction
+  state and renders the active step. Progress bar shows "Step X of Y"
+  where Y is 3 for payments, 6 for expenses. Cancel button resets all
+  state and returns to step 1 (previously called `router.back()`).
+- **Step components** live in `src/components/wizard/`:
+  - `Step1_ChooseType` — Expense 🧾 vs Payment 💸 cards
+  - `Step2_InputMethod` — Scan Receipt 📷 vs Enter Manually ⌨️
+  - `Step2_PaymentDetails` — amount, date, group, recipient (payment flow)
+  - `Step3b_ManualExpenseDetails` — title, amount, date, group (manual)
+  - `Step3_ScanDetails` — title, date, group with amount shown read-only
+    (scan flow; amount comes from the extraction, not user input)
+  - `Step3_ExpensePeople` — who paid + participants (UserPicker x2)
+  - `Step3_ScanProcessing` — legacy extraction preview (kept, unused in
+    current flow)
+  - `Step4_SplitMethod` — Even/Custom split (manual flow)
+  - `Step4_ItemAssignment` — wraps `ItemAssigner` for scan flow
+  - `Step5_Review` — summary card + save button (both flows)
+- **Scan flow integrates `ItemAssigner`** (the "pass the phone" item
+  allocation screen). After scanning → naming → selecting participants,
+  the user assigns receipt items to people. The assignment results
+  (`totals` per participant) feed directly into the transaction's
+  `participants` array on save — no even/custom split needed.
+- **Manual flow** keeps the existing Even/Custom split with `SplitInput`.
+
+### Fixed
+- **File upload field name**: `Step2_InputMethod` was sending the image
+  as `"image"` but the API expects `"file"` — scans silently failed with
+  "no file uploaded."
+- **Amount not pre-filling after scan**: the `onScan` callback received
+  the full API envelope `{ success, data }` but code read `data.total`
+  (doesn't exist). Fixed to read `response.data.total_price`.
+- **`inputMethod` never set to `"scan"`**: clicking the Scan Receipt
+  card only flipped local `showScan` state, so step 3 rendered the
+  manual-entry component (with amount input) instead of the scan
+  details component. Now calls `onMethodChange("scan")` on click.
+- **UserPicker toggle deadlock for "who paid"**: `selectedUserIds={[paidBy]}`
+  passed `[""]` when `paidBy` was empty, which broke `toggle()` — once
+  deselected, the user couldn't be reselected. Fixed to pass `[]` when
+  empty.
+- **Step 3 Next button disabled**: validation required `selectedGroupId`
+  even when no groups existed or hadn't loaded yet. Relaxed to
+  `title && (selectedGroupId || groups.length === 0)`.
+- **Payment flow had no review step**: `case 3` in the step switch
+  returned `null` for payments, so clicking Next did nothing. Added
+  `Step5_Review` rendering for `txType === "payment"` at step 3.
+- **Recipient dropdown hidden for payments**: the "Paying to" selector
+  only rendered when `groups.length === 0`. Now always shows, populated
+  from the `users` array (excluding the current user).
+- **`handleNext` capped at step 5**: hardcoded `if (step < 5)` blocked
+  the expense flow from reaching the review step. Changed to use
+  `txType`-aware max (3 for payment, 6 for expense).
+- **TypeScript errors blocking build**: `MouseEvent` signature mismatch
+  in `groups/page.tsx` drag handlers; missing `setGroups`/`setUsers`
+  state setters in the wizard; invalid `single` prop on `UserPicker`.
+
+### Architecture decisions
+- **Single wizard, conditional branches.** One `AddTransactionWizard`
+  component owns all state and switches on `step` + `txType` +
+  `inputMethod`. Avoids a separate payment page or scan page, and lets
+  the cancel button reset everything in one place.
+- **Scan vs manual diverge at step 3.** Both share steps 1–2 (type →
+  method), then split: scan goes to `Step3_ScanDetails` (read-only
+  amount) → people → item assignment; manual goes to `Step3b_ManualExpenseDetails`
+  (editable amount) → people → split method. Both converge at `Step5_Review`.
+- **Item assignment results stored as `assignmentResults`, not folded
+  into `splitValues`.** The scan flow's per-person totals come from
+  `ItemAssigner`'s `computeAllocation`, which is a different code path
+  from the manual `SplitInput`. Keeping them separate avoids shoehorning
+  item-level math into the even/custom split state.
+
 ## 2026-07-24 — Merge master (timing body + waterfall fix) into UI-Changes
 
 Second master → UI-Changes merge of the day: master's two new commits
