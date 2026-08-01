@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import UserAvatar from "@/components/UserAvatar";
 import GroupPickerWheel from "@/components/GroupPickerWheel";
+import PullToRefresh from "@/components/PullToRefresh";
 import { getSessionUser } from "@/lib/session";
 import type { BalanceSummary } from "@/lib/actions/balances";
 
@@ -19,16 +20,11 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [user, setUser] = useState<any>(null);
 
-  useEffect(() => {
-    const currentUser = getSessionUser();
-    if (!currentUser) {
-      setLoading(false);
-      return;
-    }
-    setUser(currentUser);
+  const loadData = useCallback((currentUser: { id: string }) => {
+    setError(null);
 
     // Overall balance across all groups
-    fetch(`/api/balances?userId=${currentUser.id}`)
+    const balancePromise = fetch(`/api/balances?userId=${currentUser.id}`)
       .then((r) => r.json())
       .then((json) => {
         if (json.success) setBalance(json.data);
@@ -40,19 +36,33 @@ export default function HomePage() {
     // memberBalances, so there's no follow-up per-group fetch (that was a
     // request waterfall: the ranking call couldn't start until this one
     // resolved — an extra full round trip on every homepage load).
-    fetch(`/api/groups?userId=${currentUser.id}`)
+    const groupsPromise = fetch(`/api/groups?userId=${currentUser.id}`)
       .then((r) => r.json())
       .then((json) => {
         if (json.success) {
           setGroups(json.data);
-          if (json.data.length > 0) setSelectedGroupId(json.data[0].id);
+          // Only default to the first group on initial load — a refresh
+          // shouldn't yank the picker back to index 0 mid-selection.
+          setSelectedGroupId((prev) => prev || json.data[0]?.id || "");
         } else {
           setError((prev) => prev || json.error || "Failed to load groups");
         }
       })
       .catch(() => setError((prev) => prev || "Failed to connect to the server"))
       .finally(() => setLoading(false));
+
+    return Promise.all([balancePromise, groupsPromise]);
   }, []);
+
+  useEffect(() => {
+    const currentUser = getSessionUser();
+    if (!currentUser) {
+      setLoading(false);
+      return;
+    }
+    setUser(currentUser);
+    loadData(currentUser);
+  }, [loadData]);
 
   // Member balances come straight from the groups payload — switching groups
   // in the picker is instant, no fetch.
@@ -74,6 +84,7 @@ export default function HomePage() {
   }
 
   return (
+    <PullToRefresh onRefresh={() => loadData(user)}>
     <main className="min-h-dvh px-4 pt-2 pb-24 max-w-lg mx-auto">
       {/* Greeting */}
       <div className="flex items-center justify-between mb-6">
@@ -186,6 +197,7 @@ export default function HomePage() {
         )}
       </div>
     </main>
+    </PullToRefresh>
   );
 }
 

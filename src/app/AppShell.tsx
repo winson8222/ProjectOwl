@@ -4,6 +4,7 @@ import BottomNav from "@/components/BottomNav";
 import DebugMenu from "@/components/DebugMenu";
 import LoginScreen from "@/components/LoginScreen";
 import PageSlider from "@/components/PageSlider";
+import OfflineBanner from "@/components/OfflineBanner";
 import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { fetchSessionUser, signOut, type SessionUser } from "@/lib/session";
@@ -27,6 +28,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       .finally(() => setReady(true));
   }, []);
 
+  useEffect(() => {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    }
+  }, []);
+
   if (!ready) {
     return <div className="min-h-dvh" />;
   }
@@ -46,9 +53,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
+      <OfflineBanner />
+
       {/* App header */}
-      <header className="fixed top-0 left-0 right-0 border-b border-[var(--border)] z-50 backdrop-blur-sm"
-              style={{ background: 'rgba(255,255,255,0.4)' }}>
+      <header className="fixed left-0 right-0 border-b border-[var(--border)] z-50 backdrop-blur-sm"
+              style={{ background: 'rgba(255,255,255,0.4)', top: 'var(--offline-banner-h)' }}>
         <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
           <h1 className="text-xl font-bold text-[var(--primary)]">ItreSplit</h1>
           <button

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import UserPicker from "@/components/UserPicker";
 import ErrorDialog from "@/components/ErrorDialog";
+import PullToRefresh from "@/components/PullToRefresh";
 import { getSessionUser } from "@/lib/session";
 
 /**
@@ -146,7 +147,9 @@ export default function GroupsPage() {
   const [dialogError, setDialogError] = useState<{ title: string; message: string } | null>(null);
 
   const loadData = useCallback((currentUser: any) => {
-    fetch(`/api/groups?userId=${currentUser.id}`)
+    setError(null);
+
+    const groupsPromise = fetch(`/api/groups?userId=${currentUser.id}`)
       .then((r) => r.json())
       .then((json) => {
         if (json.success) {
@@ -158,12 +161,14 @@ export default function GroupsPage() {
       .catch(() => setError("Failed to connect to the server"))
       .finally(() => setLoading(false));
 
-    fetch(`/api/balances?userId=${currentUser.id}`)
+    const balancePromise = fetch(`/api/balances?userId=${currentUser.id}`)
       .then((r) => r.json())
       .then((json) => {
         if (json.success) setBalance(json.data);
       })
       .catch(() => {});
+
+    return Promise.all([groupsPromise, balancePromise]);
   }, []);
 
   useEffect(() => {
@@ -267,6 +272,7 @@ export default function GroupsPage() {
   }
 
   return (
+    <PullToRefresh onRefresh={() => loadData(user)}>
     <main className="min-h-dvh px-4 pt-6 pb-24 max-w-lg mx-auto">
       {/* Overall balance */}
       {balance && (
@@ -436,6 +442,7 @@ export default function GroupsPage() {
         onDismiss={() => setDialogError(null)}
       />
     </main>
+    </PullToRefresh>
   );
 }
 
