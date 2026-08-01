@@ -9,6 +9,32 @@
   --success: #3aa542;
   --border: #b0b0b0;
   --card: #fbfbff;
+  --offline-banner-h: 0px;
+}
+
+/* Shifts the fixed header + page content down when OfflineBanner is showing,
+   instead of the banner overlapping them. */
+html.offline-banner-visible {
+  --offline-banner-h: 28px;
+}
+
+html,
+body {
+  overscroll-behavior: none;
+}
+
+/* Buttons/links already lose the 300ms tap delay via the viewport meta
+   (user-scalable=no in layout.tsx), but touch-action: manipulation is a
+   second guarantee on browsers that key off it instead, and drops the
+   double-tap-to-zoom gesture on tappable elements. Tap highlight is
+   removed too so :active feedback (below) is the only visual response. */
+button,
+a,
+[role="button"],
+input[type="button"],
+input[type="submit"] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
@@ -49,7 +75,7 @@ body {
 /* Clear the fixed top header and bottom nav (h-16 = 4rem) + iOS home indicator,
    so page content is never hidden behind them. */
 .content-with-nav {
-  padding-top: 4rem;
+  padding-top: calc(4rem + var(--offline-banner-h));
   padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px) + 1rem);
 }
 
@@ -140,6 +166,7 @@ main {
   will-change: transform;
   overflow-y: auto;
   overflow-x: hidden;
+  overscroll-behavior: contain;
 }
 
 
@@ -156,7 +183,7 @@ main {
 
 .raining-cash span {
   position: absolute;
-  top: -20px;
+  top: 0;
   font-size: 24px;
   animation: fall linear infinite;
   opacity: 0.6;
@@ -196,12 +223,10 @@ main {
 
 @keyframes fall {
   0% {
-    top: -20px;
-    transform: translateX(0) rotate(0deg);
+    transform: translateY(-20px) translateX(0) rotate(0deg);
   }
   100% {
-    top: 100%;
-    transform: translateX(30px) rotate(360deg);
+    transform: translateY(300px) translateX(30px) rotate(360deg);
   }
 }
 
@@ -218,7 +243,7 @@ main {
 
 .gandhi-icon {
   position: absolute;
-  top: -40px;
+  top: 0;
   width: 32px;
   height: 32px;
   animation: fall-gandhi linear infinite;
@@ -259,12 +284,10 @@ main {
 
 @keyframes fall-gandhi {
   0% {
-    top: -40px;
-    transform: translateX(0) rotate(0deg);
+    transform: translateY(-40px) translateX(0) rotate(0deg);
   }
   100% {
-    top: 100%;
-    transform: translateX(-25px) rotate(-180deg);
+    transform: translateY(300px) translateX(-25px) rotate(-180deg);
   }
 }
 
