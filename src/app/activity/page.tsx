@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import UserAvatar from "@/components/UserAvatar";
+import PullToRefresh from "@/components/PullToRefresh";
 import { getSessionUser } from "@/lib/session";
 
 /**
@@ -15,15 +16,9 @@ export default function ActivityPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const currentUser = getSessionUser();
-    if (!currentUser) {
-      setLoading(false);
-      return;
-    }
-    setUser(currentUser);
-
-    fetch(`/api/activities?userId=${currentUser.id}`)
+  const loadData = useCallback((currentUser: { id: string }) => {
+    setError(null);
+    return fetch(`/api/activities?userId=${currentUser.id}`)
       .then((r) => r.json())
       .then((json) => {
         if (json.success) setActivities(json.data);
@@ -32,6 +27,16 @@ export default function ActivityPage() {
       .catch(() => setError("Failed to connect to the server"))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    const currentUser = getSessionUser();
+    if (!currentUser) {
+      setLoading(false);
+      return;
+    }
+    setUser(currentUser);
+    loadData(currentUser);
+  }, [loadData]);
 
   if (!user) {
     return (
@@ -42,6 +47,7 @@ export default function ActivityPage() {
   }
 
   return (
+    <PullToRefresh onRefresh={() => loadData(user)}>
     <main className="min-h-dvh px-4 pt-6 pb-24 max-w-lg mx-auto">
       <h1 className="text-xl font-bold text-gray-900 mb-6">Activity</h1>
 
@@ -66,6 +72,7 @@ export default function ActivityPage() {
         </div>
       )}
     </main>
+    </PullToRefresh>
   );
 }
 

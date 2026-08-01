@@ -1,5 +1,90 @@
 # ProjectOwl — Devlog
 
+## 2026-08-01 — Native app feel: touch/scroll polish, pull-to-refresh, and offline support
+
+Closes the "PWA manifest + service worker for offline capability" item from
+the backlog, plus a pass on making touch interaction feel native rather than
+web-in-a-wrapper.
+
+### Done
+
+**Touch/scroll polish:**
+- `overscroll-behavior: none` on `html, body` and `overscroll-behavior:
+  contain` on `.page-slide` (the actual scroll container inside
+  `PageSlider`) — kills the rubber-band bounce/pull-to-refresh-chain that
+  reads as "website," not "app."
+- `touch-action: manipulation` + `-webkit-tap-highlight-color: transparent`
+  on buttons/links/`[role="button"]` — belt-and-suspenders on top of the
+  existing `userScalable: false` viewport meta for the 300ms tap delay, and
+  removes the gray tap flash.
+- Cash-rain / falling-Gandhi animations (`.raining-cash`, `.falling-gandhi`
+  on the home/groups balance cards) were animating `top`, which is
+  layout/paint work every frame across up to 30 elements. Converted both
+  keyframes to `transform: translateY()` — same motion, GPU-accelerated.
+
+**Pull-to-refresh (`src/components/PullToRefresh.tsx`):**
+- Custom gesture (native pull-to-refresh is disabled by the
+  `overscroll-behavior` change above): tracks touch drag when the nearest
+  `.page-slide` ancestor is at `scrollTop: 0`, shows a resistance-curved
+  spinner, and awaits an `onRefresh()` callback past a threshold.
+- Wired into Home, Groups, and Activity pages. Each page's inline fetch
+  effect was extracted into a reusable `loadData()` so it can be re-invoked
+  from the pull gesture — also fixed a latent bug where refreshing groups
+  data would silently reset the home page's selected group back to index 0.
+
+**Offline support:**
+- `public/manifest.json` had no `icons` array — Chrome/Android's
+  installability check requires at least 192×192 and 512×512, so the app
+  currently could not be installed via the standard prompt at all. Generated
+  a vector owl-mark icon set (`public/icons/`: 192, 512, 512-maskable,
+  apple-touch-icon) via `sharp` (already a transitive dep through
+  `next/image`) rendering hand-written SVG — no emoji-font rendering
+  dependency, no new package. Wired into `manifest.json` and
+  `layout.tsx`'s `metadata.icons`/`appleWebApp`.
+- `public/sw.js` — app-shell service worker: cache-first for same-origin
+  static assets (populated opportunistically as the app is used, plus a
+  small precache list on `install`), network-first-with-cache-fallback for
+  `/api/*` GET responses. Non-GET requests and cross-origin calls (Supabase,
+  Gemini) are never intercepted — this app does not support offline writes,
+  and a cached mutation response would be actively wrong. Cache is versioned
+  by a `CACHE_VERSION` string bumped manually on shell changes (no
+  build-hash wiring yet). Registered from `AppShell.tsx`.
+- `OfflineBanner.tsx` — persistent top bar on `online`/`offline` events.
+  Threaded through a `--offline-banner-h` CSS variable so the fixed header
+  and page content shift down when it appears, instead of overlapping
+  (touches `globals.css`, `PageSlider.tsx`'s inline padding, and the
+  header's `top` in `AppShell.tsx`).
+
+### Architecture decisions
+1. **Data caching is read-only and unlabeled beyond the global banner.**
+   `/api/*` GETs get cached so offline shows the last-synced balances/groups/
+   activity instead of an error, but there's no per-card "last synced Xm
+   ago" timestamp — the one global offline banner was judged sufficient
+   signal that numbers may not be current, without touching every page's
+   data-rendering code.
+2. **No offline write queueing.** Creating transactions/groups/payments
+   still requires a live connection and fails the same way it did before
+   this change. Queueing writes (IndexedDB + replay on reconnect) was
+   scoped out as a separate, materially larger feature — iOS Safari's
+   Background Sync support is also unreliable, so it would need a manual
+   "retry on next open" fallback regardless.
+3. **Manual cache versioning over build-hash wiring.** Next.js content-hashes
+   JS/CSS chunk filenames per build, so a hand-written shell precache list
+   can't enumerate them. Runtime cache-first population (assets get cached
+   the first time they're fetched, not upfront) sidesteps needing that list
+   to be exhaustive; `CACHE_VERSION` just needs a manual bump when shell
+   behavior changes meaningfully enough to invalidate old entries.
+
+### Verification
+- `tsc --noEmit` clean.
+- Dev server smoke test: `/`, `/sw.js`, `/manifest.json`, and
+  `/icons/icon-192.png` all serve 200; manifest JSON shape confirmed with
+  the icons array present.
+- Not yet verified: actual offline behavior end-to-end (service workers only
+  activate on HTTPS/localhost after a prior successful online visit, and
+  dev-mode hot reload fights with SW caching) — needs `next build && next
+  start` plus DevTools' offline throttle, or a real deploy, to confirm.
+
 ## 2026-07-27 — Multi-step transaction wizard with receipt scanning
 
 Replaced the 1000+ line single-page Add Transaction form with a focused,
@@ -1109,7 +1194,8 @@ curl http://localhost:3000/api/debug
    added regression fixtures (`rounding-sixths`, corrected `rounding-thirds`).
 
 ### Next steps (future iterations)
-- [ ] PWA manifest + service worker for offline capability
+- [x] PWA manifest + service worker for offline capability — see
+      2026-08-01 entry (read-side only; no offline write queueing)
 - [ ] Camera capture via `navigator.mediaDevices` for in-browser photo
 - [ ] Real auth (Clerk / Supabase Auth) instead of sessionStorage
 - [ ] Image pre-processing (compress oversized images, HEIC→JPEG)
