@@ -1,5 +1,128 @@
 # ProjectOwl — Devlog
 
+## 2026-08-06 — UI overhaul: Blueberry/Cream design system, bottom sheets, ItreAI loader
+
+Visual and interaction-level pass only — no navigation flow, screen structure,
+state management, or API changes. The app read as a responsive web page rather
+than something used with a thumb; this addresses that.
+
+### Done
+
+**Design tokens (`globals.css`)** — a `@theme` block replacing six ad-hoc
+custom properties:
+- Surfaces: `--color-canvas` #F6E7C0, `--color-surface` #FFF0C9 ("Cream Sode"),
+  `--color-surface-raised` #FFF8E3. Cream Sode is the *card* tone, not the
+  canvas — with both the same, cards vanish.
+- Blueberry ramp 100–900 around #243B8F. 8.85:1 on Cream Sode, which is why it
+  carries both text and fills and no second accent was needed.
+- Warm neutrals (`--color-ink` 15.3:1, `--color-ink-muted` 5.1:1,
+  `--color-hairline`), desaturated semantics, and warm-biased tints so an error
+  banner sits *in* the cream instead of on it.
+- Type scale mirrors iOS Dynamic Type rather than a modular scale. **Body 14 →
+  17px** — this did more for "feels native" than any colour change.
+- Legacy vars (`--primary`, `--border`, `--card`…) re-point at the new palette,
+  so 251 existing call sites re-tinted from one file.
+- ~310 hardcoded Tailwind colours swept to tokens across 26 files. Debug UI
+  (`/debug`, DebugMenu, SimplifyTestViz) deliberately left on the old greys.
+
+**Nav island (`BottomNav`, `NavIcons`)** — one `blueberry-100` pill slides
+between tabs on a spring with overshoot, instead of four icons independently
+recolouring. It's the only element allowed to overshoot, which is what makes
+the bar read as a physical object. Text glyphs (`⌂ ⊟ + ◉`) replaced with stroked
+SVGs — those resolved to different fonts with different baselines per platform.
+Clearance consolidated into `--nav-clearance` (was hardcoded in three places at
+two different values).
+
+**Bottom sheets (`BottomSheet`)** — `ErrorDialog` and `ConfirmDialog` render
+through it with **identical props**, so all 8 call sites are untouched. Actions
+stack full-width rather than sitting side by side; destructive variants are
+neither swipe- nor backdrop-dismissible.
+
+**Swipe-to-reveal delete (`SwipeableRow`)** — deliberately two-stage: the swipe
+reveals, a second tap commits. Vertical intent wins past a 6px slop so the
+gesture never fights list scrolling. Optimistic with rollback; the group page
+refetches after (deleting a transaction moves that group's nets).
+
+**ItreAI scan loader (`OwlMark`, `ScanLoader`)** — the owl now exists as
+animatable SVG (previously only flattened PNGs in the old #3a85c5 blue; the
+source SVG was never committed). Three phases: assemble, read, resolve. No
+progress bar — Gemini doesn't stream, so any percentage would be invented.
+
+**Screens reworked** — wizard steps 1–5, `ItemAssigner` (receipt paper with
+torn edges, avatar stamps replacing a 5×5 tri-state checkbox, active person
+owning the header band), `SplitInput` (segmented control, proportional split
+bar), `TransactionCard`, review screen (now lists every participant and their
+exact share — it used to say "Participants: 4 people", the one fact you
+couldn't check).
+
+**PAID stamp (`PaidStamp`, `SettledOverlay`, `lib/settled.ts`)** — settling used
+to be marked by animation *stopping*: the cash/Gandhi rain keys off the sign of
+`netBalance`, so zero fell through to `null`. Now a stamp lands with sparks on
+the settle-up paths, and a watermark rests on settled balance cards.
+
+### Fixed
+- **`.animate-slide-up` was never defined** — `CalculatorKeypad` referenced it,
+  so the keypad had always snapped in with no transition. It also had no
+  safe-area padding and a 32px `✕` as its only commit affordance.
+- **Falling money/Gandhi piled up at the top of the card.** A positive
+  `animation-delay` holds an element at its pre-animation state, so 60 elements
+  sat visible at `top: 0` waiting their turn — the last Gandhi for 14.5s. All
+  delays flipped negative; start moved to `-44px` to clear the box.
+- **`text-gray-400` secondary text** was already below 4.5:1 on white before
+  this work, and would have been worse on cream.
+- Service worker served stale JS chunks over the dev server (see decision 3).
+
+### Architecture decisions
+1. **Green/red mean owed/owing — never "this is the payment screen."**
+   `/payments/new` had a full emerald identity (gradient hero, green submit,
+   green focus rings) that after the migration amounted to a second palette
+   running beside Blueberry. Payment chrome is now Blueberry; the semantics are
+   reserved for balances. Payments are told apart by the arrow diagram and the
+   wording.
+2. **`isSettled` checks both gross sides, not the net.** `netBalance === 0` is
+   true when you owe Alex $50 and Ben owes you $50 — two live debts. Stamping
+   that PAID would be a lie. Epsilon compare because money is
+   `doublePrecision`. The net-zero-but-open case gets its own line instead.
+3. **Service worker is disabled on local origins.** It's cache-first for
+   same-origin assets with a hand-bumped `CACHE_VERSION`, so a worker
+   registered against `localhost:3000` outlived the process that installed it
+   and kept serving earlier sessions' chunks. Guarding `register()` client-side
+   can't fix a browser that already has one — the stale worker *is* what serves
+   the client code. Browsers always re-fetch `/sw.js` on navigation, so the
+   kill switch lives in the worker: on a local origin it wipes caches,
+   unregisters itself, and reloads open tabs. Production is byte-identical.
+4. **Diagrams instead of emoji for iconography.** 🧾/💸/📷/⌨️ replaced with SVGs
+   that draw the operation (expense fans one payer out to three shares; payment
+   is one node to one node). Sparkles were specifically avoided for ItreAI — ✨
+   is the generic "this is AI" signal and says nothing about the feature.
+5. **The system font stack stays for UI text.** On iOS `-apple-system` resolves
+   to SF Pro, which *is* the native face; a webfont there is the fastest way to
+   feel non-native. Instrument Serif is scoped to balance amounts only.
+6. **Light-only.** Cream Sode has no honest dark translation, and supporting one
+   would double the token surface. Tokens are structured so a `[data-theme]`
+   block could be added later.
+
+### Verification
+- `tsc --noEmit` clean; `test:simplify` 10/10, `test:allocation` 10/10,
+  `test:security` 26/26.
+- `test:settlement` **fails on an RLS statement PGlite can't parse — this
+  predates these changes** (confirmed by stashing the whole branch and
+  re-running). Not investigated here; no UI code touches it.
+- `next build` passed earlier in the session. Note: running it against a live
+  dev server clobbers `.next` and leaves the server serving mixed new-JS /
+  old-CSS, which looks exactly like "the palette didn't apply". Use `tsc` plus
+  the suites while a dev server is up; `touch src/app/globals.css` forces a
+  Tailwind recompile if the served CSS goes stale.
+- Not verified: appearance on real hardware. Gesture thresholds (88px reveal,
+  40px snap, 6px slop) and haptics are unexercised on a device —
+  `navigator.vibrate` is a no-op on iOS Safari regardless.
+
+### Not done (deferred from the original brief)
+Hero/shared-element transitions from list row into detail, spring page
+transitions for non-tab routes, native swipe-back (conflicts with
+`PageSlider`'s horizontal tab paging — needs scoping to non-slider routes),
+pull-to-refresh on `/transactions` and group detail, and a global 44pt audit.
+
 ## 2026-08-01 — Native app feel: touch/scroll polish, pull-to-refresh, and offline support
 
 Closes the "PWA manifest + service worker for offline capability" item from

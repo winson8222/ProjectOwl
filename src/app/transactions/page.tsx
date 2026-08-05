@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import TransactionCard from "@/components/TransactionCard";
+import SwipeableRow from "@/components/SwipeableRow";
 import UserAvatar from "@/components/UserAvatar";
 import { getSessionUser } from "@/lib/session";
+import { tapHeavy, tapError } from "@/lib/haptics";
 
 /**
  * Transaction list page with payer/payee filters.
@@ -55,10 +57,31 @@ export default function TransactionsPage() {
       .finally(() => setLoading(false));
   }, [user, payer, payees]);
 
+  /** Swipe-to-reveal delete. Optimistic: the row leaves immediately and is
+   *  restored if the request fails, so the list never freezes mid-gesture. */
+  const handleDelete = useCallback(async (id: string) => {
+    const previous = transactions;
+    setTransactions((rows) => rows.filter((t) => t.id !== id));
+    tapHeavy();
+    try {
+      const res = await fetch(`/api/transactions?id=${id}`, { method: "DELETE" });
+      const json = await res.json();
+      if (!json.success) {
+        setTransactions(previous);
+        tapError();
+        setError(json.error || "Failed to delete transaction");
+      }
+    } catch {
+      setTransactions(previous);
+      tapError();
+      setError("Failed to connect to the server");
+    }
+  }, [transactions]);
+
   if (!user) {
     return (
       <main className="min-h-dvh flex items-center justify-center p-4">
-        <p className="text-sm text-gray-500">Please select a user from the home page first.</p>
+        <p className="text-sm text-ink-muted">Please select a user from the home page first.</p>
       </main>
     );
   }
@@ -77,10 +100,10 @@ export default function TransactionsPage() {
     <main className="min-h-dvh px-4 pt-6 pb-24 max-w-lg mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-bold text-gray-900">Transactions</h1>
+        <h1 className="text-xl font-bold text-ink">Transactions</h1>
         <Link
           href="/transactions/new"
-          className="text-sm font-semibold text-[var(--primary)] px-3 py-1.5 border border-[var(--primary)] rounded-lg hover:bg-blue-50"
+          className="text-sm font-semibold text-[var(--primary)] px-3 py-1.5 border border-[var(--primary)] rounded-lg hover:bg-blueberry-100"
         >
           + New
         </Link>
@@ -88,7 +111,7 @@ export default function TransactionsPage() {
 
       {/* Error banner */}
       {error && (
-        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+        <div className="mb-4 px-4 py-3 bg-negative-tint border border-negative-soft rounded-xl text-sm text-negative">
           ⚠ {error}
         </div>
       )}
@@ -97,11 +120,11 @@ export default function TransactionsPage() {
       <div className="space-y-3 mb-4">
         {/* Payer filter */}
         <div>
-          <label className="text-xs font-medium text-gray-500 mb-1 block">Paid by</label>
+          <label className="text-xs font-medium text-ink-muted mb-1 block">Paid by</label>
           <select
             value={payer}
             onChange={(e) => setPayer(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+            className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-surface-raised focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
           >
             <option value="">Anyone</option>
             <option value={user.id}>You</option>
@@ -113,7 +136,7 @@ export default function TransactionsPage() {
 
         {/* Payees filter */}
         <div>
-          <label className="text-xs font-medium text-gray-500 mb-1 block">Involving</label>
+          <label className="text-xs font-medium text-ink-muted mb-1 block">Involving</label>
           <div className="flex flex-wrap gap-1.5">
             {users.map((u) => {
               const selected = payees.includes(u.id);
@@ -124,7 +147,7 @@ export default function TransactionsPage() {
                   className={`px-2.5 py-1 text-xs font-medium rounded-full border transition-colors ${
                     selected
                       ? "bg-[var(--primary)] text-white border-[var(--primary)]"
-                      : "bg-white text-gray-500 border-[var(--border)] hover:border-gray-300"
+                      : "bg-surface-raised text-ink-muted border-[var(--border)] hover:border-hairline"
                   }`}
                 >
                   {u.name}
@@ -143,7 +166,7 @@ export default function TransactionsPage() {
           </div>
         ) : transactions.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-sm text-gray-400 mb-2">No transactions found</p>
+            <p className="text-sm text-ink-muted mb-2">No transactions found</p>
             <Link
               href="/transactions/new"
               className="text-sm font-medium text-[var(--primary)]"
@@ -153,20 +176,21 @@ export default function TransactionsPage() {
           </div>
         ) : (
           transactions.map((tx: any) => (
-            <TransactionCard
-              key={tx.id}
-              id={tx.id}
-              title={tx.title}
-              totalAmount={tx.totalAmount}
-              userShare={tx.userShare}
-              paidByUserName={tx.paidByUser?.name ?? "Unknown"}
-              paidByUserId={tx.paidByUserId}
-              currentUserId={user.id}
-              transactionDate={tx.transactionDate}
-              type={tx.type}
-              recipientName={tx.participants?.[0]?.user?.name}
-              recipientUserId={tx.participants?.[0]?.user?.id}
-            />
+            <SwipeableRow key={tx.id} onDelete={() => handleDelete(tx.id)}>
+              <TransactionCard
+                id={tx.id}
+                title={tx.title}
+                totalAmount={tx.totalAmount}
+                userShare={tx.userShare}
+                paidByUserName={tx.paidByUser?.name ?? "Unknown"}
+                paidByUserId={tx.paidByUserId}
+                currentUserId={user.id}
+                transactionDate={tx.transactionDate}
+                type={tx.type}
+                recipientName={tx.participants?.[0]?.user?.name}
+                recipientUserId={tx.participants?.[0]?.user?.id}
+              />
+            </SwipeableRow>
           ))
         )}
       </div>

@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import UserAvatar from "@/components/UserAvatar";
+import UserAvatar, { avatarTone } from "@/components/UserAvatar";
 import { computeAllocation, unitKey, type UnitState } from "@/lib/allocation";
+import { tapLight, tapMedium } from "@/lib/haptics";
 
 interface ScannedItem {
   id: number; // temporary index
@@ -175,48 +176,74 @@ export default function ItemAssigner({
       return <UserAvatar key={uid} name={p.name} size="sm" />;
     });
 
+  const activeParticipant = participants.find((p) => p.id === activeUser);
+  const activeTone = activeParticipant
+    ? avatarTone(activeParticipant.name)
+    : "var(--color-blueberry-600)";
+
   return (
-    <div className="fixed inset-0 z-50 bg-white md:max-w-3xl md:mx-auto flex flex-col overscroll-none">
-      {/* ── Header (safe-area aware) ───────────────────────────── */}
+    <div className="fixed inset-0 z-50 bg-canvas md:max-w-3xl md:mx-auto flex flex-col overscroll-none">
+      {/* ── Whose turn it is ─────────────────────────────────────
+             The band takes the active person's own colour and cross-fades
+             when you hand the phone over. Passing it should feel like handing
+             someone a controller, not tapping a chip in a scroll rail. */}
       <div
-        className="px-4 pb-3 border-b border-[var(--border)] shrink-0"
-        style={{ paddingTop: "max(1.5rem, env(safe-area-inset-top))" }}
+        className="px-4 pb-4 shrink-0 transition-colors duration-300"
+        style={{
+          paddingTop: "max(1rem, env(safe-area-inset-top))",
+          background: activeTone,
+        }}
       >
-        <div className="flex items-center justify-between mb-1">
-          <h2 className="text-lg font-bold text-gray-900">Assign Items</h2>
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-caption font-semibold uppercase tracking-wider text-white/70">
+            Assigning for
+          </span>
           <button
             onClick={onCancel}
-            className="text-sm text-gray-500 hover:text-gray-700 -m-2 p-2"
+            className="pressable text-subhead font-medium text-white/90 -m-2 p-2"
           >
             Cancel
           </button>
         </div>
-        <p className="text-xs text-gray-500">
-          Pass the phone around — pick your name, then tap the items you shared.
-        </p>
-      </div>
 
-      {/* ── Active-user selector (sticky, big tap targets) ─────── */}
-      <div className="px-4 py-3 border-b border-[var(--border)] bg-gray-50 shrink-0">
-        <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-2">
-          I am… <span className="text-gray-400 normal-case">(tap your name first)</span>
-        </p>
-        <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+        <div className="flex items-center gap-3 mb-4">
+          <span className="rounded-full p-[2px] bg-white/25">
+            <UserAvatar name={activeParticipant?.name ?? "?"} size="lg" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-title1 font-bold text-white truncate leading-tight">
+              {activeParticipant?.name ?? "—"}
+            </p>
+            <p className="text-subhead text-white/75">Tap everything you had</p>
+          </div>
+        </div>
+
+        {/* Live tally — everyone's running total, active one enlarged. */}
+        <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4">
           {participants.map((p) => {
             const isActive = activeUser === p.id;
             return (
               <button
                 key={p.id}
-                onClick={() => setActiveUser(p.id)}
-                className={`flex items-center gap-1.5 pl-2 pr-3 py-2.5 rounded-full text-sm font-medium shrink-0 transition-all border-2 ${
-                  isActive
-                    ? "border-[var(--primary)] bg-blue-50 text-[var(--primary)] shadow-sm"
-                    : "border-transparent bg-white text-gray-600"
-                }`}
+                onClick={() => {
+                  tapLight();
+                  setActiveUser(p.id);
+                }}
+                aria-pressed={isActive}
+                className="pressable shrink-0 flex items-center gap-2 rounded-full transition-all"
+                style={{
+                  minHeight: 44,
+                  paddingInline: 12,
+                  background: isActive ? "white" : "rgba(255,255,255,0.18)",
+                  color: isActive ? "var(--color-ink)" : "white",
+                  transform: isActive ? "scale(1)" : "scale(0.94)",
+                }}
               >
                 <UserAvatar name={p.name} size="sm" />
-                {p.name.split(" ")[0]}
-                <span className="font-mono text-xs text-gray-400">
+                <span className="text-subhead font-medium">
+                  {p.name.split(" ")[0]}
+                </span>
+                <span className="text-subhead font-semibold tabular">
                   ${(participantTotals[p.id] ?? 0).toFixed(2)}
                 </span>
               </button>
@@ -225,16 +252,13 @@ export default function ItemAssigner({
         </div>
       </div>
 
-      {/* Active user banner — reinforces whose turn it is */}
-      <div className="px-4 py-2 bg-blue-50/70 border-b border-[var(--border)] shrink-0 flex items-center gap-2">
-        <span className="text-xs text-gray-500">Assigning items for</span>
-        <span className="text-xs font-semibold text-[var(--primary)]">
-          {participants.find((p) => p.id === activeUser)?.name ?? "—"}
-        </span>
-      </div>
+      <div className="receipt-edge-top shrink-0" />
 
-      {/* ── Item list ──────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto divide-y divide-[var(--border)]">
+      {/* ── The receipt ────────────────────────────────────────── */}
+      <div
+        className="flex-1 overflow-y-auto"
+        style={{ background: "var(--color-surface-raised)" }}
+      >
         {items.map((item, i) => {
           const cnt = item.cnt ?? 1;
           const isMulti = cnt > 1;
@@ -247,121 +271,154 @@ export default function ItemAssigner({
           const allAssigned = unitsAssignedToActive === cnt;
           const someAssigned = unitsAssignedToActive > 0;
 
+          // Anyone at all on this item, not just the active person.
+          const claimedByAnyone = Array.from({ length: cnt }).some(
+            (_, u) => getUnitSet(unitKey(i, u)).size > 0
+          );
+
           return (
             <div key={i}>
               {/* Main item row */}
               <div
-                className={`px-4 py-3.5 flex items-center gap-3 transition-colors ${
-                  someAssigned ? "bg-blue-50/60" : ""
+                data-unclaimed={!claimedByAnyone}
+                className={`px-4 py-3 flex items-center gap-2 transition-colors ${
+                  !claimedByAnyone ? "unclaimed-pulse" : ""
                 }`}
+                style={{
+                  borderLeft: `3px solid ${
+                    someAssigned ? activeTone : "transparent"
+                  }`,
+                }}
               >
                 <button
-                  onClick={() => toggleWholeItem(i, cnt)}
-                  className="flex-1 min-w-0 text-left py-0.5"
+                  onClick={() => {
+                    tapLight();
+                    toggleWholeItem(i, cnt);
+                  }}
+                  className="flex-1 min-w-0 text-left"
+                  style={{ minHeight: 44 }}
                 >
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`w-5 h-5 rounded-md border-2 shrink-0 flex items-center justify-center text-[10px] ${
-                        allAssigned
-                          ? "border-[var(--primary)] bg-[var(--primary)] text-white"
-                          : someAssigned
-                          ? "border-[var(--primary)] bg-blue-100 text-[var(--primary)]"
-                          : "border-gray-300"
-                      }`}
-                    >
-                      {allAssigned ? "✓" : someAssigned ? "–" : ""}
-                    </span>
-                    <span className="text-sm font-medium text-gray-900 truncate">
+                  <div className="flex items-baseline">
+                    <span className="text-body text-ink truncate font-mono">
                       {item.nm}
                     </span>
                     {isMulti && (
-                      <span className="text-xs text-gray-400 shrink-0">×{cnt}</span>
+                      <span className="text-footnote text-ink-muted shrink-0 ml-1.5 font-mono">
+                        ×{cnt}
+                      </span>
+                    )}
+                    <span className="leader" aria-hidden />
+                  </div>
+
+                  {/* Avatar stamps replace the tri-state checkbox: the faces
+                      already say who's on this item, and a 5×5 box couldn't
+                      be read at arm's length across a table. */}
+                  <div className="flex items-center gap-1 mt-1 min-h-[22px]">
+                    {!claimedByAnyone ? (
+                      <span className="text-footnote text-ink-muted">
+                        Nobody yet
+                      </span>
+                    ) : !isMulti ? (
+                      <>
+                        <span className="flex -space-x-1.5">
+                          {renderAvatars(getUnitSet(unitKey(i, 0)))}
+                        </span>
+                        <span className="text-footnote text-ink-muted ml-1.5 tabular">
+                          ${(unitPrice / getUnitSet(unitKey(i, 0)).size).toFixed(2)} each
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-footnote text-ink-muted">
+                        {unitsAssignedToActive > 0
+                          ? `You're on ${unitsAssignedToActive} of ${cnt}`
+                          : `${cnt} units — tap to take all`}
+                      </span>
                     )}
                   </div>
-                  {!isMulti && (
-                    <div className="flex items-center gap-1 mt-1.5 pl-7 min-h-[18px]">
-                      {getUnitSet(unitKey(i, 0)).size === 0 ? (
-                        <span className="text-[11px] text-gray-400">Not assigned yet</span>
-                      ) : (
-                        <>
-                          {renderAvatars(getUnitSet(unitKey(i, 0)))}
-                          <span className="text-[10px] text-gray-400 ml-1">
-                            ${(unitPrice / getUnitSet(unitKey(i, 0)).size).toFixed(2)} each
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  )}
                 </button>
 
                 {/* Editable item price */}
-                <div className="relative shrink-0">
-                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">
-                    $
-                  </span>
-                  <input
-                    type="number"
-                    value={item.price}
-                    onChange={(e) => updateItemPrice(i, parseFloat(e.target.value) || 0)}
-                    step="0.01"
-                    min="0"
-                    className="w-24 pl-5 pr-2 py-1.5 text-sm text-right font-mono border border-[var(--border)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
-                  />
-                </div>
+                <input
+                  type="number"
+                  value={item.price}
+                  onChange={(e) => updateItemPrice(i, parseFloat(e.target.value) || 0)}
+                  step="0.01"
+                  min="0"
+                  aria-label={`Price of ${item.nm}`}
+                  className="w-[86px] px-2 text-body text-right font-mono tabular text-ink bg-transparent rounded-[8px] focus:outline-none focus:bg-canvas focus:ring-2 focus:ring-blueberry-500 shrink-0"
+                  style={{ minHeight: 44 }}
+                />
 
                 {/* Expand toggle for multi-qty items */}
                 {isMulti && (
                   <button
                     onClick={() => toggleExpand(i)}
-                    className="text-xs text-[var(--primary)] shrink-0 w-5 text-center"
-                    aria-label="Toggle units"
+                    className="pressable shrink-0 flex items-center justify-center text-ink-muted"
+                    style={{ width: 32, minHeight: 44 }}
+                    aria-label={expanded.has(i) ? "Hide units" : "Show units"}
+                    aria-expanded={expanded.has(i)}
                   >
-                    {expanded.has(i) ? "▲" : "▼"}
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      style={{
+                        transform: expanded.has(i) ? "rotate(180deg)" : "none",
+                        transition: "transform 160ms ease-out",
+                      }}
+                      aria-hidden
+                    >
+                      <path d="M6 9l6 6 6-6" />
+                    </svg>
                   </button>
                 )}
               </div>
 
-              {/* Sub-rows: one per unit (only for multi-qty, when expanded) */}
+              {/* Sub-rows: one per unit (only for multi-qty, when expanded).
+                  Interaction contract is unchanged — the main row above still
+                  toggles every unit, each sub-row still toggles just its own. */}
               {isMulti && expanded.has(i) && (
-                <div className="bg-gray-50/60">
+                <div style={{ background: "var(--color-canvas)" }}>
                   {Array.from({ length: cnt }).map((_, u) => {
                     const assigned = getUnitSet(unitKey(i, u));
                     const activeOn = assigned.has(activeUser);
                     return (
                       <button
                         key={u}
-                        onClick={() => toggleUnit(i, u)}
-                        className={`w-full pl-10 pr-4 py-2.5 flex items-center gap-3 text-left border-t border-[var(--border)] transition-colors ${
-                          activeOn ? "bg-blue-50/80" : ""
-                        }`}
+                        onClick={() => {
+                          tapLight();
+                          toggleUnit(i, u);
+                        }}
+                        aria-pressed={activeOn}
+                        className="w-full pl-8 pr-4 flex items-center gap-3 text-left transition-colors"
+                        style={{
+                          minHeight: 48,
+                          borderLeft: `3px solid ${
+                            activeOn ? activeTone : "transparent"
+                          }`,
+                        }}
                       >
-                        <span
-                          className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center text-[9px] ${
-                            activeOn
-                              ? "border-[var(--primary)] bg-[var(--primary)] text-white"
-                              : "border-gray-300"
-                          }`}
-                        >
-                          {activeOn ? "✓" : ""}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <span className="text-xs text-gray-600">
-                            {item.nm} #{u + 1}
+                        <div className="flex-1 min-w-0 flex items-baseline">
+                          <span className="text-subhead text-ink-muted font-mono">
+                            #{u + 1}
                           </span>
-                          <div className="flex items-center gap-1 mt-0.5 min-h-[16px]">
-                            {assigned.size === 0 ? (
-                              <span className="text-[10px] text-gray-400">unassigned</span>
-                            ) : (
-                              <>
-                                {renderAvatars(assigned)}
-                                <span className="text-[10px] text-gray-400 ml-1">
-                                  ${(unitPrice / assigned.size).toFixed(2)} each
-                                </span>
-                              </>
-                            )}
-                          </div>
+                          <span className="leader" aria-hidden />
                         </div>
-                        <span className="text-xs font-mono text-gray-500 shrink-0">
+                        <span className="flex -space-x-1.5 shrink-0">
+                          {assigned.size === 0 ? (
+                            <span className="text-footnote text-ink-muted">
+                              free
+                            </span>
+                          ) : (
+                            renderAvatars(assigned)
+                          )}
+                        </span>
+                        <span className="text-subhead font-mono tabular text-ink-muted shrink-0 w-16 text-right">
                           ${unitPrice.toFixed(2)}
                         </span>
                       </button>
@@ -374,39 +431,59 @@ export default function ItemAssigner({
         })}
       </div>
 
-      {/* ── Footer summary + confirm (safe-area aware) ─────────── */}
+      <div className="receipt-edge-bottom shrink-0" />
+
+      {/* ── Total + confirm (safe-area aware) ──────────────────── */}
       <div
-        className="border-t border-[var(--border)] bg-gray-50 px-4 pt-3 space-y-2 shrink-0"
+        className="bg-canvas px-4 pt-3 shrink-0"
         style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
       >
-        <div className="flex justify-between text-sm">
-          <span className="text-gray-500">Total bill</span>
-          <span className="font-mono font-medium">${totalBill.toFixed(2)}</span>
-        </div>
-        <div className="flex justify-between text-sm">
-          <span className="text-gray-500">Assigned</span>
+        <div className="flex items-baseline mb-1">
+          <span className="text-subhead text-ink-muted">Assigned</span>
+          <span className="leader" aria-hidden />
           <span
-            className={`font-mono font-medium ${
-              Math.abs(totalAssigned - totalBill) > 0.01
-                ? "text-amber-600"
-                : "text-[var(--success)]"
-            }`}
+            className="text-body font-semibold font-mono tabular"
+            style={{
+              color:
+                Math.abs(totalAssigned - totalBill) > 0.01
+                  ? "var(--color-warning)"
+                  : "var(--color-positive)",
+            }}
           >
             ${totalAssigned.toFixed(2)}
           </span>
+          <span className="text-subhead text-ink-muted font-mono tabular ml-1">
+            / ${totalBill.toFixed(2)}
+          </span>
         </div>
+
         {unassignedCount > 0 && (
-          <p className="text-xs text-amber-600">
-            ⚠ {unassignedCount} item{unassignedCount > 1 ? "s/units" : "/unit"} still
-            have nobody assigned
-          </p>
+          // Tapping the warning scrolls to the first unclaimed row — the
+          // count is useless if you then have to hunt for which ones.
+          <button
+            onClick={() => {
+              document
+                .querySelector('[data-unclaimed="true"]')
+                ?.scrollIntoView({ behavior: "smooth", block: "center" });
+            }}
+            className="pressable w-full text-left text-footnote mb-2"
+            style={{ color: "var(--color-warning)", minHeight: 30 }}
+          >
+            {unassignedCount} {unassignedCount > 1 ? "items" : "item"} still
+            unclaimed — tap to find {unassignedCount > 1 ? "them" : "it"}
+          </button>
         )}
+
         <button
-          onClick={handleConfirm}
+          onClick={() => {
+            tapMedium();
+            handleConfirm();
+          }}
           disabled={unassignedCount > 0}
-          className="w-full px-4 py-3.5 text-base font-semibold text-white bg-[var(--primary)] rounded-xl hover:bg-[var(--primary-hover)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="pressable w-full rounded-[12px] text-body font-semibold text-white disabled:opacity-40"
+          style={{ minHeight: 52, background: "var(--color-blueberry-600)" }}
         >
-          Confirm assignments
+          {unassignedCount > 0 ? "Assign every item first" : "Done — that's everyone"}
         </button>
       </div>
     </div>

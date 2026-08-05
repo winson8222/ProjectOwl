@@ -14,7 +14,7 @@ export default function LoginScreen({ onSignedIn }: { onSignedIn: () => void }) 
   return (
     <main className="min-h-dvh flex flex-col items-center justify-center px-4">
       <div className="text-5xl mb-4">🦉</div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-2">ProjectOwl</h1>
+      <h1 className="text-2xl font-bold text-ink mb-2">ProjectOwl</h1>
 
       {authMode() === "supabase" ? (
         <GoogleLogin />
@@ -55,18 +55,18 @@ function GoogleLogin() {
 
   return (
     <>
-      <p className="text-sm text-gray-500 mb-8">Sign in to split receipts with friends</p>
+      <p className="text-sm text-ink-muted mb-8">Sign in to split receipts with friends</p>
       <button
         onClick={signIn}
         disabled={busy}
-        className="flex items-center gap-3 px-6 py-3 bg-white border border-[var(--border)] rounded-xl shadow-sm hover:bg-gray-50 disabled:opacity-50 transition-colors"
+        className="flex items-center gap-3 px-6 py-3 bg-surface-raised border border-[var(--border)] rounded-xl shadow-sm hover:bg-canvas disabled:opacity-50 transition-colors"
       >
         <GoogleIcon />
-        <span className="text-sm font-semibold text-gray-900">
+        <span className="text-sm font-semibold text-ink">
           {busy ? "Redirecting…" : "Continue with Google"}
         </span>
       </button>
-      {error && <p className="mt-4 text-sm text-red-600">⚠ {error}</p>}
+      {error && <p className="mt-4 text-sm text-negative">⚠ {error}</p>}
     </>
   );
 }
@@ -143,9 +143,9 @@ function MockUserPicker({ onSignedIn }: { onSignedIn: () => void }) {
 
   return (
     <>
-      <p className="text-sm text-gray-500 mb-8">Who are you? (local dev)</p>
+      <p className="text-sm text-ink-muted mb-8">Who are you? (local dev)</p>
 
-      {error && <p className="mb-4 text-sm text-red-600">⚠ {error}</p>}
+      {error && <p className="mb-4 text-sm text-negative">⚠ {error}</p>}
 
       <div className="space-y-2 w-full max-w-xs">
         {users.map((user: any) => (
@@ -153,10 +153,10 @@ function MockUserPicker({ onSignedIn }: { onSignedIn: () => void }) {
             key={user.id}
             onClick={() => selectUser(user.id)}
             disabled={busy}
-            className="w-full flex items-center gap-3 px-4 py-3 bg-[var(--card)] border border-[var(--border)] rounded-xl hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            className="w-full flex items-center gap-3 px-4 py-3 bg-[var(--card)] border border-[var(--border)] rounded-xl hover:bg-canvas disabled:opacity-50 transition-colors"
           >
             <UserAvatar name={user.name} size="sm" />
-            <span className="text-sm font-medium text-gray-900">{user.name}</span>
+            <span className="text-sm font-medium text-ink">{user.name}</span>
           </button>
         ))}
       </div>

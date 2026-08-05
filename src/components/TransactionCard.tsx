@@ -21,6 +21,10 @@ interface TransactionCardProps {
 
 /**
  * Summary row for a single transaction in list views.
+ *
+ * The date block is the row's anchor — a small torn-calendar chip that reads
+ * as a receipt stub, echoing the item-assignment screen. Amounts are set in
+ * tabular figures so a scrolling ledger keeps its decimal column aligned.
  */
 export default function TransactionCard({
   id,
@@ -40,37 +44,58 @@ export default function TransactionCard({
   const day = date.getDate();
   const month = date.toLocaleDateString("en-US", { month: "short" }).toUpperCase();
 
+  const rowClass =
+    "pressable flex items-center gap-3 px-3.5 py-3 rounded-[14px] bg-surface border border-hairline";
+  const rowShadow = {
+    boxShadow:
+      "0 1px 2px color-mix(in srgb, var(--color-blueberry-900) 5%, transparent)",
+  };
+
+  const dateChip = (
+    <div
+      className="flex flex-col items-center justify-center rounded-[10px] px-2 py-1 shrink-0"
+      style={{
+        background: "var(--color-blueberry-100)",
+        minWidth: 38,
+      }}
+    >
+      <span
+        className="text-caption font-semibold leading-none"
+        style={{ color: "var(--color-blueberry-600)" }}
+      >
+        {month}
+      </span>
+      <span className="text-callout font-bold leading-tight tabular text-ink">
+        {day}
+      </span>
+    </div>
+  );
+
   if (type === "payment") {
     const youReceived = recipientUserId === currentUserId;
     return (
-      <Link
-        href={`/transactions/${id}`}
-        className="flex items-center gap-3 px-4 py-3 rounded-xl backdrop-blur-sm transition-all hover:scale-[1.02]"
-        style={{
-          background: 'linear-gradient(135deg, rgba(255,255,255,0.25) 0%, rgba(248,250,252,0.15) 100%)',
-          border: '1px solid rgba(176,176,176,0.2)',
-          boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03), 0 4px 8px rgba(0,0,0,0.02)'
-        }}
-      >
-        {/* Calendar-style date */}
-        <div className="flex flex-col items-center justify-center rounded-lg px-2 py-1 shrink-0" style={{
-          background: 'linear-gradient(135deg, rgba(58,133,197,0.1) 0%, rgba(58,133,197,0.05) 100%)',
-          border: '1px solid rgba(58,133,197,0.2)'
-        }}>
-          <span className="text-[10px] font-semibold text-[var(--primary)] leading-none">{month}</span>
-          <span className="text-sm font-bold text-gray-900 leading-tight">{day}</span>
-        </div>
-        <span className="text-lg shrink-0">💸</span>
+      <Link href={`/transactions/${id}`} className={rowClass} style={rowShadow}>
+        {dateChip}
+        <span className="text-title2 shrink-0" aria-hidden>
+          💸
+        </span>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-gray-900 truncate">
+          <p className="text-callout font-medium text-ink truncate">
             {youPaid ? "You" : paidByUserName} paid{" "}
             {youReceived ? "you" : recipientName ?? "someone"}
           </p>
-          <p className="text-xs text-gray-400">Payment</p>
+          <p className="text-footnote text-ink-muted">Payment</p>
         </div>
-        <p className={`text-sm font-semibold ${
-          youReceived ? "text-[var(--success)]" : youPaid ? "text-[var(--danger)]" : "text-gray-500"
-        }`}>
+        <p
+          className="text-callout font-semibold tabular"
+          style={{
+            color: youReceived
+              ? "var(--color-positive)"
+              : youPaid
+              ? "var(--color-negative)"
+              : "var(--color-ink-muted)",
+          }}
+        >
           ${totalAmount.toFixed(2)}
         </p>
       </Link>
@@ -78,37 +103,28 @@ export default function TransactionCard({
   }
 
   return (
-    <Link
-      href={`/transactions/${id}`}
-      className="flex items-center gap-3 px-4 py-3 rounded-xl backdrop-blur-sm transition-all hover:scale-[1.02]"
-      style={{
-        background: 'linear-gradient(135deg, rgba(255,255,255,0.25) 0%, rgba(248,250,252,0.15) 100%)',
-        border: '1px solid rgba(176,176,176,0.2)',
-        boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03), 0 4px 8px rgba(0,0,0,0.02)'
-      }}
-    >
-      {/* Calendar-style date */}
-      <div className="flex flex-col items-center justify-center rounded-lg px-2 py-1 shrink-0" style={{
-        background: 'linear-gradient(135deg, rgba(58,133,197,0.1) 0%, rgba(58,133,197,0.05) 100%)',
-        border: '1px solid rgba(58,133,197,0.2)'
-      }}>
-        <span className="text-[10px] font-semibold text-[var(--primary)] leading-none">{month}</span>
-        <span className="text-sm font-bold text-gray-900 leading-tight">{day}</span>
-      </div>
+    <Link href={`/transactions/${id}`} className={rowClass} style={rowShadow}>
+      {dateChip}
       <UserAvatar name={paidByUserName} size="sm" />
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-gray-900 truncate">{title}</p>
-        <p className="text-xs text-gray-400">
-          {youPaid ? "You paid" : `${paidByUserName} paid`} · ${totalAmount.toFixed(2)}
+        <p className="text-callout font-medium text-ink truncate">{title}</p>
+        <p className="text-footnote text-ink-muted">
+          {youPaid ? "You paid" : `${paidByUserName} paid`} ·{" "}
+          <span className="tabular">${totalAmount.toFixed(2)}</span>
         </p>
       </div>
-      <div className="text-right">
-        <p className={`text-sm font-semibold ${
-          youPaid ? "text-[var(--success)]" : "text-[var(--danger)]"
-        }`}>
+      <div className="text-right shrink-0">
+        <p
+          className="text-callout font-semibold tabular"
+          style={{
+            color: youPaid
+              ? "var(--color-positive)"
+              : "var(--color-negative)",
+          }}
+        >
           {youPaid ? "+" : ""}${userShare.toFixed(2)}
         </p>
-        <p className="text-xs text-gray-400">
+        <p className="text-caption text-ink-muted">
           {youPaid ? "your payment" : "your share"}
         </p>
       </div>

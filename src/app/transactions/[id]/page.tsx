@@ -79,11 +79,11 @@ export default function TransactionDetailPage() {
   if (!tx) {
     return (
       <main className="min-h-dvh flex items-center justify-center p-4">
-        <p className="text-sm text-red-600">{error || "Transaction not found"}</p>
+        <p className="text-sm text-negative">{error || "Transaction not found"}</p>
         {error && (
           <button
             onClick={() => window.location.reload()}
-            className="mt-3 px-4 py-2 text-sm font-medium text-[var(--primary)] border border-[var(--primary)] rounded-lg hover:bg-blue-50"
+            className="mt-3 px-4 py-2 text-sm font-medium text-[var(--primary)] border border-[var(--primary)] rounded-lg hover:bg-blueberry-100"
           >
             Try again
           </button>
@@ -102,25 +102,25 @@ export default function TransactionDetailPage() {
       {/* Back */}
       <button
         onClick={() => router.back()}
-        className="text-sm text-gray-500 hover:text-gray-700 mb-4 block"
+        className="text-sm text-ink-muted hover:text-ink mb-4 block"
       >
         ← Back
       </button>
 
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-xl font-bold text-gray-900">
+        <h1 className="text-xl font-bold text-ink">
           {isPayment && <span className="mr-1.5">💸</span>}
           {tx.title}
         </h1>
         <div className="flex items-center gap-2 mt-1">
-          <span className="text-xs text-gray-400">
+          <span className="text-xs text-ink-muted">
             {new Date(tx.transactionDate).toLocaleDateString("en-US", {
               weekday: "short", month: "short", day: "numeric", year: "numeric",
             })}
           </span>
-          <span className="text-xs text-gray-300">·</span>
-          <span className="text-xs text-gray-400">
+          <span className="text-xs text-ink-muted">·</span>
+          <span className="text-xs text-ink-muted">
             {isPayment
               ? `${isPayer ? "You" : tx.paidByUser?.name ?? "Someone"} paid ${
                   tx.participants?.[0]?.user.id === user?.id
@@ -136,12 +136,12 @@ export default function TransactionDetailPage() {
       {tx.items && tx.items.length > 0 && (
         <div className="rounded-xl overflow-hidden mb-4 backdrop-blur-sm"
              style={{
-               background: 'linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(248,250,252,0.25) 100%)',
-               border: '1px solid rgba(176,176,176,0.2)',
-               boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03), 0 4px 8px rgba(0,0,0,0.02)'
+               background: 'var(--color-surface)',
+               border: '1px solid var(--color-hairline)',
+               boxShadow: '0 1px 2px color-mix(in srgb, var(--color-blueberry-900) 5%, transparent)'
              }}>
-          <div className="px-4 py-2.5 border-b border-[var(--border)] bg-gray-50/80">
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Items</h2>
+          <div className="px-4 py-2.5 border-b border-[var(--border)] bg-canvas/80">
+            <h2 className="text-xs font-semibold text-ink-muted uppercase tracking-wider">Items</h2>
           </div>
           <div className="divide-y divide-[var(--border)]">
             {tx.items.map((item: any, i: number) => {
@@ -152,13 +152,13 @@ export default function TransactionDetailPage() {
               return (
                 <div key={i} className="px-4 py-3">
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-900 font-medium">
+                    <span className="text-ink font-medium">
                       {item.name}
                       {item.quantity > 1 && (
-                        <span className="text-gray-400"> ×{item.quantity}</span>
+                        <span className="text-ink-muted"> ×{item.quantity}</span>
                       )}
                     </span>
-                    <span className="font-mono text-gray-700">
+                    <span className="font-mono text-ink">
                       ${item.price.toFixed(2)}
                     </span>
                   </div>
@@ -168,11 +168,11 @@ export default function TransactionDetailPage() {
                       {itemAssignments.map((a: any) => (
                         <span
                           key={a.id}
-                          className="inline-flex items-center gap-1 text-[11px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full"
+                          className="inline-flex items-center gap-1 text-[11px] text-ink-muted bg-canvas px-2 py-0.5 rounded-full"
                         >
                           <UserAvatar name={a.userName} size="sm" />
                           {a.userName.split(" ")[0]}
-                          <span className="font-mono text-gray-400">
+                          <span className="font-mono text-ink-muted">
                             ${a.shareAmount.toFixed(2)}
                           </span>
                         </span>
@@ -190,36 +190,36 @@ export default function TransactionDetailPage() {
       {tx.participants && tx.participants.length > 0 && (
         <div className="rounded-xl overflow-hidden mb-4 backdrop-blur-sm"
              style={{
-               background: 'linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(248,250,252,0.25) 100%)',
-               border: '1px solid rgba(176,176,176,0.2)',
-               boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03), 0 4px 8px rgba(0,0,0,0.02)'
+               background: 'var(--color-surface)',
+               border: '1px solid var(--color-hairline)',
+               boxShadow: '0 1px 2px color-mix(in srgb, var(--color-blueberry-900) 5%, transparent)'
              }}>
-          <div className="px-4 py-2.5 border-b border-[var(--border)] bg-gray-50/80">
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Split</h2>
+          <div className="px-4 py-2.5 border-b border-[var(--border)] bg-canvas/80">
+            <h2 className="text-xs font-semibold text-ink-muted uppercase tracking-wider">Split</h2>
           </div>
           <div className="divide-y divide-[var(--border)]">
             {tx.participants.map((p: any) => (
-              <div key={p.user.id} className="px-4 py-2.5 flex items-center justify-between backdrop-blur-sm" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.15) 0%, rgba(248,250,252,0.08) 100%)' }}>
+              <div key={p.user.id} className="px-4 py-2.5 flex items-center justify-between backdrop-blur-sm" style={{ background: 'var(--color-surface)' }}>
                 <div className="flex items-center gap-2">
                   <UserAvatar name={p.user.name} size="sm" />
-                  <span className="text-sm text-gray-700">
+                  <span className="text-sm text-ink">
                     {p.user.name}
                     {p.user.id === tx.paidByUserId && (
-                      <span className="ml-1.5 text-[10px] text-[var(--primary)] bg-blue-50 px-1.5 py-0.5 rounded-full font-medium">
+                      <span className="ml-1.5 text-[10px] text-[var(--primary)] bg-blueberry-100 px-1.5 py-0.5 rounded-full font-medium">
                         paid
                       </span>
                     )}
                   </span>
                 </div>
-                <span className="text-sm font-mono font-medium text-gray-900">
+                <span className="text-sm font-mono font-medium text-ink">
                   ${p.shareAmount.toFixed(2)}
                 </span>
               </div>
             ))}
           </div>
-          <div className="px-4 py-2.5 border-t border-[var(--border)] flex justify-between backdrop-blur-sm" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.2) 0%, rgba(248,250,252,0.12) 100%)' }}>
-            <span className="text-sm font-semibold text-gray-700">Total</span>
-            <span className="text-sm font-mono font-bold text-gray-900">${tx.totalAmount.toFixed(2)}</span>
+          <div className="px-4 py-2.5 border-t border-[var(--border)] flex justify-between backdrop-blur-sm" style={{ background: 'var(--color-surface)' }}>
+            <span className="text-sm font-semibold text-ink">Total</span>
+            <span className="text-sm font-mono font-bold text-ink">${tx.totalAmount.toFixed(2)}</span>
           </div>
         </div>
       )}
@@ -229,11 +229,11 @@ export default function TransactionDetailPage() {
         {youOwe && tx.groupId && (
           <a
             href={`/payments/new?groupId=${tx.groupId}&toUserId=${tx.paidByUserId}&amount=${tx.userShare}`}
-            className="block w-full px-4 py-2.5 text-center text-sm font-semibold text-white rounded-xl backdrop-blur-sm transition-all hover:scale-[1.02]"
+            className="block w-full px-4 py-2.5 text-center text-sm font-semibold text-white rounded-xl backdrop-blur-sm pressable"
             style={{
-              background: 'linear-gradient(135deg, rgba(58,133,197,0.9) 0%, rgba(42,107,165,0.85) 100%)',
-              border: '1px solid rgba(58,133,197,0.4)',
-              boxShadow: '0 2px 4px rgba(58,133,197,0.2), 0 4px 8px rgba(58,133,197,0.15), 0 1px 2px rgba(0,0,0,0.05)'
+              background: 'var(--color-blueberry-600)',
+              border: '1px solid var(--color-blueberry-700)',
+              boxShadow: '0 2px 6px color-mix(in srgb, var(--color-blueberry-900) 22%, transparent), 0 1px 2px rgba(0,0,0,0.05)'
             }}
           >
             💸 Pay {tx.paidByUser?.name ?? "them"} back ${tx.userShare.toFixed(2)}
@@ -241,11 +241,11 @@ export default function TransactionDetailPage() {
         )}
         <button
           onClick={() => setShowDeleteDialog(true)}
-          className="w-full px-4 py-2.5 text-sm font-medium text-[var(--danger)] rounded-xl backdrop-blur-sm transition-all hover:scale-[1.02]"
+          className="w-full px-4 py-2.5 text-sm font-medium text-[var(--danger)] rounded-xl backdrop-blur-sm pressable"
           style={{
             border: '1px solid rgba(197,66,58,0.3)',
             background: 'linear-gradient(135deg, rgba(197,66,58,0.08) 0%, rgba(197,66,58,0.04) 100%)',
-            boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03)'
+            boxShadow: '0 1px 2px color-mix(in srgb, var(--color-blueberry-900) 5%, transparent)'
           }}
         >
           Delete transaction

@@ -55,18 +55,18 @@ export default function FriendsPage() {
   if (!user) {
     return (
       <main className="min-h-dvh flex items-center justify-center p-4">
-        <p className="text-sm text-gray-500">Please select a user from the home page first.</p>
+        <p className="text-sm text-ink-muted">Please select a user from the home page first.</p>
       </main>
     );
   }
 
   return (
     <main className="min-h-dvh px-4 pt-6 pb-24 max-w-lg mx-auto">
-      <h1 className="text-xl font-bold text-gray-900 mb-6">Friends</h1>
+      <h1 className="text-xl font-bold text-ink mb-6">Friends</h1>
 
       {/* Error banner */}
       {error && (
-        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+        <div className="mb-4 px-4 py-3 bg-negative-tint border border-negative-soft rounded-xl text-sm text-negative">
           ⚠ {error}
         </div>
       )}
@@ -78,7 +78,7 @@ export default function FriendsPage() {
       ) : (
         <div className="space-y-2">
           {friends.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-8">No friends yet</p>
+            <p className="text-sm text-ink-muted text-center py-8">No friends yet</p>
           ) : (
             friends.map((friend) => {
               const isPositive = friend.balance >= 0;
@@ -86,16 +86,16 @@ export default function FriendsPage() {
                 <Link
                   key={friend.id}
                   href={`/transactions?with=${friend.id}`}
-                  className="flex items-center gap-3 px-4 py-3 bg-[var(--card)] border border-[var(--border)] rounded-xl hover:bg-gray-50 transition-colors"
+                  className="flex items-center gap-3 px-4 py-3 bg-[var(--card)] border border-[var(--border)] rounded-xl hover:bg-canvas transition-colors"
                 >
                   <UserAvatar name={friend.name} size="sm" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900">{friend.name}</p>
-                    <p className="text-xs text-gray-400">{friend.email}</p>
+                    <p className="text-sm font-medium text-ink">{friend.name}</p>
+                    <p className="text-xs text-ink-muted">{friend.email}</p>
                   </div>
                   <div className="text-right">
                     {friend.balance === 0 ? (
-                      <p className="text-xs text-gray-400">Settled</p>
+                      <p className="text-xs text-ink-muted">Settled</p>
                     ) : (
                       <>
                         <p className={`text-sm font-semibold ${
@@ -103,7 +103,7 @@ export default function FriendsPage() {
                         }`}>
                           {isPositive ? "+" : "-"}${Math.abs(friend.balance).toFixed(2)}
                         </p>
-                        <p className="text-[10px] text-gray-400">
+                        <p className="text-[10px] text-ink-muted">
                           {isPositive ? "owes you" : "you owe"}
                         </p>
                       </>

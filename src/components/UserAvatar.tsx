@@ -5,10 +5,32 @@ interface UserAvatarProps {
 }
 
 const sizeMap = {
-  sm: "w-7 h-7 text-xs",
-  md: "w-9 h-9 text-sm",
-  lg: "w-12 h-12 text-base",
+  sm: "w-7 h-7 text-caption",
+  md: "w-9 h-9 text-footnote",
+  lg: "w-12 h-12 text-callout",
 };
+
+/** Token-derived avatar tones, muted to sit on cream. Exported because the
+ *  split bar and the assigner's tally strip color by person, so callers need
+ *  the same hash → color mapping. */
+export const AVATAR_TONES = [
+  "var(--color-avatar-1)",
+  "var(--color-avatar-2)",
+  "var(--color-avatar-3)",
+  "var(--color-avatar-4)",
+  "var(--color-avatar-5)",
+  "var(--color-avatar-6)",
+  "var(--color-avatar-7)",
+  "var(--color-avatar-8)",
+];
+
+/** Stable per-name tone. Same hash the component uses. */
+export function avatarTone(name: string): string {
+  const i =
+    name.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0) %
+    AVATAR_TONES.length;
+  return AVATAR_TONES[i];
+}
 
 /**
  * Avatar circle with initials fallback (no image loading needed).
@@ -21,16 +43,10 @@ export default function UserAvatar({ name, size = "md", className = "" }: UserAv
     .toUpperCase()
     .slice(0, 2);
 
-  // Generate a consistent color from the name
-  const colors = [
-    "bg-blue-500", "bg-emerald-500", "bg-violet-500", "bg-amber-500",
-    "bg-rose-500", "bg-cyan-500", "bg-fuchsia-500", "bg-lime-500",
-  ];
-  const colorIndex = name.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0) % colors.length;
-
   return (
     <div
-      className={`${sizeMap[size]} ${colors[colorIndex]} rounded-full flex items-center justify-center text-white font-semibold shrink-0 ${className}`}
+      className={`${sizeMap[size]} rounded-full flex items-center justify-center text-white font-semibold shrink-0 ${className}`}
+      style={{ background: avatarTone(name) }}
       title={name}
     >
       {initials}

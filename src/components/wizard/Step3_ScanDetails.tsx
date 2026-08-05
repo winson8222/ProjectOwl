@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ScanDiagram } from "./TypeDiagrams";
 
 interface Step3_ScanDetailsProps {
   title: string;
@@ -37,26 +38,36 @@ export default function Step3_ScanDetails({
 
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-bold text-gray-900 text-center mb-6">
-        Name this expense
-      </h2>
+      <h2 className="text-title2 font-bold text-ink mb-6">Name this expense</h2>
 
-      {/* Pre-filled amount indicator */}
+      {/* What ItreAI read off the receipt */}
       <div
-        className="rounded-2xl p-4 mb-4 backdrop-blur-sm"
+        className="rounded-[14px] p-4 mb-5"
         style={{
-          background: 'linear-gradient(135deg, rgba(16,185,129,0.1) 0%, rgba(20,184,166,0.05) 100%)',
-          border: '1px solid rgba(16,185,129,0.2)'
+          background: "var(--color-blueberry-100)",
+          border: "1px solid var(--color-hairline)",
         }}
       >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">📷</span>
-            <div>
-              <div className="text-xs text-gray-500">Amount from receipt</div>
-              <div className="text-lg font-bold text-emerald-700">
-                ${amount && amount > 0 ? amount.toFixed(2) : "0.00"}
-              </div>
+        <div className="flex items-center gap-3">
+          <span
+            className="shrink-0 flex items-center justify-center rounded-[10px] text-white"
+            style={{
+              width: 48,
+              height: 48,
+              background: "var(--color-blueberry-600)",
+            }}
+          >
+            <ScanDiagram />
+          </span>
+          <div>
+            <div className="text-footnote text-ink-muted">
+              Total read from your receipt
+            </div>
+            <div
+              className="text-title1 font-bold tabular"
+              style={{ color: "var(--color-blueberry-600)" }}
+            >
+              ${amount && amount > 0 ? amount.toFixed(2) : "0.00"}
             </div>
           </div>
         </div>
@@ -65,11 +76,11 @@ export default function Step3_ScanDetails({
       {/* Title */}
       <div className="rounded-xl p-4 backdrop-blur-sm"
            style={{
-             background: 'linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(248,250,252,0.25) 100%)',
-             border: '1px solid rgba(176,176,176,0.2)',
-             boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03)'
+             background: 'var(--color-surface)',
+             border: '1px solid var(--color-hairline)',
+             boxShadow: '0 1px 2px color-mix(in srgb, var(--color-blueberry-900) 5%, transparent)'
            }}>
-        <label className="text-sm font-medium text-gray-700 block mb-2">What was it for?</label>
+        <label className="text-sm font-medium text-ink block mb-2">What was it for?</label>
         <input
           type="text"
           value={title}
@@ -82,11 +93,11 @@ export default function Step3_ScanDetails({
       {/* Date */}
       <div className="rounded-xl p-4 backdrop-blur-sm"
            style={{
-             background: 'linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(248,250,252,0.25) 100%)',
-             border: '1px solid rgba(176,176,176,0.2)',
-             boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03)'
+             background: 'var(--color-surface)',
+             border: '1px solid var(--color-hairline)',
+             boxShadow: '0 1px 2px color-mix(in srgb, var(--color-blueberry-900) 5%, transparent)'
            }}>
-        <label className="text-sm font-medium text-gray-700 block mb-2">Date</label>
+        <label className="text-sm font-medium text-ink block mb-2">Date</label>
         <input
           type="date"
           value={date}
@@ -99,11 +110,11 @@ export default function Step3_ScanDetails({
       {groups.length > 0 && (
         <div className="rounded-xl p-4 backdrop-blur-sm"
              style={{
-               background: 'linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(248,250,252,0.25) 100%)',
-               border: '1px solid rgba(176,176,176,0.2)',
-               boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03)'
+               background: 'var(--color-surface)',
+               border: '1px solid var(--color-hairline)',
+               boxShadow: '0 1px 2px color-mix(in srgb, var(--color-blueberry-900) 5%, transparent)'
              }}>
-          <label className="text-sm font-medium text-gray-700 block mb-2">Group</label>
+          <label className="text-sm font-medium text-ink block mb-2">Group</label>
           <select
             value={selectedGroupId}
             onChange={(e) => setSelectedGroupId(e.target.value)}
@@ -121,7 +132,7 @@ export default function Step3_ScanDetails({
 
       {/* Error */}
       {error && (
-        <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+        <div className="px-4 py-3 bg-negative-tint border border-negative-soft rounded-xl text-sm text-negative">
           ⚠ {error}
         </div>
       )}
@@ -130,10 +141,10 @@ export default function Step3_ScanDetails({
       <div className="flex gap-3 pt-4">
         <button
           onClick={onBack}
-          className="flex-1 px-4 py-3 text-sm font-medium text-gray-600 rounded-xl backdrop-blur-sm transition-all"
+          className="flex-1 px-4 py-3 text-sm font-medium text-ink-muted rounded-xl backdrop-blur-sm transition-all"
           style={{
-            border: '1px solid rgba(176,176,176,0.2)',
-            background: 'linear-gradient(135deg, rgba(255,255,255,0.3) 0%, rgba(248,250,252,0.2) 100%)'
+            border: '1px solid var(--color-hairline)',
+            background: 'var(--color-surface)'
           }}
         >
           ← Back
@@ -150,11 +161,11 @@ export default function Step3_ScanDetails({
           className="flex-1 px-4 py-3 text-sm font-semibold text-white rounded-xl backdrop-blur-sm transition-all disabled:opacity-50"
           style={{
             background: isValid
-              ? 'linear-gradient(135deg, rgba(58,133,197,0.9) 0%, rgba(42,107,165,0.85) 100%)'
-              : 'linear-gradient(135deg, rgba(176,176,176,0.3) 0%, rgba(176,176,176,0.2) 100%)',
-            border: '1px solid rgba(58,133,197,0.4)',
+              ? 'var(--color-blueberry-600)'
+              : 'var(--color-hairline)',
+            border: '1px solid var(--color-blueberry-700)',
             boxShadow: isValid
-              ? '0 2px 4px rgba(58,133,197,0.2), 0 4px 8px rgba(58,133,197,0.15)'
+              ? '0 2px 6px color-mix(in srgb, var(--color-blueberry-900) 22%, transparent)'
               : 'none'
           }}
         >

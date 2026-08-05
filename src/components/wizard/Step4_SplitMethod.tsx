@@ -27,10 +27,8 @@ export default function Step4_SplitMethod({
   onBack
 }: Step4_SplitMethodProps) {
   return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-bold text-gray-900 text-center mb-6">
-        How should we split this?
-      </h2>
+    <div>
+      <h2 className="text-title2 font-bold text-ink mb-6">How should we split it?</h2>
 
       <SplitInput
         participants={participants}
@@ -42,27 +40,24 @@ export default function Step4_SplitMethod({
       />
 
       {/* Navigation */}
-      <div className="flex gap-3 pt-4">
+      <div className="flex gap-3 pt-7">
         <button
           onClick={onBack}
-          className="flex-1 px-4 py-3 text-sm font-medium text-gray-600 rounded-xl backdrop-blur-sm transition-all"
+          className="pressable px-5 rounded-[12px] text-body font-medium text-ink"
           style={{
-            border: '1px solid rgba(176,176,176,0.2)',
-            background: 'linear-gradient(135deg, rgba(255,255,255,0.3) 0%, rgba(248,250,252,0.2) 100%)'
+            minHeight: 50,
+            background: "var(--color-surface)",
+            border: "1px solid var(--color-hairline)",
           }}
         >
-          ← Back
+          Back
         </button>
         <button
           onClick={onNext}
-          className="flex-1 px-4 py-3 text-sm font-semibold text-white rounded-xl backdrop-blur-sm transition-all"
-          style={{
-            background: 'linear-gradient(135deg, rgba(58,133,197,0.9) 0%, rgba(42,107,165,0.85) 100%)',
-            border: '1px solid rgba(58,133,197,0.4)',
-            boxShadow: '0 2px 4px rgba(58,133,197,0.2), 0 4px 8px rgba(58,133,197,0.15)'
-          }}
+          className="pressable flex-1 rounded-[12px] text-body font-semibold text-white"
+          style={{ minHeight: 50, background: "var(--color-blueberry-600)" }}
         >
-          Review →
+          Review
         </button>
       </div>
     </div>

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import UserAvatar from "@/components/UserAvatar";
 import ErrorDialog from "@/components/ErrorDialog";
+import SettledOverlay from "@/components/SettledOverlay";
 import { getSessionUser } from "@/lib/session";
 
 /**
@@ -16,6 +17,7 @@ export default function SettleUpPage() {
   const [error, setError] = useState<string | null>(null);
   const [settling, setSettling] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [celebrating, setCelebrating] = useState(false);
   const [dialogError, setDialogError] = useState<{ title: string; message: string } | null>(null);
 
   useEffect(() => {
@@ -48,9 +50,18 @@ export default function SettleUpPage() {
 
       const json = await response.json();
       if (json.success) {
-        setMessage(`Marked as paid!`);
-        // Reload to refresh balances
-        setTimeout(() => window.location.reload(), 1500);
+        // Was this the last outstanding line on either side? If so everything
+        // across every group is clear — the rarer, bigger moment.
+        const openLines = (balance?.perPerson ?? []).filter(
+          (p: any) => Math.abs(p.amount) > 0.005
+        ).length;
+        if (openLines <= 1) {
+          setCelebrating(true);
+          setTimeout(() => window.location.reload(), 2200);
+        } else {
+          setMessage("Marked as paid");
+          setTimeout(() => window.location.reload(), 1500);
+        }
       } else {
         setDialogError({
           title: "Payment failed",
@@ -65,12 +76,12 @@ export default function SettleUpPage() {
     } finally {
       setSettling(null);
     }
-  }, []);
+  }, [balance]);
 
   if (!user) {
     return (
       <main className="min-h-dvh flex items-center justify-center p-4">
-        <p className="text-sm text-gray-500">Please select a user from the home page first.</p>
+        <p className="text-sm text-ink-muted">Please select a user from the home page first.</p>
       </main>
     );
   }
@@ -83,6 +94,15 @@ export default function SettleUpPage() {
     );
   }
 
+  if (celebrating) {
+    return (
+      <SettledOverlay
+        title="All square"
+        detail="Nothing outstanding with anyone"
+      />
+    );
+  }
+
   // Compute pay/owe lists
   const youOwe = balance?.perPerson?.filter((p: any) => p.amount < 0) ?? [];
   const owedToYou = balance?.perPerson?.filter((p: any) => p.amount > 0) ?? [];
@@ -91,14 +111,14 @@ export default function SettleUpPage() {
     <main className="min-h-dvh px-4 pt-6 max-w-lg mx-auto content-with-floating-nav">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Settle Up</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Who pays who</p>
+          <h1 className="text-xl font-bold text-ink">Settle Up</h1>
+          <p className="text-sm text-ink-muted mt-0.5">Who pays who</p>
         </div>
       </div>
 
       {/* Error banner */}
       {error && (
-        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+        <div className="mb-4 px-4 py-3 bg-negative-tint border border-negative-soft rounded-xl text-sm text-negative">
           ⚠ {error}
         </div>
       )}
@@ -108,13 +128,13 @@ export default function SettleUpPage() {
         <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 mb-6">
           <div className="flex justify-between items-center">
             <div>
-              <p className="text-xs text-gray-400">You get paid</p>
+              <p className="text-xs text-ink-muted">You get paid</p>
               <p className="text-lg font-bold text-[var(--success)]">
                 +${balance.totalOwed.toFixed(2)}
               </p>
             </div>
             <div className="text-right">
-              <p className="text-xs text-gray-400">You pay</p>
+              <p className="text-xs text-ink-muted">You pay</p>
               <p className="text-lg font-bold text-[var(--danger)]">
                 -${balance.totalOwe.toFixed(2)}
               </p>
@@ -124,7 +144,7 @@ export default function SettleUpPage() {
       )}
 
       {message && (
-        <div className="mb-4 px-4 py-2 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
+        <div className="mb-4 px-4 py-2 bg-positive-tint border border-positive-soft rounded-lg text-sm text-positive">
           {message}
         </div>
       )}
@@ -132,7 +152,7 @@ export default function SettleUpPage() {
       {/* People who owe you */}
       {owedToYou.length > 0 && (
         <div className="mb-6">
-          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+          <h2 className="text-xs font-semibold text-ink-muted uppercase tracking-wider mb-3">
             Owes you
           </h2>
           <div className="space-y-2">
@@ -143,7 +163,7 @@ export default function SettleUpPage() {
               >
                 <UserAvatar name={p.user.name} size="sm" />
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-900">{p.user.name}</p>
+                  <p className="text-sm font-medium text-ink">{p.user.name}</p>
                   <p className="text-xs text-[var(--success)]">
                     owes you ${Math.abs(p.amount).toFixed(2)}
                   </p>
@@ -164,7 +184,7 @@ export default function SettleUpPage() {
       {/* People you owe */}
       {youOwe.length > 0 && (
         <div className="mb-6">
-          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+          <h2 className="text-xs font-semibold text-ink-muted uppercase tracking-wider mb-3">
             You owe
           </h2>
           <div className="space-y-2">
@@ -175,7 +195,7 @@ export default function SettleUpPage() {
               >
                 <UserAvatar name={p.user.name} size="sm" />
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-900">{p.user.name}</p>
+                  <p className="text-sm font-medium text-ink">{p.user.name}</p>
                   <p className="text-xs text-[var(--danger)]">
                     you owe ${Math.abs(p.amount).toFixed(2)}
                   </p>
@@ -197,8 +217,8 @@ export default function SettleUpPage() {
       {owedToYou.length === 0 && youOwe.length === 0 && (
         <div className="text-center py-12">
           <p className="text-3xl mb-2">✅</p>
-          <p className="text-sm text-gray-500 font-medium">All settled up!</p>
-          <p className="text-xs text-gray-400 mt-1">No outstanding balances</p>
+          <p className="text-sm text-ink-muted font-medium">All settled up!</p>
+          <p className="text-xs text-ink-muted mt-1">No outstanding balances</p>
         </div>
       )}
 

@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import ReceiptUploader from "@/components/ReceiptUploader";
-import LoadingOverlay from "@/components/LoadingOverlay";
+import ScanLoader from "@/components/ScanLoader";
 import ReceiptResult from "@/components/ReceiptResult";
 import ErrorAlert from "@/components/ErrorAlert";
 import type {
@@ -67,8 +67,8 @@ export default function ScanPage() {
     <main className="min-h-dvh flex flex-col items-center px-4 py-8">
       {/* Header */}
       <div className="w-full max-w-md mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">Scan Receipt</h1>
-        <p className="text-sm text-gray-500 mt-1">
+        <h1 className="text-2xl font-bold text-ink">Scan Receipt</h1>
+        <p className="text-sm text-ink-muted mt-1">
           Upload a photo of your receipt and we&apos;ll extract the items for you.
         </p>
       </div>
@@ -93,7 +93,7 @@ export default function ScanPage() {
             onClick={handleRetry}
             className="w-full max-w-md mx-auto block px-4 py-2.5 text-sm font-medium
                        text-[var(--primary)] border border-[var(--primary)] rounded-lg
-                       hover:bg-blue-50 transition-colors"
+                       hover:bg-blueberry-100 transition-colors"
           >
             Scan another receipt
           </button>
@@ -101,7 +101,7 @@ export default function ScanPage() {
       )}
 
       {/* Loading overlay */}
-      {status === "uploading" && <LoadingOverlay />}
+      {status === "uploading" && <ScanLoader />}
     </main>
   );
 }
