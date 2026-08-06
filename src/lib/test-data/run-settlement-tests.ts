@@ -7,9 +7,10 @@
  * needed — used by both the CLI (`npm run test:settlement`) and the debug
  * API endpoint.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
-import { migrate } from "drizzle-orm/pglite/migrator";
 import { sql } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { getBalance } from "../actions/balances";
@@ -38,11 +39,65 @@ export interface SuiteResult {
 
 type TestDb = ReturnType<typeof drizzle<typeof schema>>;
 
+/**
+ * Apply the real migrations, one statement at a time.
+ *
+ * We can't use drizzle's `migrate()` here. It splits a migration file on
+ * `--> statement-breakpoint` markers and sends each chunk as a single prepared
+ * statement — but `0004_enable_rls.sql` is hand-written and has no markers, so
+ * its 28 CREATE POLICY statements arrive as one command and Postgres rejects
+ * them with "cannot insert multiple commands into a prepared statement"
+ * (42601). That killed the suite at migration time, before any fixture ran.
+ *
+ * Adding markers to the migration would change its hash, and drizzle keys
+ * applied migrations by hash — already-migrated environments would treat it as
+ * new, re-run it, and fail on "policy already exists". So the fix lives here in
+ * test infrastructure and the migration files stay byte-identical.
+ */
+async function applyMigrations(client: PGlite) {
+  const journal = JSON.parse(
+    readFileSync(join("drizzle", "meta", "_journal.json"), "utf8")
+  ) as { entries: { tag: string }[] };
+
+  for (const { tag } of journal.entries) {
+    const sqlText = readFileSync(join("drizzle", `${tag}.sql`), "utf8");
+
+    const statements = sqlText
+      .split("--> statement-breakpoint")
+      .flatMap((chunk) => chunk.split(";"))
+      // Drop comment-only lines and blank fragments left by the split.
+      .map((s) =>
+        s
+          .split("\n")
+          .filter((line) => !line.trim().startsWith("--"))
+          .join("\n")
+          .trim()
+      )
+      .filter((s) => s.length > 0);
+
+    for (const statement of statements) {
+      await client.exec(statement);
+    }
+  }
+}
+
 /** Create a fresh in-memory database and apply the real migrations. */
 async function createTestDb() {
   const client = new PGlite(); // in-memory, nothing touches disk
+
+  // The RLS policies call auth.uid(), which Supabase provides and vanilla
+  // Postgres does not. A stub is enough for the policies to be created; PGlite
+  // runs as superuser and superusers bypass RLS, so none of it is enforced
+  // against the fixtures.
+  await client.exec(`
+    CREATE SCHEMA IF NOT EXISTS auth;
+    CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid
+      LANGUAGE sql STABLE AS 'SELECT NULL::uuid';
+  `);
+
+  await applyMigrations(client);
+
   const db = drizzle(client, { schema });
-  await migrate(db, { migrationsFolder: "drizzle" });
   return { client, db };
 }
 
@@ -50,8 +105,9 @@ async function createTestDb() {
 async function truncateAll(db: TestDb) {
   await db.execute(sql`
     TRUNCATE TABLE
-      activities, item_assignments, participants, transaction_items,
-      transactions, settlements, group_members, groups, friendships, users
+      activities, item_assignments, participants, transaction_payers,
+      transaction_items, transactions, settlements, group_members, groups,
+      friendships, users
     CASCADE
   `);
 }
@@ -88,6 +144,21 @@ async function loadFixture(fixture: SettlementFixture, db: TestDb) {
         transactionId: tx.id,
         userId: p.userId,
         shareAmount: p.shareAmount,
+      });
+    }
+
+    // Payer rows. A fixture without `payers` gets a single full-amount row,
+    // matching what createTransaction writes and what the 0005 migration
+    // backfilled for every pre-multi-payer transaction.
+    const payers = tx.payers ?? [
+      { userId: tx.paidByUserId, amountPaid: tx.totalAmount },
+    ];
+    for (const q of payers) {
+      await db.insert(schema.transactionPayers).values({
+        id: `tp-${tx.id}-${q.userId}`,
+        transactionId: tx.id,
+        userId: q.userId,
+        amountPaid: q.amountPaid,
       });
     }
   }
