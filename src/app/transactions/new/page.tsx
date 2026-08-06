@@ -1,11 +1,11 @@
 "use client";
 
-import AddTransactionWizard from "@/components/AddTransactionWizard";
+import ExpenseComposer from "@/components/ExpenseComposer";
 
 /**
- * Multi-step wizard for adding transactions
- * Replaces the complex single-page form with focused steps
+ * Add an expense — a single compose screen, replacing the old six-step wizard.
+ * Payments are not created here; settle-up is the only door into that flow.
  */
 export default function NewTransactionPage() {
-  return <AddTransactionWizard />;
+  return <ExpenseComposer />;
 }

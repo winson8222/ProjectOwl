@@ -1,6 +1,7 @@
 "use client";
 
 import PaidStamp from "./PaidStamp";
+import Portal from "@/components/Portal";
 
 /**
  * The moment a balance clears: full-screen, stamp thunks down with sparks,
@@ -17,6 +18,7 @@ export default function SettledOverlay({
   detail?: string;
 }) {
   return (
+    <Portal>
     <div
       className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-10 px-8"
       style={{
@@ -38,5 +40,6 @@ export default function SettledOverlay({
         )}
       </div>
     </div>
+    </Portal>
   );
 }

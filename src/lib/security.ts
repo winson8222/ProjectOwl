@@ -15,6 +15,10 @@ import { isNonNegativeMoney } from "./constants";
 export interface TransactionAmountInput {
   totalAmount: unknown;
   participants: { shareAmount: unknown }[];
+  /** Contributions when a bill was split across several payers. Validated for
+   *  the same reason shares are: a negative amountPaid beside a matching
+   *  positive one still sums to the total and would corrupt balances. */
+  payers?: { amountPaid: unknown }[];
   items?: { price: unknown; quantity: unknown }[];
 }
 
@@ -27,6 +31,7 @@ export function transactionAmountsValid(input: TransactionAmountInput): boolean 
   const values: unknown[] = [
     input.totalAmount,
     ...input.participants.map((p) => p.shareAmount),
+    ...(input.payers ?? []).map((p) => p.amountPaid),
     ...(input.items ?? []).flatMap((i) => [i.price, i.quantity]),
   ];
   return values.every(isNonNegativeMoney);

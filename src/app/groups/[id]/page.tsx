@@ -29,7 +29,6 @@ export default function GroupDetailPage() {
 
   const [showMembers, setShowMembers] = useState(false);
   const [showBalances, setShowBalances] = useState(false);
-  const [fabOpen, setFabOpen] = useState(false);
 
   const loadData = useCallback((currentUser: any) => {
     fetch(`/api/groups/${groupId}?userId=${currentUser.id}`)
@@ -247,42 +246,23 @@ export default function GroupDetailPage() {
         )}
       </div>
 
-      {/* Floating add button — opens a choice: new expense or record a payment */}
-      {fabOpen && (
-        <div
-          className="fixed inset-0 bg-black/20 z-30"
-          onClick={() => setFabOpen(false)}
-          aria-hidden
-        />
-      )}
-      <div className="fixed bottom-24 right-5 z-30 flex flex-col items-end gap-3">
-        {fabOpen && (
-          <>
-            <Link
-              href={`/payments/new?groupId=${groupId}`}
-              className="flex items-center gap-2 px-4 py-3 bg-blueberry-600 text-white rounded-full shadow-lg text-sm font-semibold hover:bg-blueberry-700 transition-colors"
-            >
-              💸 Record a payment
-            </Link>
-            <Link
-              href={`/transactions/new?groupId=${groupId}`}
-              className="flex items-center gap-2 px-4 py-3 bg-[var(--primary)] text-white rounded-full shadow-lg text-sm font-semibold hover:bg-[var(--primary-hover)] transition-colors"
-            >
-              🧾 New transaction
-            </Link>
-          </>
-        )}
-        <button
-          onClick={() => setFabOpen((o) => !o)}
-          className={`w-14 h-14 bg-[var(--primary)] text-white rounded-full flex items-center justify-center text-3xl font-light shadow-lg hover:bg-[var(--primary-hover)] transition-transform ${
-            fabOpen ? "rotate-45" : ""
-          }`}
-          aria-label={fabOpen ? "Close add menu" : "Add transaction or payment"}
-          aria-expanded={fabOpen}
-        >
-          +
-        </button>
-      </div>
+      {/* Floating add button — a single tap to the expense composer.
+          It used to expand into a two-option menu whose second option was
+          "Record a payment". Settle-up is now the only door into the payment
+          flow, so the menu had nothing left to choose between. */}
+      <Link
+        href={`/transactions/new?groupId=${groupId}`}
+        className="pressable fixed right-5 z-30 w-14 h-14 text-white rounded-full flex items-center justify-center text-3xl font-light shadow-lg"
+        style={{
+          bottom: "calc(var(--nav-clearance) + 0.5rem)",
+          background: "var(--color-blueberry-600)",
+          boxShadow:
+            "0 6px 20px color-mix(in srgb, var(--color-blueberry-900) 30%, transparent)",
+        }}
+        aria-label="Add an expense"
+      >
+        +
+      </Link>
 
       {/* Members sheet */}
       {showMembers && (

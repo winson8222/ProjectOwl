@@ -1,0 +1,636 @@
+"use client";
+
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
+import { getSessionUser } from "@/lib/session";
+import { MOCK_SCAN_ENABLED } from "@/lib/debug-config";
+import { MOCK_RECEIPTS } from "@/lib/test-data/allocation-fixtures";
+import CalculatorKeypad from "@/components/CalculatorKeypad";
+import ErrorDialog from "@/components/ErrorDialog";
+import ItemAssigner, { type AssignmentResult } from "@/components/ItemAssigner";
+import ScanLoader from "@/components/ScanLoader";
+import SlothMark from "@/components/SlothMark";
+import UserAvatar from "@/components/UserAvatar";
+import PayerSheet, { type PayerMode } from "@/components/compose/PayerSheet";
+import SplitSheet, { type SplitMode } from "@/components/compose/SplitSheet";
+import { tapLight, tapMedium, tapError } from "@/lib/haptics";
+
+type Overlay = null | "payer" | "split" | "assign";
+
+/**
+ * Add an expense, on one screen.
+ *
+ * Replaces the six-step AddTransactionWizard. Group, description and amount sit
+ * together; who paid and how it's split open as focused overlays and come
+ * straight back. Payments are not creatable here at all — settle-up is the one
+ * door into that flow.
+ *
+ * Overlays rather than routes: /transactions/new is one of four pages mounted
+ * simultaneously inside PageSlider, so child routes would break its index maths
+ * and let you swipe sideways mid-flow.
+ *
+ * The receipt scan is not a separate branch — it's a shortcut to a custom
+ * split. Scan fills the amount and description, you pick who was there, assign
+ * items, and land back on Custom amounts with everyone's share pre-computed and
+ * a per-person breakdown to check it against.
+ */
+export default function ExpenseComposer() {
+  const searchParams = useSearchParams();
+  const queryGroupId = searchParams.get("groupId") || "";
+
+  const [user, setUser] = useState<any>(null);
+  const [groups, setGroups] = useState<any[]>([]);
+
+  // Compose fields
+  const [groupId, setGroupId] = useState(queryGroupId);
+  const [description, setDescription] = useState("");
+  const [amount, setAmount] = useState(0);
+  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  // userId → amount contributed. One entry is the ordinary case; several means
+  // the bill went across multiple cards.
+  const [payers, setPayers] = useState<Record<string, number>>({});
+  const [payerMode, setPayerMode] = useState<PayerMode>("single");
+
+  // Split
+  const [participants, setParticipants] = useState<string[]>([]);
+  const [splitMode, setSplitMode] = useState<SplitMode>("equal");
+  const [splitValues, setSplitValues] = useState<Record<string, number>>({});
+
+  // Scan. `assignment` is held independently of splitMode so toggling the
+  // segmented control can never discard a pass-the-phone session.
+  const [scanItems, setScanItems] = useState<any[]>([]);
+  const [assignment, setAssignment] = useState<AssignmentResult | null>(null);
+  const [scanning, setScanning] = useState(false);
+
+  // UI
+  const [overlay, setOverlay] = useState<Overlay>(null);
+  const [keypad, setKeypad] = useState<null | { target: "total" | string }>(null);
+  const [saving, setSaving] = useState(false);
+  const [dialogError, setDialogError] = useState<{ title: string; message: string } | null>(null);
+
+  useEffect(() => {
+    const currentUser = getSessionUser();
+    if (!currentUser) return;
+    setUser(currentUser);
+    // Default: you paid the whole thing. The amount is reconciled to the bill
+    // total whenever it changes (see the effect below).
+    setPayers({ [currentUser.id]: 0 });
+
+    fetch(`/api/groups?userId=${currentUser.id}`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (!json.success) return;
+        setGroups(json.data);
+        if (!queryGroupId && json.data[0]) setGroupId(json.data[0].id);
+      })
+      .catch(() => setGroups([]));
+  }, [queryGroupId]);
+
+  const group = useMemo(
+    () => groups.find((g: any) => g.id === groupId),
+    [groups, groupId]
+  );
+  const members = useMemo(() => group?.members ?? [], [group]);
+
+  // Changing group invalidates people chosen from the previous one.
+  useEffect(() => {
+    setParticipants([]);
+    setSplitValues({});
+    setAssignment(null);
+    setScanItems([]);
+    setSplitMode("equal");
+  }, [groupId]);
+
+  // A lone payer always covers the whole bill, so their contribution tracks the
+  // total automatically. With several payers the amounts are set by hand and
+  // are left alone — reconciliation is surfaced in PayerSheet instead.
+  useEffect(() => {
+    setPayers((prev) => {
+      const ids = Object.keys(prev);
+      if (ids.length !== 1) return prev;
+      if (prev[ids[0]] === amount) return prev;
+      return { [ids[0]]: amount };
+    });
+  }, [amount]);
+
+  /** Even split with the rounding remainder on the last participant —
+   *  same rule the API's split-sum check expects. */
+  const evenShares = useCallback(
+    (ids: string[], total: number) => {
+      const each = Math.round((total / ids.length) * 100) / 100;
+      const out: Record<string, number> = {};
+      ids.forEach((id) => (out[id] = each));
+      const diff = Math.round((total - each * ids.length) * 100) / 100;
+      if (ids.length > 0 && Math.abs(diff) > 0.001) {
+        const last = ids[ids.length - 1];
+        out[last] = Math.round((out[last] + diff) * 100) / 100;
+      }
+      return out;
+    },
+    []
+  );
+
+  /** Resolved shares for saving and for display. */
+  const shares = useMemo(() => {
+    if (participants.length === 0) return {};
+    if (splitMode === "equal") return evenShares(participants, amount);
+    return splitValues;
+  }, [participants, splitMode, splitValues, amount, evenShares]);
+
+  const payerIds = useMemo(() => Object.keys(payers), [payers]);
+  /** Primary payer — biggest contributor, for the ledger card and activity feed. */
+  const primaryPayer = useMemo(
+    () =>
+      payerIds.length === 0
+        ? ""
+        : payerIds.reduce((a, b) => ((payers[a] ?? 0) >= (payers[b] ?? 0) ? a : b)),
+    [payerIds, payers]
+  );
+
+  const payerLabel = useMemo(() => {
+    if (payerIds.length === 0) return "someone";
+    const name = (id: string) =>
+      id === user?.id ? "you" : members.find((m: any) => m.id === id)?.name ?? "someone";
+    if (payerIds.length === 1) return name(payerIds[0]);
+    const others = payerIds.length - 1;
+    return `${name(primaryPayer)} +${others}`;
+  }, [payerIds, primaryPayer, members, user]);
+
+  const splitLabel =
+    participants.length === 0
+      ? "split with…"
+      : splitMode === "equal"
+      ? "split equally"
+      : assignment
+      ? "split by item"
+      : "custom amounts";
+
+  const totalAllocated = participants.reduce(
+    (s, id) => s + (shares[id] ?? 0),
+    0
+  );
+  const canSave =
+    !!groupId &&
+    description.trim().length > 0 &&
+    amount > 0 &&
+    participants.length > 0 &&
+    Math.abs(totalAllocated - amount) < 0.01 &&
+    payerIds.length > 0 &&
+    Math.abs(payerIds.reduce((t, id) => t + (payers[id] ?? 0), 0) - amount) < 0.01;
+
+  // ── Scan ──────────────────────────────────────────────────────────
+  const applyScan = (data: any) => {
+    setAmount(data.total_price || 0);
+    setScanItems(data.menu ?? []);
+    if (data.merchant && !description) setDescription(data.merchant);
+    setAssignment(null);
+    setSplitMode("custom");
+    // Straight into "who was there" — the item assignment needs people first.
+    setOverlay("split");
+  };
+
+  const handleScan = async (file: File) => {
+    setScanning(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/receipts/extract", {
+        method: "POST",
+        body: formData,
+      });
+      const json = await res.json();
+      if (json.success) {
+        applyScan(json.data);
+      } else {
+        tapError();
+        setDialogError({
+          title: "Couldn't read that receipt",
+          message:
+            json.error ||
+            "Try a straighter photo with the whole receipt in frame.",
+        });
+      }
+    } catch {
+      tapError();
+      setDialogError({
+        title: "Couldn't reach the server",
+        message: "Check your connection and try again.",
+      });
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  /** Test mode: skip the LLM and load a canned receipt. */
+  const handleMockScan = () => {
+    setScanning(true);
+    setTimeout(() => {
+      applyScan(MOCK_RECEIPTS[0].data);
+      setScanning(false);
+    }, 1400);
+  };
+
+  // ── Save ──────────────────────────────────────────────────────────
+  const handleSave = async () => {
+    if (!canSave || !user) return;
+    setSaving(true);
+    tapMedium();
+    try {
+      const res = await fetch("/api/transactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: description.trim(),
+          totalAmount: amount,
+          paidByUserId: primaryPayer,
+          // Only sent when the bill genuinely went across several cards; a
+          // single payer is implied by paidByUserId, as it always was.
+          payers:
+            payerIds.length > 1
+              ? payerIds.map((id) => ({ userId: id, amountPaid: payers[id] ?? 0 }))
+              : undefined,
+          groupId,
+          transactionDate: date,
+          participants: participants.map((id) => ({
+            userId: id,
+            shareAmount: shares[id] ?? 0,
+          })),
+          items:
+            scanItems.length > 0
+              ? scanItems.map((it: any) => ({
+                  name: it.nm || "Item",
+                  quantity: it.cnt || 1,
+                  price: it.price || 0,
+                }))
+              : undefined,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        window.location.href = "/activity";
+        return;
+      }
+      tapError();
+      setDialogError({
+        title: "Couldn't save",
+        message: json.error || "Something went wrong saving this expense.",
+      });
+    } catch {
+      tapError();
+      setDialogError({
+        title: "Couldn't reach the server",
+        message: "Check your connection and try again.",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!user) {
+    return (
+      <main className="min-h-dvh flex items-center justify-center p-4">
+        <p className="text-body text-ink-muted">Sign in to add an expense.</p>
+      </main>
+    );
+  }
+
+  if (scanning) return <ScanLoader />;
+
+  // ── Overlays ──────────────────────────────────────────────────────
+  if (overlay === "payer") {
+    return (
+      <>
+        <PayerSheet
+          members={members}
+          currentUserId={user.id}
+          amount={amount}
+          payers={payers}
+          onPayersChange={setPayers}
+          mode={payerMode}
+          onModeChange={setPayerMode}
+          onEditAmount={(userId) => setKeypad({ target: `payer:${userId}` })}
+          onClose={() => setOverlay(null)}
+        />
+        {keypad?.target.startsWith("payer:") && (
+          <CalculatorKeypad
+            open
+            initialValue={payers[keypad.target.slice(6)] ?? 0}
+            title={`${
+              members.find((m: any) => m.id === keypad.target.slice(6))?.name ??
+              "Payer"
+            } paid`}
+            onConfirm={(v) => {
+              setPayers((prev) => ({ ...prev, [keypad.target.slice(6)]: v }));
+              setKeypad(null);
+            }}
+          />
+        )}
+      </>
+    );
+  }
+
+  if (overlay === "assign") {
+    return (
+      <ItemAssigner
+        items={scanItems.map((it: any, i: number) => ({
+          id: i,
+          nm: it.nm || "Item",
+          price: it.price || 0,
+          cnt: it.cnt || 1,
+        }))}
+        participants={participants.map((id) => ({
+          id,
+          name: members.find((m: any) => m.id === id)?.name ?? "",
+        }))}
+        initialUnitState={assignment?.unitState}
+        onConfirm={(result) => {
+          setAssignment(result);
+          setSplitValues(result.totals);
+          setSplitMode("custom");
+          // Item edits can change prices, so the total follows the receipt.
+          setAmount(
+            Math.round(
+              result.items.reduce((s, i) => s + i.price, 0) * 100
+            ) / 100
+          );
+          setScanItems(result.items);
+          setOverlay("split");
+        }}
+        onCancel={() => setOverlay("split")}
+      />
+    );
+  }
+
+  if (overlay === "split") {
+    const needsAssignment = scanItems.length > 0 && !assignment;
+    return (
+      <>
+        <SplitSheet
+          members={members}
+          currentUserId={user.id}
+          amount={amount}
+          participants={participants}
+          onParticipantsChange={(ids) => {
+            setParticipants(ids);
+            if (splitMode === "custom" && !assignment) {
+              setSplitValues(ids.length ? evenShares(ids, amount) : {});
+            }
+          }}
+          mode={splitMode}
+          onModeChange={(m) => {
+            setSplitMode(m);
+            // Returning to custom restores the receipt amounts if there are
+            // any; otherwise seed from an even split so the fields aren't 0.
+            if (m === "custom") {
+              setSplitValues(
+                assignment
+                  ? assignment.totals
+                  : participants.length
+                  ? evenShares(participants, amount)
+                  : {}
+              );
+            }
+          }}
+          values={splitMode === "custom" ? splitValues : shares}
+          onValuesChange={setSplitValues}
+          assignment={assignment}
+          needsAssignment={needsAssignment}
+          onAssignItems={() => setOverlay("assign")}
+          onEditItems={() => setOverlay("assign")}
+          onEditAmount={(userId) => setKeypad({ target: userId })}
+          onClose={() => setOverlay(null)}
+        />
+        {keypad &&
+          keypad.target !== "total" &&
+          !keypad.target.startsWith("payer:") && (
+          <CalculatorKeypad
+            open
+            initialValue={splitValues[keypad.target] ?? 0}
+            title={`${
+              members.find((m: any) => m.id === keypad.target)?.name ?? "Share"
+            }'s share`}
+            onConfirm={(v) => {
+              setSplitValues((prev) => ({ ...prev, [keypad.target]: v }));
+              setKeypad(null);
+            }}
+          />
+        )}
+      </>
+    );
+  }
+
+  // ── Compose ───────────────────────────────────────────────────────
+  return (
+    <main className="min-h-dvh px-4 max-w-lg mx-auto content-with-floating-nav">
+      {/* Header */}
+      <div className="flex items-center justify-between py-3">
+        <h1 className="text-title2 font-bold text-ink">New expense</h1>
+        <button
+          onClick={handleSave}
+          disabled={!canSave || saving}
+          className="pressable px-4 rounded-[12px] text-callout font-semibold text-white disabled:opacity-40"
+          style={{ minHeight: 44, background: "var(--color-blueberry-600)" }}
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
+      </div>
+
+      {/* Group */}
+      <label className="block mb-2.5">
+        <span className="sr-only">Group</span>
+        <div
+          className="flex items-center gap-3 px-3.5 rounded-[14px]"
+          style={{
+            minHeight: 56,
+            background: "var(--color-surface)",
+            border: "1px solid var(--color-hairline)",
+          }}
+        >
+          <span
+            className="w-8 h-8 rounded-full shrink-0"
+            style={{ background: group?.color || "var(--color-blueberry-300)" }}
+            aria-hidden
+          />
+          <select
+            value={groupId}
+            onChange={(e) => setGroupId(e.target.value)}
+            className="flex-1 bg-transparent text-callout font-medium text-ink focus:outline-none"
+            style={{ minHeight: 44 }}
+          >
+            {groups.length === 0 && <option value="">No groups yet</option>}
+            {groups.map((g: any) => (
+              <option key={g.id} value={g.id}>
+                {g.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </label>
+
+      {/* Description */}
+      <input
+        type="text"
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder="What was it for?"
+        aria-label="Description"
+        className="w-full px-3.5 mb-2.5 rounded-[14px] text-callout text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-blueberry-500"
+        style={{
+          minHeight: 56,
+          background: "var(--color-surface)",
+          border: "1px solid var(--color-hairline)",
+        }}
+      />
+
+      {/* Amount — opens the keypad, which also carries the date. */}
+      <button
+        onClick={() => {
+          tapLight();
+          setKeypad({ target: "total" });
+        }}
+        className="pressable w-full flex items-center gap-2 px-3.5 rounded-[14px] text-left"
+        style={{
+          minHeight: 68,
+          background: "var(--color-surface)",
+          border: "1px solid var(--color-hairline)",
+        }}
+      >
+        <span
+          className="text-title1 font-semibold"
+          style={{ color: "var(--color-blueberry-600)" }}
+        >
+          $
+        </span>
+        <span
+          className={`text-title1 font-bold tabular flex-1 ${
+            amount > 0 ? "text-ink" : "text-ink-muted"
+          }`}
+        >
+          {amount > 0 ? amount.toFixed(2) : "0.00"}
+        </span>
+        <span className="text-footnote text-ink-muted">
+          {new Date(date).toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+          })}
+        </span>
+      </button>
+
+      {/* Paid by · split */}
+      <div className="flex items-center flex-wrap gap-x-1.5 gap-y-1 mt-5 text-callout text-ink-muted">
+        <span>Paid by</span>
+        <button
+          onClick={() => {
+            tapLight();
+            setOverlay("payer");
+          }}
+          className="pressable inline-flex items-center gap-1.5 px-2 rounded-[8px] font-semibold"
+          style={{
+            minHeight: 44,
+            color: "var(--color-blueberry-600)",
+            background: "var(--color-blueberry-100)",
+          }}
+        >
+          {primaryPayer && (
+            <UserAvatar
+              name={
+                members.find((m: any) => m.id === primaryPayer)?.name ??
+                user.name
+              }
+              size="sm"
+            />
+          )}
+          {payerLabel}
+        </button>
+        <span>and</span>
+        <button
+          onClick={() => {
+            tapLight();
+            setOverlay("split");
+          }}
+          className="pressable inline-flex items-center px-2 rounded-[8px] font-semibold"
+          style={{
+            minHeight: 44,
+            color: "var(--color-blueberry-600)",
+            background: "var(--color-blueberry-100)",
+          }}
+        >
+          {splitLabel}
+        </button>
+      </div>
+
+      {participants.length > 0 && (
+        <p className="text-footnote text-ink-muted mt-2">
+          {participants.length}{" "}
+          {participants.length === 1 ? "person" : "people"}
+          {splitMode === "equal" && amount > 0
+            ? ` · $${(amount / participants.length).toFixed(2)} each`
+            : ""}
+        </p>
+      )}
+
+      {/* ItreAI — floating, above the nav island. */}
+      <button
+        onClick={() => {
+          tapLight();
+          if (MOCK_SCAN_ENABLED) {
+            handleMockScan();
+            return;
+          }
+          document.getElementById("itreai-file")?.click();
+        }}
+        className="pressable fixed right-5 z-30 flex items-center gap-2 pl-3 pr-4 rounded-full text-white shadow-lg"
+        style={{
+          bottom: "calc(var(--nav-clearance) + 0.5rem)",
+          minHeight: 56,
+          background:
+            "linear-gradient(135deg, var(--color-blueberry-600) 0%, var(--color-blueberry-700) 100%)",
+          boxShadow:
+            "0 6px 20px color-mix(in srgb, var(--color-blueberry-900) 30%, transparent)",
+        }}
+        aria-label="Scan a receipt with ItreAI"
+      >
+        <SlothMark size={34} />
+        <span className="text-callout font-semibold">ItreAI</span>
+      </button>
+
+      <input
+        id="itreai-file"
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleScan(file);
+          e.target.value = "";
+        }}
+      />
+
+      {/* Amount keypad — the only place the date is editable. */}
+      {keypad?.target === "total" && (
+        <CalculatorKeypad
+          open
+          initialValue={amount}
+          title="Amount"
+          date={date}
+          onDateChange={setDate}
+          onConfirm={(v) => {
+            setAmount(v);
+            // Keep an even split in step with the new total.
+            if (splitMode === "equal" && participants.length) {
+              setSplitValues(evenShares(participants, v));
+            }
+            setKeypad(null);
+          }}
+        />
+      )}
+
+      <ErrorDialog
+        open={!!dialogError}
+        title={dialogError?.title}
+        message={dialogError?.message || ""}
+        onDismiss={() => setDialogError(null)}
+      />
+    </main>
+  );
+}

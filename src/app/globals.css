@@ -363,6 +363,18 @@ body {
   }
 }
 
+/* Sloth mark (ItreAI button). Body is currentColor so it re-tints with its
+   container; these are the fixed features that sit on top of it. */
+.sloth-patch {
+  fill: color-mix(in srgb, var(--color-blueberry-900) 55%, transparent);
+}
+.sloth-eye {
+  fill: var(--color-surface-raised);
+}
+.sloth-smile {
+  stroke: var(--color-surface-raised);
+}
+
 /* ── Settled: the PAID stamp ──────────────────────────────────────────
    Fires when a balance reaches genuinely zero. Deliberately NOT the cash or
    Gandhi rain: those two are ends of one axis (flush vs. broke) and loop
@@ -510,25 +522,6 @@ body {
   50% {
     opacity: 1;
     transform: scaleY(1.04);
-  }
-}
-
-/* ItreAI scan beam — sweeps the receipt in the option diagram. Slow and
-   subtle on purpose; it should read as "this thing is looking at something",
-   not as a loading spinner. */
-.scan-beam {
-  animation: scanSweep 2.6s ease-in-out infinite;
-}
-
-@keyframes scanSweep {
-  0%,
-  100% {
-    transform: translateY(-9px);
-    opacity: 0.25;
-  }
-  50% {
-    transform: translateY(9px);
-    opacity: 1;
   }
 }
 

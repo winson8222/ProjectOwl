@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import UserAvatar, { avatarTone } from "@/components/UserAvatar";
 import { computeAllocation, unitKey, type UnitState } from "@/lib/allocation";
 import { tapLight, tapMedium } from "@/lib/haptics";
+import Portal from "@/components/Portal";
 
 interface ScannedItem {
   id: number; // temporary index
@@ -182,6 +183,7 @@ export default function ItemAssigner({
     : "var(--color-blueberry-600)";
 
   return (
+    <Portal>
     <div className="fixed inset-0 z-50 bg-canvas md:max-w-3xl md:mx-auto flex flex-col overscroll-none">
       {/* ── Whose turn it is ─────────────────────────────────────
              The band takes the active person's own colour and cross-fades
@@ -487,5 +489,6 @@ export default function ItemAssigner({
         </button>
       </div>
     </div>
+    </Portal>
   );
 }

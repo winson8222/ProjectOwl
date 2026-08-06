@@ -1,5 +1,127 @@
 # ProjectOwl — Devlog
 
+## 2026-08-06 — Single-screen expense flow + multiple payers per transaction
+
+Two pieces of work on `feature/flow-changes` (branched off `UI-overhaul`).
+
+### Done — the add-expense flow is one screen
+
+`AddTransactionWizard` and its nine step components are gone, replaced by
+`ExpenseComposer`: group, description and amount on one page, with **who paid**
+and **how it's split** opening as focused overlays.
+
+- **Add is expense-only.** Settle-up already leads into the payment flow and
+  there's no reason to have two doors to it, so the Expense/Payment chooser and
+  the group FAB's "Record a payment" option are both gone. `/payments/new` is
+  untouched, still reached from settle-up and "Pay X back".
+- **The receipt scan is a shortcut to a custom split, not a parallel branch.**
+  Sloth (ItreAI) → scan → pick who was there → `ItemAssigner` → land on Custom
+  amounts with everyone's share pre-computed and a per-person "From the
+  receipt" breakdown to check it against. `assignment` is held independently of
+  `splitMode`, so toggling to Split equally and back can't cost a
+  pass-the-phone session.
+- Date lives on the amount keypad only (opt-in `date`/`onDateChange` props) —
+  the same keypad is reused for per-person shares, where a date is meaningless.
+- Mock scan (`NEXT_PUBLIC_MOCK_SCAN`) works again. `MOCK_RECEIPTS` existed in
+  `allocation-fixtures.ts` but nothing had imported it since the wizard rewrite.
+
+### Done — multiple payers
+
+New `transaction_payers` table (migration `0005`), mirroring `participants`:
+that one says who **owes**, this one says who **put money in**.
+`transactions.paid_by_user_id` stays as a denormalised primary payer for
+display. All 21 existing transactions backfilled as single full-amount rows.
+
+`PayerSheet` gained One person / Multiple people modes; the compose line reads
+"Paid by alex +1".
+
+### Fixed
+- **`position: fixed` was broken for every overlay on a slider tab.**
+  `PageSlider` animates `transform` on its track, and a transformed ancestor
+  becomes the containing block for fixed descendants *and* creates a stacking
+  context — so overlays positioned against the track and sat below the app
+  header's z-50. A full-screen sheet's own header was unreachable. New
+  `Portal` component renders them into `<body>`. Affected 8 components;
+  `ItemAssigner` and `BottomSheet` had this before today.
+- **`npm run db:migrate` had been broken locally since the RLS migration.**
+  `0004_enable_rls.sql` calls `auth.uid()`, which Supabase provides and a local
+  `createdb` does not, so local dev was stuck at `0003`. `scripts/db-migrate.ts`
+  now creates an `auth.uid()` stub *only when absent* — no-op on Supabase,
+  never replaces the real function.
+- **`test:settlement` had been crashing before its first fixture.** Drizzle's
+  migrator splits on `--> statement-breakpoint`; `0004` is hand-written and has
+  none, so its 28 CREATE POLICY statements went as one prepared statement and
+  Postgres rejected them (42601). Fixed in the test runner, which now applies
+  migrations statement by statement — editing the migration would change its
+  hash and make already-migrated environments re-run it.
+
+### Fixed — money bugs found by an audit of the multi-payer math
+
+An agent was tasked with adversarially verifying the balance math. Three real
+bugs, all of which had shipped green because no test exercised `getBalance`
+with multiple payers:
+
+1. **`getGroupPage.yourPairwise` showed creditors as debtors.** A *third* copy
+   of the pairwise logic, still keyed on `tx.paidBy` alone. On a $100 bill
+   (Alice $60 / Ben $40, split 3 ways) Ben read "You owe Alice $33.33" when he
+   was in fact owed $6.67 — sign flipped, 5× off, and contradicting the
+   settle-up plan on the same page. 9,388 violations / 4,000 scenarios.
+2. **A cent that could never be settled.** The API tolerated ±0.01 on
+   shares-vs-total and ±0.01 on payers-vs-total independently; net is
+   `paid − owed`, so a 2¢ gap could leave someone pinned at +$0.01 forever with
+   `isSettled` (`|net| < 0.005`) never firing.
+3. **"Pay X back" could move real money to the wrong person.** On that same
+   bill Ben was offered "Pay Alice back $33.33" against an actual $6.67 debt.
+
+A re-verification pass then found sub-cent amounts reopening (2) through the
+API — 300,000 crafted payloads, all accepted, 83,915 with non-conserving nets.
+
+### Architecture decisions
+1. **One pairwise implementation, not three.** The fix for bug 1 was to extract
+   `pairwiseFor()` into `simplify.ts` and delete the private loops in
+   `getBalance` and `getGroupPage`. Patching the third copy would have left the
+   same failure mode available to a fourth.
+2. **Net = paid − owed.** Replaces "credit the payer with each non-payer's
+   share, skip the payer's own row". Arithmetically identical for one payer
+   (both give `total − ownShare`, verified over 8,000 scenarios) but it
+   generalises and needs no self-reference special case.
+3. **Shares are owed to payers in proportion to contribution.** A $25 share of
+   a bill where Alex paid $60 and Ben $40 is $15 to Alex and $10 to Ben. Note
+   that an edge between two payers nets *two* flows in opposite directions.
+4. **Money means whole cents.** `isNonNegativeMoney` now rejects fractional
+   cents. That is what makes the half-cent reconciliation check airtight: a gap
+   that must be under half a cent and is a whole number of cents can only be
+   zero.
+5. **Suppress the pay-back shortcut under multi-payer rather than recompute
+   it.** A fourth place computing debt is how bug 1 happened; settle-up already
+   works off net balances and gets it right.
+6. **Overlays, not routes, for the composer's sub-screens.** `/transactions/new`
+   is one of four pages mounted at once inside `PageSlider`; child routes would
+   break its index maths and allow swiping sideways mid-flow.
+
+### Verification
+- `tsc --noEmit` clean. `test:simplify` 13/13 (3 new multi-payer fixtures),
+  `test:allocation` 10/10, `test:settlement` 10/10 (2 new multi-payer fixtures —
+  this suite is the only one that runs `getBalance` against a database, and its
+  lack of payer rows is exactly why bug 1 shipped), `test:security` 26/26.
+- Backfill verified: 21 transactions → 21 payer rows, all matching
+  `paid_by_user_id` at the full amount.
+- **Two fixture expectations I wrote were wrong and the suites caught both** —
+  a 2-vs-3 transfer count, and expecting +$10 on an edge that nets to +$5. The
+  implementation was right each time.
+
+### Known / deferred
+- If shares don't sum exactly to the total, the detail page shows `totalAmount`
+  while the ledger credits the share sum — a 1¢ display disagreement, feeding
+  no math.
+- `getBalance`'s group-scoped path can't be exercised in-memory:
+  `getGroupMemberIds` uses the global `getDb()` rather than the injected `_db`.
+  Pre-existing.
+- The item-assignment path's safety net is the older shares-vs-total check;
+  `ExpenseComposer` only sends `payers` when there's more than one, so the new
+  payers-vs-shares check is skipped there.
+- The sloth is a stand-in drawn in `OwlMark`'s style, pending real artwork.
+
 ## 2026-08-06 — UI overhaul: Blueberry/Cream design system, bottom sheets, ItreAI loader
 
 Visual and interaction-level pass only — no navigation flow, screen structure,

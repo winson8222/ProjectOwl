@@ -132,6 +132,26 @@ export const participants = pgTable("participants", {
   index("idx_participants_user").on(t.userId),
 ]);
 
+// ── Payers (who put money in) ────────────────────────────────────────
+// Mirror of `participants`: that table says who OWES, this one says who PAID.
+// One row per contributor, so a bill can be settled across several cards.
+//
+// `transactions.paid_by_user_id` is kept as a denormalised primary payer —
+// the ledger card, activity feed and payment flow all read it, and every
+// pre-existing transaction is backfilled here as a single full-amount row.
+//
+// Net position of a person = sum(amount_paid) − sum(share_amount).
+export const transactionPayers = pgTable("transaction_payers", {
+  id: text("id").primaryKey(),
+  transactionId: text("transaction_id").notNull().references(() => transactions.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id),
+  amountPaid: doublePrecision("amount_paid").notNull(),
+  createdAt: text("created_at").default(textTimestamp()).notNull(),
+}, (t) => [
+  index("idx_transaction_payers_transaction").on(t.transactionId),
+  index("idx_transaction_payers_user").on(t.userId),
+]);
+
 // ── Item Assignments (scan-based: which user gets which item) ──────
 // Links a transaction line item to the users who share it, and how much
 // of that item's price each user owes. This is the *raw* scan allocation,

@@ -15,6 +15,10 @@ export interface SettlementFixture {
     transactionDate: string;
     /** Participants (including payer if they're sharing the cost). */
     participants: { userId: string; shareAmount: number }[];
+    /** Contributors, when one bill was settled across several cards. Omit for
+     *  the single-payer case — the runner then writes one row from
+     *  paidByUserId, which is what every pre-multi-payer transaction is. */
+    payers?: { userId: string; amountPaid: number }[];
   }[];
   /** Settlements to insert (settledAt = "PAID" means already paid). */
   settlements: {
@@ -304,6 +308,92 @@ export const SETTLEMENT_FIXTURES: SettlementFixture[] = [
     ],
     expectedBalances: {
       "user-alex": 0, // Alex paid $30 + $30 + $40 = $100, net zero
+    },
+  },
+
+  {
+    name: "two-payers-proportional",
+    description:
+      "$100 dinner, you paid $60 and Alex paid $40, split evenly 4 ways. Cara's $25 " +
+      "is owed $15 to you and $10 to Alex \u2014 the case that used to show a creditor as a debtor.",
+    users: [
+      { id: "user-you", name: "You", email: "you@test.com" },
+      { id: "user-alex", name: "Alex", email: "alex@test.com" },
+      { id: "user-cara", name: "Cara", email: "cara@test.com" },
+      { id: "user-dan", name: "Dan", email: "dan@test.com" },
+    ],
+    friendships: [
+      ["user-you", "user-alex"],
+      ["user-you", "user-cara"],
+      ["user-you", "user-dan"],
+    ],
+    transactions: [
+      {
+        id: "tx-multi",
+        title: "Dinner on two cards",
+        totalAmount: 100,
+        paidByUserId: "user-you",
+        transactionDate: "2026-01-01",
+        payers: [
+          { userId: "user-you", amountPaid: 60 },
+          { userId: "user-alex", amountPaid: 40 },
+        ],
+        participants: [
+          { userId: "user-you", shareAmount: 25 },
+          { userId: "user-alex", shareAmount: 25 },
+          { userId: "user-cara", shareAmount: 25 },
+          { userId: "user-dan", shareAmount: 25 },
+        ],
+      },
+    ],
+    settlements: [],
+    // You put in 60, owe 25 -> net +35 = 5 + 15 + 15. The Alex edge nets two
+    // flows, which is the point of this fixture: Alex's $25 share is 60% yours
+    // (+15), while your $25 share is 40% Alex's (-10).
+    expectedBalances: {
+      "user-alex": 5,
+      "user-cara": 15,
+      "user-dan": 15,
+    },
+  },
+  {
+    name: "co-payer-is-net-creditor",
+    description:
+      "Alex fronts part of a bill and ends up owed money \u2014 verifies the sign is right " +
+      "for a secondary payer, viewed by Alex.",
+    users: [
+      { id: "user-alex", name: "Alex", email: "alex@test.com" },
+      { id: "user-you", name: "You", email: "you@test.com" },
+      { id: "user-cara", name: "Cara", email: "cara@test.com" },
+    ],
+    friendships: [
+      ["user-alex", "user-you"],
+      ["user-alex", "user-cara"],
+    ],
+    transactions: [
+      {
+        id: "tx-split-cards",
+        title: "Groceries on two cards",
+        totalAmount: 90,
+        paidByUserId: "user-you",
+        transactionDate: "2026-01-02",
+        payers: [
+          { userId: "user-you", amountPaid: 60 },
+          { userId: "user-alex", amountPaid: 30 },
+        ],
+        participants: [
+          { userId: "user-you", shareAmount: 30 },
+          { userId: "user-alex", shareAmount: 30 },
+          { userId: "user-cara", shareAmount: 30 },
+        ],
+      },
+    ],
+    settlements: [],
+    // Alex put in 30, owes 30 -> net 0, but pairwise: Cara owes Alex 10,
+    // Alex owes You 20... net across the two is 0 while both edges are live.
+    expectedBalances: {
+      "user-you": -10,
+      "user-cara": 10,
     },
   },
 ];
