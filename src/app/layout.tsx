@@ -1,7 +1,17 @@
 import type { Metadata, Viewport } from "next";
+import { Instrument_Serif } from "next/font/google";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 import AppShell from "./AppShell";
+
+/* Scoped to balance amounts only (--font-display). UI text stays on the
+   system stack so iOS resolves it to SF Pro. */
+const instrumentSerif = Instrument_Serif({
+  weight: "400",
+  subsets: ["latin"],
+  variable: "--font-instrument-serif",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "ProjectOwl — Split receipts with friends",
@@ -26,7 +36,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: "#4361ee",
+  themeColor: "#243b8f",
 };
 
 export default function RootLayout({
@@ -35,7 +45,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" className={instrumentSerif.variable}>
       <body>
         <AppShell>{children}</AppShell>
         <SpeedInsights />

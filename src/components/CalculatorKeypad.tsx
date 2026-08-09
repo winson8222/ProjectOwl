@@ -111,28 +111,41 @@ export default function CalculatorKeypad({
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={handleClose}>
       <div
-        className="bg-white rounded-t-3xl shadow-xl w-full max-w-md overflow-hidden animate-slide-up"
+        className="bg-surface-raised rounded-t-3xl shadow-xl w-full max-w-md overflow-hidden animate-slide-up"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Grab handle, matching BottomSheet */}
+        <div className="flex justify-center pt-2.5 pb-1">
+          <span
+            aria-hidden
+            className="block rounded-full"
+            style={{ width: 36, height: 5, background: "var(--color-hairline)" }}
+          />
+        </div>
+
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-[var(--border)]">
-          <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+        <div className="flex items-center justify-between px-5 pb-3">
+          <h3 className="text-headline font-semibold text-ink">{title}</h3>
           <button
             onClick={handleClose}
-            className="w-8 h-8 flex items-center justify-center text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors"
+            className="pressable text-subhead font-medium"
+            style={{ color: "var(--color-blueberry-600)", minHeight: 44, minWidth: 44 }}
           >
-            ✕
+            Done
           </button>
         </div>
 
         {/* Display */}
-        <div className="p-6 bg-gray-50">
+        <div className="px-5 py-5" style={{ background: "var(--color-canvas)" }}>
           <div className="text-right">
-            <div className="text-4xl font-bold text-gray-900 tracking-tight">
+            <div
+              className="text-display font-bold text-ink tabular"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
               ${displayValue}
             </div>
             {expression.includes('+') && (
-              <div className="text-sm text-gray-500 mt-2">
+              <div className="text-subhead text-ink-muted mt-1 tabular">
                 = ${evaluateExpression(expression).toFixed(2)}
               </div>
             )}
@@ -140,33 +153,36 @@ export default function CalculatorKeypad({
         </div>
 
         {/* Keypad */}
-        <div className="p-4 bg-white">
+        <div
+          className="px-4 pt-4"
+          style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
+        >
           <div className="grid grid-cols-4 gap-3 max-w-xs mx-auto">
             {/* Row 1 */}
             <button
               onClick={() => handleKeyPress('7')}
-              className="h-16 w-16 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 active:scale-95 rounded-2xl text-2xl font-semibold text-gray-900 transition-all touch-manipulation"
+              className="h-16 w-16 bg-canvas hover:bg-canvas active:bg-hairline active:scale-95 rounded-2xl text-2xl font-semibold text-ink transition-all touch-manipulation"
               aria-label="7"
             >
               7
             </button>
             <button
               onClick={() => handleKeyPress('8')}
-              className="h-16 w-16 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 active:scale-95 rounded-2xl text-2xl font-semibold text-gray-900 transition-all touch-manipulation"
+              className="h-16 w-16 bg-canvas hover:bg-canvas active:bg-hairline active:scale-95 rounded-2xl text-2xl font-semibold text-ink transition-all touch-manipulation"
               aria-label="8"
             >
               8
             </button>
             <button
               onClick={() => handleKeyPress('9')}
-              className="h-16 w-16 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 active:scale-95 rounded-2xl text-2xl font-semibold text-gray-900 transition-all touch-manipulation"
+              className="h-16 w-16 bg-canvas hover:bg-canvas active:bg-hairline active:scale-95 rounded-2xl text-2xl font-semibold text-ink transition-all touch-manipulation"
               aria-label="9"
             >
               9
             </button>
             <button
               onClick={handleClear}
-              className="h-16 w-16 bg-[var(--danger)] hover:bg-red-600 active:bg-red-700 active:scale-95 rounded-2xl text-2xl font-semibold text-white transition-all touch-manipulation"
+              className="h-16 w-16 bg-[var(--danger)] hover:bg-negative active:bg-negative-soft active:scale-95 rounded-2xl text-2xl font-semibold text-white transition-all touch-manipulation"
               aria-label="Clear"
             >
               C
@@ -175,28 +191,28 @@ export default function CalculatorKeypad({
             {/* Row 2 */}
             <button
               onClick={() => handleKeyPress('4')}
-              className="h-16 w-16 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 active:scale-95 rounded-2xl text-2xl font-semibold text-gray-900 transition-all touch-manipulation"
+              className="h-16 w-16 bg-canvas hover:bg-canvas active:bg-hairline active:scale-95 rounded-2xl text-2xl font-semibold text-ink transition-all touch-manipulation"
               aria-label="4"
             >
               4
             </button>
             <button
               onClick={() => handleKeyPress('5')}
-              className="h-16 w-16 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 active:scale-95 rounded-2xl text-2xl font-semibold text-gray-900 transition-all touch-manipulation"
+              className="h-16 w-16 bg-canvas hover:bg-canvas active:bg-hairline active:scale-95 rounded-2xl text-2xl font-semibold text-ink transition-all touch-manipulation"
               aria-label="5"
             >
               5
             </button>
             <button
               onClick={() => handleKeyPress('6')}
-              className="h-16 w-16 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 active:scale-95 rounded-2xl text-2xl font-semibold text-gray-900 transition-all touch-manipulation"
+              className="h-16 w-16 bg-canvas hover:bg-canvas active:bg-hairline active:scale-95 rounded-2xl text-2xl font-semibold text-ink transition-all touch-manipulation"
               aria-label="6"
             >
               6
             </button>
             <button
               onClick={handleBackspace}
-              className="h-16 w-16 bg-gray-200 hover:bg-gray-300 active:bg-gray-400 active:scale-95 rounded-2xl text-2xl font-semibold text-gray-700 transition-all touch-manipulation"
+              className="h-16 w-16 bg-canvas hover:bg-hairline active:bg-hairline active:scale-95 rounded-2xl text-2xl font-semibold text-ink transition-all touch-manipulation"
               aria-label="Backspace"
             >
               ⌫
@@ -205,28 +221,28 @@ export default function CalculatorKeypad({
             {/* Row 3 */}
             <button
               onClick={() => handleKeyPress('1')}
-              className="h-16 w-16 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 active:scale-95 rounded-2xl text-2xl font-semibold text-gray-900 transition-all touch-manipulation"
+              className="h-16 w-16 bg-canvas hover:bg-canvas active:bg-hairline active:scale-95 rounded-2xl text-2xl font-semibold text-ink transition-all touch-manipulation"
               aria-label="1"
             >
               1
             </button>
             <button
               onClick={() => handleKeyPress('2')}
-              className="h-16 w-16 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 active:scale-95 rounded-2xl text-2xl font-semibold text-gray-900 transition-all touch-manipulation"
+              className="h-16 w-16 bg-canvas hover:bg-canvas active:bg-hairline active:scale-95 rounded-2xl text-2xl font-semibold text-ink transition-all touch-manipulation"
               aria-label="2"
             >
               2
             </button>
             <button
               onClick={() => handleKeyPress('3')}
-              className="h-16 w-16 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 active:scale-95 rounded-2xl text-2xl font-semibold text-gray-900 transition-all touch-manipulation"
+              className="h-16 w-16 bg-canvas hover:bg-canvas active:bg-hairline active:scale-95 rounded-2xl text-2xl font-semibold text-ink transition-all touch-manipulation"
               aria-label="3"
             >
               3
             </button>
             <button
               onClick={() => handleKeyPress('+')}
-              className="h-16 w-16 bg-[var(--primary)] hover:bg-[var(--primary-hover)] active:bg-blue-700 active:scale-95 rounded-2xl text-2xl font-semibold text-white transition-all touch-manipulation"
+              className="h-16 w-16 bg-[var(--primary)] hover:bg-[var(--primary-hover)] active:bg-blueberry-900 active:scale-95 rounded-2xl text-2xl font-semibold text-white transition-all touch-manipulation"
               aria-label="Plus"
             >
               +
@@ -235,21 +251,21 @@ export default function CalculatorKeypad({
             {/* Row 4 */}
             <button
               onClick={() => handleKeyPress('0')}
-              className="h-16 w-16 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 active:scale-95 rounded-2xl text-2xl font-semibold text-gray-900 transition-all touch-manipulation"
+              className="h-16 w-16 bg-canvas hover:bg-canvas active:bg-hairline active:scale-95 rounded-2xl text-2xl font-semibold text-ink transition-all touch-manipulation"
               aria-label="0"
             >
               0
             </button>
             <button
               onClick={() => handleKeyPress('.')}
-              className="h-16 w-16 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 active:scale-95 rounded-2xl text-2xl font-semibold text-gray-900 transition-all touch-manipulation"
+              className="h-16 w-16 bg-canvas hover:bg-canvas active:bg-hairline active:scale-95 rounded-2xl text-2xl font-semibold text-ink transition-all touch-manipulation"
               aria-label="Decimal point"
             >
               .
             </button>
             <button
               onClick={handleClear}
-              className="col-span-2 h-16 bg-gray-300 hover:bg-gray-400 active:bg-gray-500 active:scale-95 rounded-2xl text-lg font-semibold text-gray-700 transition-all touch-manipulation"
+              className="col-span-2 h-16 bg-hairline hover:bg-hairline active:bg-hairline active:scale-95 rounded-2xl text-lg font-semibold text-ink transition-all touch-manipulation"
               aria-label="Clear all"
             >
               Clear
@@ -258,8 +274,8 @@ export default function CalculatorKeypad({
         </div>
 
         {/* Instructions */}
-        <div className="px-4 py-3 bg-gray-50 text-center">
-          <p className="text-xs text-gray-500">
+        <div className="px-4 py-3 bg-canvas text-center">
+          <p className="text-xs text-ink-muted">
             Tap outside or press ✕ to save
           </p>
         </div>

@@ -5,7 +5,9 @@ import Link from "next/link";
 import UserAvatar from "@/components/UserAvatar";
 import GroupPickerWheel from "@/components/GroupPickerWheel";
 import PullToRefresh from "@/components/PullToRefresh";
+import PaidStamp from "@/components/PaidStamp";
 import { getSessionUser } from "@/lib/session";
+import { isSettled, isNetZeroButOpen } from "@/lib/settled";
 import type { BalanceSummary } from "@/lib/actions/balances";
 
 /**
@@ -89,14 +91,14 @@ export default function HomePage() {
       {/* Greeting */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-gray-500">Hello, {user.name}</h1>
+          <h1 className="text-3xl font-bold text-ink-muted">Hello, {user.name}</h1>
         </div>
         <UserAvatar name={user.name} size="md" />
       </div>
 
       {/* Error banner */}
       {error && (
-        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+        <div className="mb-4 px-4 py-3 bg-negative-tint border border-negative-soft rounded-xl text-sm text-negative">
           ⚠ {error}
         </div>
       )}
@@ -114,17 +116,21 @@ export default function HomePage() {
                 {/* Hero number card with animated background */}
                 <div
                   className={`rounded-2xl p-6 text-center mb-4 relative overflow-hidden border ${
-                    balance.netBalance >= 0 ? 'border-gray-200' : 'border-red-100'
+                    balance.netBalance >= 0 ? 'border-hairline' : 'border-negative-soft'
                   }`}
                   style={{
                     background: balance.netBalance >= 0
-                      ? 'linear-gradient(135deg, rgba(255,255,255,0.4) 0%, rgba(248,250,252,0.3) 100%)'
+                      ? 'var(--color-surface)'
                       : 'linear-gradient(135deg, rgba(254,226,226,0.4) 0%, rgba(253,242,242,0.3) 100%)',
-                    boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03), 0 4px 8px rgba(0,0,0,0.02)'
+                    boxShadow: '0 1px 2px color-mix(in srgb, var(--color-blueberry-900) 5%, transparent)'
                   }}
                 >
-                  {/* Animated background based on rank and status */}
-                  {balance.netBalance > 0 ? (
+                  {/* Ambient state: cash rains when you're up, Gandhi falls
+                      when you're down. Genuinely square gets the PAID
+                      watermark instead of the blank card it used to show. */}
+                  {isSettled(balance) ? (
+                    <PaidStamp />
+                  ) : balance.netBalance > 0 ? (
                     <div className="absolute inset-0 pointer-events-none">
                       <div className={`raining-cash rank-${userRank}`}>
                         {Array.from({ length: Math.min(Math.max(Math.floor(balance.netBalance / 2), 6), 30) }).map((_, i) => (
@@ -142,12 +148,24 @@ export default function HomePage() {
                     </div>
                   ) : null}
 
-                  <p className="text-sm text-gray-400 uppercase tracking-wider mb-2 relative z-10">
-                    {balance.netBalance >= 0 ? "UP GOOD" : "DOWN BAD"}
+                  <p className="text-sm text-ink-muted uppercase tracking-wider mb-2 relative z-10">
+                    {isSettled(balance)
+                      ? "ALL SQUARE"
+                      : balance.netBalance >= 0
+                      ? "UP GOOD"
+                      : "DOWN BAD"}
                   </p>
                   <p className={`text-4xl font-bold ${balance.netBalance >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]"} relative z-10`}>
                     {balance.netBalance >= 0 ? "+" : "-"}${Math.abs(balance.netBalance).toFixed(2)}
                   </p>
+                  {/* Net zero but debts open both ways — one transfer from
+                      done, and the only state where the headline number lies. */}
+                  {isNetZeroButOpen(balance) && (
+                    <p className="text-footnote text-ink-muted mt-1.5 relative z-10">
+                      ${(balance.totalOwed ?? 0).toFixed(2)} in, $
+                      {(balance.totalOwe ?? 0).toFixed(2)} out — settle up to clear it
+                    </p>
+                  )}
 
                   {/* Breakdown sentence */}
                   <div className="text-center text-sm relative z-10">
@@ -167,18 +185,18 @@ export default function HomePage() {
       {/* Most down bad ranking */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-1">
-          <h2 className="text-lg font-bold text-gray-900">Down Bad Leaderboard</h2>
+          <h2 className="text-lg font-bold text-ink">Down Bad Leaderboard</h2>
         </div>
 
         {groups.length === 0 ? (
           <div
-            className="border border-gray-200 rounded-xl px-5 py-8 text-center backdrop-blur-sm"
+            className="border border-hairline rounded-xl px-5 py-8 text-center backdrop-blur-sm"
             style={{
-              background: 'linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(248,250,252,0.25) 100%)',
+              background: 'var(--color-surface)',
               boxShadow: '0 1px 2px rgba(0,0,0,0.04), 0 2px 4px rgba(0,0,0,0.02)'
             }}
           >
-            <p className="text-sm text-gray-400 mb-2">You&apos;re not in any group yet</p>
+            <p className="text-sm text-ink-muted mb-2">You&apos;re not in any group yet</p>
             <Link href="/groups" className="text-sm font-medium text-[var(--primary)]">
               Create your first group →
             </Link>
@@ -231,7 +249,7 @@ function DownBadRanking({
     return (
       <div className="space-y-2 animate-pulse">
         {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="h-10 bg-gray-100 rounded-xl" />
+          <div key={i} className="h-10 bg-canvas rounded-xl" />
         ))}
       </div>
     );
@@ -249,23 +267,23 @@ function DownBadRanking({
   if (top.length === 0) {
     return (
       <div
-        className="border border-gray-200 rounded-xl px-5 py-6 text-center backdrop-blur-sm"
+        className="border border-hairline rounded-xl px-5 py-6 text-center backdrop-blur-sm"
         style={{
-          background: 'linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(248,250,252,0.25) 100%)',
+          background: 'var(--color-surface)',
           boxShadow: '0 1px 2px rgba(0,0,0,0.04), 0 2px 4px rgba(0,0,0,0.02)'
         }}
       >
-        <p className="text-sm text-gray-500 font-medium">No one is down bad 🎉</p>
-        <p className="text-xs text-gray-400 mt-1">Everyone in this group is settled</p>
+        <p className="text-sm text-ink-muted font-medium">No one is down bad 🎉</p>
+        <p className="text-xs text-ink-muted mt-1">Everyone in this group is settled</p>
       </div>
     );
   }
 
   return (
     <div
-      className="border border-gray-200 rounded-xl p-5 backdrop-blur-sm"
+      className="border border-hairline rounded-xl p-5 backdrop-blur-sm"
       style={{
-        background: 'linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(248,250,252,0.25) 100%)',
+        background: 'var(--color-surface)',
         boxShadow: '0 1px 2px rgba(0,0,0,0.04), 0 2px 4px rgba(0,0,0,0.02)'
       }}
     >
@@ -288,17 +306,17 @@ function DownBadRanking({
           return (
             <div key={entry.user.id} className="relative h-8 flex items-center">
               {/* Name on left */}
-              <span className={`text-sm font-semibold w-20 truncate z-10 ${isYou ? "text-[var(--primary)]" : "text-gray-700"}`}>
+              <span className={`text-sm font-semibold w-20 truncate z-10 ${isYou ? "text-[var(--primary)]" : "text-ink"}`}>
                 {isYou ? "You" : entry.user.name}
               </span>
 
               {/* Background bar container - centered */}
               <div className="absolute left-20 right-20 h-6 flex items-center">
                 {/* Center reference line (subtle) */}
-                <div className="absolute left-1/2 top-0 bottom-0 w-px bg-gray-200 -translate-x-1/2" />
+                <div className="absolute left-1/2 top-0 bottom-0 w-px bg-canvas -translate-x-1/2" />
 
                 {/* Bar track with inset shadow */}
-                <div className="absolute left-0 right-0 top-1 bottom-1 bg-gray-100/50 rounded-sm"
+                <div className="absolute left-0 right-0 top-1 bottom-1 bg-canvas/50 rounded-sm"
                      style={{ boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.08)' }} />
 
                 {/* Colored bar - grows from center with soft shadow */}

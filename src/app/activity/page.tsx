@@ -41,7 +41,7 @@ export default function ActivityPage() {
   if (!user) {
     return (
       <main className="min-h-dvh flex items-center justify-center p-4">
-        <p className="text-sm text-gray-500">Please select a user from the home page first.</p>
+        <p className="text-sm text-ink-muted">Please select a user from the home page first.</p>
       </main>
     );
   }
@@ -49,11 +49,11 @@ export default function ActivityPage() {
   return (
     <PullToRefresh onRefresh={() => loadData(user)}>
     <main className="min-h-dvh px-4 pt-6 pb-24 max-w-lg mx-auto">
-      <h1 className="text-xl font-bold text-gray-900 mb-6">Activity</h1>
+      <h1 className="text-xl font-bold text-ink mb-6">Activity</h1>
 
       {/* Error banner */}
       {error && (
-        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+        <div className="mb-4 px-4 py-3 bg-negative-tint border border-negative-soft rounded-xl text-sm text-negative">
           ⚠ {error}
         </div>
       )}
@@ -63,7 +63,7 @@ export default function ActivityPage() {
           <div className="animate-spin w-6 h-6 border-4 border-[var(--border)] border-t-[var(--primary)] rounded-full" />
         </div>
       ) : activities.length === 0 ? (
-        <p className="text-sm text-gray-400 text-center py-8">No activity yet</p>
+        <p className="text-sm text-ink-muted text-center py-8">No activity yet</p>
       ) : (
         <div className="space-y-2">
           {activities.map((a) => (
@@ -153,12 +153,12 @@ function ActivityRow({ activity, currentUserId }: { activity: any; currentUserId
   return (
     <Link
       href={href}
-      className="flex items-center gap-3 px-4 py-3 bg-[var(--card)] border border-[var(--border)] rounded-xl hover:bg-gray-50 transition-colors"
+      className="flex items-center gap-3 px-4 py-3 bg-[var(--card)] border border-[var(--border)] rounded-xl hover:bg-canvas transition-colors"
     >
       <span className="text-lg shrink-0">{icon}</span>
       <div className="flex-1 min-w-0">
-        <p className="text-sm text-gray-900">{body}</p>
-        <p className="text-xs text-gray-400">
+        <p className="text-sm text-ink">{body}</p>
+        <p className="text-xs text-ink-muted">
           in <span className="text-[var(--primary)]">{a.groupName}</span> · {date}
         </p>
       </div>

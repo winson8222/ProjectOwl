@@ -1,15 +1,119 @@
 @import "tailwindcss";
 
+/* ─────────────────────────────────────────────────────────────
+   Design tokens — Blueberry / Cream Sode
+   Light-only by design: Cream Sode is a committedly warm paper
+   tone with no honest dark translation. Tokens are structured so
+   a dark theme could be added as a [data-theme] block later.
+   ───────────────────────────────────────────────────────────── */
+@theme {
+  /* Surfaces. Cream Sode is the CARD tone, not the canvas — if both
+     were #FFF0C9 cards would vanish. The canvas sits one step deeper
+     so cards read as lit from above. */
+  --color-canvas: #f6e7c0;
+  --color-surface: #fff0c9;
+  --color-surface-raised: #fff8e3;
+
+  /* Blueberry ramp. 8.85:1 against Cream Sode at 600, which is why
+     this carries both text and fills and needs no second accent. */
+  --color-blueberry-900: #16255c;
+  --color-blueberry-700: #1d2f72;
+  --color-blueberry-600: #243b8f;
+  --color-blueberry-500: #3550b5;
+  --color-blueberry-300: #8e9bd2;
+  --color-blueberry-100: #dde2f2;
+
+  /* Neutrals, warm-shifted to sit IN the cream rather than on it.
+     Hairline is cream's own shadow, not a gray. */
+  --color-ink: #1a1a22; /* 15.3:1 on Cream Sode */
+  --color-ink-muted: #6b6656; /*  5.1:1 on Cream Sode */
+  --color-hairline: #e0cfa4;
+
+  /* Semantics, desaturated — the old #3aa542/#c5423a were too bright
+     against cream. */
+  --color-positive: #1f6b4a;
+  --color-negative: #a32e2e;
+  --color-warning: #8a5a10;
+
+  /* Tints for banners and inline status blocks. Warm-biased so an error
+     card still reads as part of the cream surface rather than a red
+     rectangle dropped on top of it. */
+  --color-positive-tint: #e4efe6;
+  --color-positive-soft: #b9d3c1;
+  --color-negative-tint: #f7e3dc;
+  --color-negative-soft: #e0b6ab;
+  --color-warning-tint: #f9ebd0;
+
+  /* Avatar tones. Replaces the 8 saturated Tailwind colors
+     (bg-blue-500, bg-fuchsia-500, bg-lime-500…) which fought the
+     cream badly. Equal in weight, all legible on canvas and cream,
+     and load-bearing now that the split bar colors by person. */
+  --color-avatar-1: #3550b5;
+  --color-avatar-2: #1f6b4a;
+  --color-avatar-3: #8a5a2b;
+  --color-avatar-4: #a32e2e;
+  --color-avatar-5: #5b4b8a;
+  --color-avatar-6: #2b6b7a;
+  --color-avatar-7: #7a5c1f;
+  --color-avatar-8: #6b3a5c;
+
+  /* Type. System stack for UI — on iOS -apple-system resolves to
+     SF Pro, and that IS the native face; a webfont here is the
+     fastest way to feel non-native. The serif is scoped to balance
+     amounts only. Mono is the receipt face. */
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: var(--font-instrument-serif), Georgia, serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+
+  /* Type scale — mirrors iOS Dynamic Type rather than a generic
+     modular scale. Body is 17, not 14: this does more work for
+     "feels native" than any color change. */
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1rem;
+  --text-caption--letter-spacing: 0.2px;
+  --text-footnote: 0.8125rem;
+  --text-footnote--line-height: 1.125rem;
+  --text-subhead: 0.9375rem;
+  --text-subhead--line-height: 1.25rem;
+  --text-callout: 1rem;
+  --text-callout--line-height: 1.3125rem;
+  --text-body: 1.0625rem;
+  --text-body--line-height: 1.5rem;
+  --text-headline: 1.0625rem;
+  --text-headline--line-height: 1.375rem;
+  --text-title2: 1.375rem;
+  --text-title2--line-height: 1.75rem;
+  --text-title2--letter-spacing: -0.2px;
+  --text-title1: 1.75rem;
+  --text-title1--line-height: 2.125rem;
+  --text-title1--letter-spacing: -0.4px;
+  --text-display: 2.125rem;
+  --text-display--line-height: 2.5rem;
+  --text-display--letter-spacing: -0.4px;
+
+  /* Radii */
+  --radius-control: 10px;
+  --radius-card: 14px;
+  --radius-sheet: 20px;
+  --radius-island: 28px;
+}
+
 :root {
-  --foreground: #2a2a2a;
-  --background: radial-gradient(ellipse at center, #c4e0f5 0%, #d0ebf9 40%, #e5f3fc 70%, #ffffff 100%);
-  --primary: #3a85c5;
-  --primary-hover: #2a6ba5;
-  --danger: #c5423a;
-  --success: #3aa542;
-  --border: #b0b0b0;
-  --card: #fbfbff;
+  /* Legacy aliases — 251 call sites across src/ still reference these.
+     Pointing them at the new palette re-tints the whole app without
+     touching a component; they retire as screens are reworked. */
+  --foreground: var(--color-ink);
+  --background: var(--color-canvas);
+  --primary: var(--color-blueberry-600);
+  --primary-hover: var(--color-blueberry-700);
+  --danger: var(--color-negative);
+  --success: var(--color-positive);
+  --border: var(--color-hairline);
+  --card: var(--color-surface);
   --offline-banner-h: 0px;
+
+  /* Minimum comfortable touch target. */
+  --touch-min: 44px;
 }
 
 /* Shifts the fixed header + page content down when OfflineBanner is showing,
@@ -37,34 +141,53 @@ input[type="submit"] {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Fingers don't hover. Anything tappable depresses on touch instead of
+   growing on hover — the hover:scale-[1.02] pattern this replaces was
+   the single clearest "this is a webpage" tell in the app. */
+.pressable {
+  transition: transform 120ms ease-out, opacity 120ms ease-out;
+}
+.pressable:active {
+  transform: scale(0.97);
+}
+
+/* Enforces the 44pt floor without disturbing an element's visual box. */
+.touch-target {
+  position: relative;
+  min-width: var(--touch-min);
+  min-height: var(--touch-min);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Static canvas. The animated radial gradient (gradientBounce) that used
+   to live here was removed deliberately: generous whitespace only reads
+   as intentional when the surface behind it holds still. The cash /
+   Gandhi rain stays — that motion is tied to a real state change. */
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-ui);
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
   min-height: 100vh;
-  background-size: 300% 300%;
-  animation: gradientBounce 12s ease-in-out infinite;
+  -webkit-font-smoothing: antialiased;
 }
 
-@keyframes gradientBounce {
-  0% {
-    background-position: 0% 50%;
-  }
-  20% {
-    background-position: 80% 20%;
-  }
-  40% {
-    background-position: 100% 80%;
-  }
-  60% {
-    background-position: 20% 100%;
-  }
-  80% {
-    background-position: 40% 30%;
-  }
-  100% {
-    background-position: 0% 50%;
-  }
+/* Money should never jitter as it animates or updates. */
+.tabular,
+[data-money] {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
 }
 
 /* Bottom nav safe area (iOS home indicator) */
@@ -72,11 +195,19 @@ body {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-/* Clear the fixed top header and bottom nav (h-16 = 4rem) + iOS home indicator,
-   so page content is never hidden behind them. */
+/* Clearance for the floating nav island: its 64px body + the 24px it floats
+   above the safe area + breathing room. Defined once here and read by both
+   .content-with-nav and PageSlider's scroll panes, so the two can't drift
+   apart when the island's height changes. */
+:root {
+  --nav-clearance: calc(64px + 1.5rem + 1rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* Clear the fixed top header and the nav island, so page content is never
+   hidden behind them. */
 .content-with-nav {
   padding-top: calc(4rem + var(--offline-banner-h));
-  padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px) + 1rem);
+  padding-bottom: var(--nav-clearance);
 }
 
 /* iOS Safari auto-zooms into any input/select/textarea with a font-size
@@ -107,6 +238,298 @@ body {
 }
 .animate-fade-in {
   animation: fadeIn 0.2s ease-out;
+}
+
+/* ── Owl mark ─────────────────────────────────────────────────────────
+   Used by the ItreAI scan loader. Three phases: the face assembles, then
+   the owl reads (pupils sweep, occasional blink), then it looks pleased.
+   Colours come from currentColor / tokens so the mark works on any ground. */
+.owl-iris {
+  fill: var(--color-ink);
+}
+.owl-glint {
+  fill: var(--color-surface-raised);
+}
+.owl-beak {
+  fill: #e8a33d;
+}
+.owl-happy {
+  stroke: var(--color-ink);
+  fill: none;
+  opacity: 0;
+}
+
+/* Assemble: each part arrives on its own beat. */
+.owl-assemble .owl-face {
+  animation: owlPop 0.42s cubic-bezier(0.2, 1.5, 0.4, 1) both;
+  transform-origin: 100px 108px;
+}
+.owl-assemble .owl-tufts {
+  animation: owlTufts 0.4s cubic-bezier(0.2, 1.4, 0.4, 1) 0.16s both;
+  transform-origin: 100px 60px;
+}
+.owl-assemble .owl-eyes {
+  animation: owlFade 0.3s ease-out 0.3s both;
+}
+.owl-assemble .owl-beak {
+  animation: owlPop 0.36s cubic-bezier(0.2, 1.8, 0.4, 1) 0.44s both;
+  transform-origin: 100px 137px;
+}
+
+/* Reading: pupils sweep the page, with a blink folded in. */
+.owl-reading .owl-eye {
+  animation: owlScan 2.4s ease-in-out infinite;
+}
+.owl-reading .owl-eyes {
+  animation: owlBlink 4.2s ease-in-out infinite;
+  transform-origin: 100px 100px;
+}
+
+/* Done: swap the irises for crescents. */
+.owl-done .owl-eyes {
+  opacity: 0;
+  transition: opacity 0.18s ease-out;
+}
+.owl-done .owl-happy {
+  opacity: 1;
+  transition: opacity 0.18s ease-out 0.1s;
+}
+.owl-done .owl-face {
+  animation: owlBounce 0.5s cubic-bezier(0.2, 1.5, 0.4, 1);
+  transform-origin: 100px 108px;
+}
+
+@keyframes owlPop {
+  from {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@keyframes owlTufts {
+  from {
+    transform: translateY(14px) scale(0.7);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+@keyframes owlFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes owlScan {
+  0%,
+  100% {
+    transform: translateX(-5px);
+  }
+  50% {
+    transform: translateX(5px);
+  }
+}
+@keyframes owlBlink {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.08);
+  }
+}
+@keyframes owlBounce {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.07);
+  }
+}
+
+/* Reduced motion: the owl still shows, it just holds still. */
+@media (prefers-reduced-motion: reduce) {
+  .owl * {
+    animation: none !important;
+  }
+}
+
+/* ── Settled: the PAID stamp ──────────────────────────────────────────
+   Fires when a balance reaches genuinely zero. Deliberately NOT the cash or
+   Gandhi rain: those two are ends of one axis (flush vs. broke) and loop
+   forever as ambient state. Being square is off that axis entirely, so it
+   gets its own one-shot vocabulary and then goes quiet. */
+.stamp {
+  animation: stampDrop 0.42s cubic-bezier(0.3, 1.6, 0.5, 1) both;
+  transform-origin: center;
+}
+
+@keyframes stampDrop {
+  0% {
+    transform: scale(2.6) rotate(-24deg);
+    opacity: 0;
+  }
+  55% {
+    opacity: 1;
+  }
+  70% {
+    transform: scale(0.94) rotate(-11deg);
+  }
+  100% {
+    transform: scale(1) rotate(-12deg);
+    opacity: 1;
+  }
+}
+
+/* Sparks scatter from the impact point. Each gets its angle from an inline
+   --a so one keyframe covers all of them. */
+.spark {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--color-blueberry-600);
+  animation: sparkOut 0.6s cubic-bezier(0.2, 0.8, 0.3, 1) 0.22s both;
+}
+
+@keyframes sparkOut {
+  0% {
+    transform: rotate(var(--a)) translateX(6px) scale(0.4);
+    opacity: 0;
+  }
+  35% {
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(var(--a)) translateX(var(--d, 62px)) scale(0);
+    opacity: 0;
+  }
+}
+
+/* Resting watermark once the celebration is over. */
+.stamp-resting {
+  transform: rotate(-12deg);
+  opacity: 0.16;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stamp,
+  .spark {
+    animation: none !important;
+  }
+  .spark {
+    display: none;
+  }
+}
+
+/* CalculatorKeypad referenced .animate-slide-up but it was never defined, so
+   the keypad snapped in with no transition at all. */
+.animate-slide-up {
+  animation: slideUp 0.28s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* ── Receipt paper (item assignment) ──────────────────────────────────
+   Torn top and bottom edges via a repeating conic gradient mask. This is the
+   one place skeuomorphism earns its keep: you are looking at the thing you
+   just photographed, so it should look like it. */
+.receipt-edge-top,
+.receipt-edge-bottom {
+  height: 10px;
+  background: var(--color-surface-raised);
+  --tear: repeating-conic-gradient(
+    from -45deg at 50% 0,
+    var(--color-surface-raised) 0deg 90deg,
+    transparent 90deg 180deg
+  );
+}
+.receipt-edge-top {
+  mask: var(--tear) 0 0 / 16px 10px repeat-x;
+  -webkit-mask: var(--tear) 0 0 / 16px 10px repeat-x;
+  transform: scaleY(-1);
+}
+.receipt-edge-bottom {
+  mask: var(--tear) 0 0 / 16px 10px repeat-x;
+  -webkit-mask: var(--tear) 0 0 / 16px 10px repeat-x;
+}
+
+/* Leader dots between an item's name and its price. */
+.leader {
+  flex: 1;
+  border-bottom: 1.5px dotted var(--color-hairline);
+  margin: 0 8px 5px;
+  min-width: 12px;
+}
+
+/* Unclaimed rows breathe so the "still unassigned" warning has something to
+   point at. */
+.unclaimed-pulse {
+  animation: unclaimedPulse 2.4s ease-in-out infinite;
+}
+@keyframes unclaimedPulse {
+  0%,
+  100% {
+    background: transparent;
+  }
+  50% {
+    background: color-mix(in srgb, var(--color-warning) 7%, transparent);
+  }
+}
+
+/* The ghosted receipt behind the owl in the scan loader — breathes slowly so
+   the screen has a pulse even before the status line changes. */
+.scan-page {
+  animation: scanPage 2.8s ease-in-out infinite;
+}
+
+@keyframes scanPage {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scaleY(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scaleY(1.04);
+  }
+}
+
+/* ItreAI scan beam — sweeps the receipt in the option diagram. Slow and
+   subtle on purpose; it should read as "this thing is looking at something",
+   not as a loading spinner. */
+.scan-beam {
+  animation: scanSweep 2.6s ease-in-out infinite;
+}
+
+@keyframes scanSweep {
+  0%,
+  100% {
+    transform: translateY(-9px);
+    opacity: 0.25;
+  }
+  50% {
+    transform: translateY(9px);
+    opacity: 1;
+  }
 }
 
 /* Gradient pan animation for ItreAI button */
@@ -190,40 +613,43 @@ main {
 }
 
 /* Dynamic positions for varying numbers of elements */
-.raining-cash span:nth-child(1) { left: 5%; animation-duration: 2s; animation-delay: 0s; }
-.raining-cash span:nth-child(2) { left: 12%; animation-duration: 2.3s; animation-delay: 0.15s; }
-.raining-cash span:nth-child(3) { left: 20%; animation-duration: 1.8s; animation-delay: 0.3s; }
-.raining-cash span:nth-child(4) { left: 28%; animation-duration: 2.5s; animation-delay: 0.45s; }
-.raining-cash span:nth-child(5) { left: 35%; animation-duration: 2.1s; animation-delay: 0.6s; }
-.raining-cash span:nth-child(6) { left: 42%; animation-duration: 2.4s; animation-delay: 0.75s; }
-.raining-cash span:nth-child(7) { left: 50%; animation-duration: 1.9s; animation-delay: 0.9s; }
-.raining-cash span:nth-child(8) { left: 58%; animation-duration: 2.2s; animation-delay: 1.05s; }
-.raining-cash span:nth-child(9) { left: 65%; animation-duration: 2.6s; animation-delay: 1.2s; }
-.raining-cash span:nth-child(10) { left: 72%; animation-duration: 2.0s; animation-delay: 1.35s; }
-.raining-cash span:nth-child(11) { left: 80%; animation-duration: 2.3s; animation-delay: 1.5s; }
-.raining-cash span:nth-child(12) { left: 88%; animation-duration: 2.1s; animation-delay: 1.65s; }
-.raining-cash span:nth-child(13) { left: 8%; animation-duration: 2.2s; animation-delay: 1.8s; }
-.raining-cash span:nth-child(14) { left: 22%; animation-duration: 2.4s; animation-delay: 1.95s; }
-.raining-cash span:nth-child(15) { left: 33%; animation-duration: 2.0s; animation-delay: 2.1s; }
-.raining-cash span:nth-child(16) { left: 45%; animation-duration: 2.5s; animation-delay: 2.25s; }
-.raining-cash span:nth-child(17) { left: 55%; animation-duration: 2.1s; animation-delay: 2.4s; }
-.raining-cash span:nth-child(18) { left: 68%; animation-duration: 2.3s; animation-delay: 2.55s; }
-.raining-cash span:nth-child(19) { left: 75%; animation-duration: 2.6s; animation-delay: 2.7s; }
-.raining-cash span:nth-child(20) { left: 82%; animation-duration: 2.0s; animation-delay: 2.85s; }
-.raining-cash span:nth-child(21) { left: 95%; animation-duration: 2.4s; animation-delay: 3.0s; }
-.raining-cash span:nth-child(22) { left: 15%; animation-duration: 2.2s; animation-delay: 3.15s; }
-.raining-cash span:nth-child(23) { left: 30%; animation-duration: 2.5s; animation-delay: 3.3s; }
-.raining-cash span:nth-child(24) { left: 48%; animation-duration: 2.1s; animation-delay: 3.45s; }
-.raining-cash span:nth-child(25) { left: 60%; animation-duration: 2.7s; animation-delay: 3.6s; }
-.raining-cash span:nth-child(26) { left: 78%; animation-duration: 2.0s; animation-delay: 3.75s; }
-.raining-cash span:nth-child(27) { left: 92%; animation-duration: 2.3s; animation-delay: 3.9s; }
-.raining-cash span:nth-child(28) { left: 18%; animation-duration: 2.6s; animation-delay: 4.05s; }
-.raining-cash span:nth-child(29) { left: 38%; animation-duration: 2.2s; animation-delay: 4.2s; }
-.raining-cash span:nth-child(30) { left: 62%; animation-duration: 2.4s; animation-delay: 4.35s; }
+.raining-cash span:nth-child(1) { left: 5%; animation-duration: 2s; animation-delay: -0s; }
+.raining-cash span:nth-child(2) { left: 12%; animation-duration: 2.3s; animation-delay: -0.15s; }
+.raining-cash span:nth-child(3) { left: 20%; animation-duration: 1.8s; animation-delay: -0.3s; }
+.raining-cash span:nth-child(4) { left: 28%; animation-duration: 2.5s; animation-delay: -0.45s; }
+.raining-cash span:nth-child(5) { left: 35%; animation-duration: 2.1s; animation-delay: -0.6s; }
+.raining-cash span:nth-child(6) { left: 42%; animation-duration: 2.4s; animation-delay: -0.75s; }
+.raining-cash span:nth-child(7) { left: 50%; animation-duration: 1.9s; animation-delay: -0.9s; }
+.raining-cash span:nth-child(8) { left: 58%; animation-duration: 2.2s; animation-delay: -1.05s; }
+.raining-cash span:nth-child(9) { left: 65%; animation-duration: 2.6s; animation-delay: -1.2s; }
+.raining-cash span:nth-child(10) { left: 72%; animation-duration: 2.0s; animation-delay: -1.35s; }
+.raining-cash span:nth-child(11) { left: 80%; animation-duration: 2.3s; animation-delay: -1.5s; }
+.raining-cash span:nth-child(12) { left: 88%; animation-duration: 2.1s; animation-delay: -1.65s; }
+.raining-cash span:nth-child(13) { left: 8%; animation-duration: 2.2s; animation-delay: -1.8s; }
+.raining-cash span:nth-child(14) { left: 22%; animation-duration: 2.4s; animation-delay: -1.95s; }
+.raining-cash span:nth-child(15) { left: 33%; animation-duration: 2.0s; animation-delay: -2.1s; }
+.raining-cash span:nth-child(16) { left: 45%; animation-duration: 2.5s; animation-delay: -2.25s; }
+.raining-cash span:nth-child(17) { left: 55%; animation-duration: 2.1s; animation-delay: -2.4s; }
+.raining-cash span:nth-child(18) { left: 68%; animation-duration: 2.3s; animation-delay: -2.55s; }
+.raining-cash span:nth-child(19) { left: 75%; animation-duration: 2.6s; animation-delay: -2.7s; }
+.raining-cash span:nth-child(20) { left: 82%; animation-duration: 2.0s; animation-delay: -2.85s; }
+.raining-cash span:nth-child(21) { left: 95%; animation-duration: 2.4s; animation-delay: -3.0s; }
+.raining-cash span:nth-child(22) { left: 15%; animation-duration: 2.2s; animation-delay: -3.15s; }
+.raining-cash span:nth-child(23) { left: 30%; animation-duration: 2.5s; animation-delay: -3.3s; }
+.raining-cash span:nth-child(24) { left: 48%; animation-duration: 2.1s; animation-delay: -3.45s; }
+.raining-cash span:nth-child(25) { left: 60%; animation-duration: 2.7s; animation-delay: -3.6s; }
+.raining-cash span:nth-child(26) { left: 78%; animation-duration: 2.0s; animation-delay: -3.75s; }
+.raining-cash span:nth-child(27) { left: 92%; animation-duration: 2.3s; animation-delay: -3.9s; }
+.raining-cash span:nth-child(28) { left: 18%; animation-duration: 2.6s; animation-delay: -4.05s; }
+.raining-cash span:nth-child(29) { left: 38%; animation-duration: 2.2s; animation-delay: -4.2s; }
+.raining-cash span:nth-child(30) { left: 62%; animation-duration: 2.4s; animation-delay: -4.35s; }
 
+/* Starts fully clear of the box rather than a sliver above it. Combined with
+   the negative animation-delays above, nothing is ever parked at the top
+   waiting its turn — every element is mid-fall on the first painted frame. */
 @keyframes fall {
   0% {
-    transform: translateY(-20px) translateX(0) rotate(0deg);
+    transform: translateY(-44px) translateX(0) rotate(0deg);
   }
   100% {
     transform: translateY(300px) translateX(30px) rotate(360deg);
@@ -251,36 +677,36 @@ main {
 }
 
 /* Dynamic positions for varying numbers of Gandhi elements */
-.gandhi-icon:nth-child(1) { left: 5%; animation-duration: 5s; animation-delay: 0s; }
-.gandhi-icon:nth-child(2) { left: 15%; animation-duration: 6s; animation-delay: 0.5s; }
-.gandhi-icon:nth-child(3) { left: 25%; animation-duration: 5.5s; animation-delay: 1s; }
-.gandhi-icon:nth-child(4) { left: 35%; animation-duration: 6.5s; animation-delay: 1.5s; }
-.gandhi-icon:nth-child(5) { left: 45%; animation-duration: 5.2s; animation-delay: 2s; }
-.gandhi-icon:nth-child(6) { left: 55%; animation-duration: 5.8s; animation-delay: 2.5s; }
-.gandhi-icon:nth-child(7) { left: 65%; animation-duration: 5.3s; animation-delay: 3s; }
-.gandhi-icon:nth-child(8) { left: 75%; animation-duration: 6.2s; animation-delay: 3.5s; }
-.gandhi-icon:nth-child(9) { left: 85%; animation-duration: 5.7s; animation-delay: 4s; }
-.gandhi-icon:nth-child(10) { left: 95%; animation-duration: 5.9s; animation-delay: 4.5s; }
-.gandhi-icon:nth-child(11) { left: 10%; animation-duration: 5.4s; animation-delay: 5s; }
-.gandhi-icon:nth-child(12) { left: 30%; animation-duration: 6.1s; animation-delay: 5.5s; }
-.gandhi-icon:nth-child(13) { left: 50%; animation-duration: 5.6s; animation-delay: 6s; }
-.gandhi-icon:nth-child(14) { left: 70%; animation-duration: 6.3s; animation-delay: 6.5s; }
-.gandhi-icon:nth-child(15) { left: 90%; animation-duration: 5.1s; animation-delay: 7s; }
-.gandhi-icon:nth-child(16) { left: 20%; animation-duration: 5.8s; animation-delay: 7.5s; }
-.gandhi-icon:nth-child(17) { left: 40%; animation-duration: 6.0s; animation-delay: 8s; }
-.gandhi-icon:nth-child(18) { left: 60%; animation-duration: 5.4s; animation-delay: 8.5s; }
-.gandhi-icon:nth-child(19) { left: 80%; animation-duration: 6.4s; animation-delay: 9s; }
-.gandhi-icon:nth-child(20) { left: 8%; animation-duration: 5.7s; animation-delay: 9.5s; }
-.gandhi-icon:nth-child(21) { left: 28%; animation-duration: 5.9s; animation-delay: 10s; }
-.gandhi-icon:nth-child(22) { left: 48%; animation-duration: 6.2s; animation-delay: 10.5s; }
-.gandhi-icon:nth-child(23) { left: 68%; animation-duration: 5.3s; animation-delay: 11s; }
-.gandhi-icon:nth-child(24) { left: 88%; animation-duration: 5.6s; animation-delay: 11.5s; }
-.gandhi-icon:nth-child(25) { left: 12%; animation-duration: 6.1s; animation-delay: 12s; }
-.gandhi-icon:nth-child(26) { left: 32%; animation-duration: 5.8s; animation-delay: 12.5s; }
-.gandhi-icon:nth-child(27) { left: 52%; animation-duration: 6.5s; animation-delay: 13s; }
-.gandhi-icon:nth-child(28) { left: 72%; animation-duration: 5.2s; animation-delay: 13.5s; }
-.gandhi-icon:nth-child(29) { left: 92%; animation-duration: 5.9s; animation-delay: 14s; }
-.gandhi-icon:nth-child(30) { left: 22%; animation-duration: 6.0s; animation-delay: 14.5s; }
+.gandhi-icon:nth-child(1) { left: 5%; animation-duration: 5s; animation-delay: -0s; }
+.gandhi-icon:nth-child(2) { left: 15%; animation-duration: 6s; animation-delay: -0.5s; }
+.gandhi-icon:nth-child(3) { left: 25%; animation-duration: 5.5s; animation-delay: -1s; }
+.gandhi-icon:nth-child(4) { left: 35%; animation-duration: 6.5s; animation-delay: -1.5s; }
+.gandhi-icon:nth-child(5) { left: 45%; animation-duration: 5.2s; animation-delay: -2s; }
+.gandhi-icon:nth-child(6) { left: 55%; animation-duration: 5.8s; animation-delay: -2.5s; }
+.gandhi-icon:nth-child(7) { left: 65%; animation-duration: 5.3s; animation-delay: -3s; }
+.gandhi-icon:nth-child(8) { left: 75%; animation-duration: 6.2s; animation-delay: -3.5s; }
+.gandhi-icon:nth-child(9) { left: 85%; animation-duration: 5.7s; animation-delay: -4s; }
+.gandhi-icon:nth-child(10) { left: 95%; animation-duration: 5.9s; animation-delay: -4.5s; }
+.gandhi-icon:nth-child(11) { left: 10%; animation-duration: 5.4s; animation-delay: -5s; }
+.gandhi-icon:nth-child(12) { left: 30%; animation-duration: 6.1s; animation-delay: -5.5s; }
+.gandhi-icon:nth-child(13) { left: 50%; animation-duration: 5.6s; animation-delay: -6s; }
+.gandhi-icon:nth-child(14) { left: 70%; animation-duration: 6.3s; animation-delay: -6.5s; }
+.gandhi-icon:nth-child(15) { left: 90%; animation-duration: 5.1s; animation-delay: -7s; }
+.gandhi-icon:nth-child(16) { left: 20%; animation-duration: 5.8s; animation-delay: -7.5s; }
+.gandhi-icon:nth-child(17) { left: 40%; animation-duration: 6.0s; animation-delay: -8s; }
+.gandhi-icon:nth-child(18) { left: 60%; animation-duration: 5.4s; animation-delay: -8.5s; }
+.gandhi-icon:nth-child(19) { left: 80%; animation-duration: 6.4s; animation-delay: -9s; }
+.gandhi-icon:nth-child(20) { left: 8%; animation-duration: 5.7s; animation-delay: -9.5s; }
+.gandhi-icon:nth-child(21) { left: 28%; animation-duration: 5.9s; animation-delay: -10s; }
+.gandhi-icon:nth-child(22) { left: 48%; animation-duration: 6.2s; animation-delay: -10.5s; }
+.gandhi-icon:nth-child(23) { left: 68%; animation-duration: 5.3s; animation-delay: -11s; }
+.gandhi-icon:nth-child(24) { left: 88%; animation-duration: 5.6s; animation-delay: -11.5s; }
+.gandhi-icon:nth-child(25) { left: 12%; animation-duration: 6.1s; animation-delay: -12s; }
+.gandhi-icon:nth-child(26) { left: 32%; animation-duration: 5.8s; animation-delay: -12.5s; }
+.gandhi-icon:nth-child(27) { left: 52%; animation-duration: 6.5s; animation-delay: -13s; }
+.gandhi-icon:nth-child(28) { left: 72%; animation-duration: 5.2s; animation-delay: -13.5s; }
+.gandhi-icon:nth-child(29) { left: 92%; animation-duration: 5.9s; animation-delay: -14s; }
+.gandhi-icon:nth-child(30) { left: 22%; animation-duration: 6.0s; animation-delay: -14.5s; }
 
 @keyframes fall-gandhi {
   0% {
@@ -307,7 +733,9 @@ main {
   }
 }
 
-/* Content clearance for fixed bottom nav */
+/* Clearance for pages that stack a FAB above the nav island (group detail,
+   settle-up, transaction detail). Same island clearance plus room for the
+   FAB itself. */
 .content-with-floating-nav {
-  padding-bottom: calc(160px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(var(--nav-clearance) + 4.5rem);
 }

@@ -29,9 +29,22 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    if (!("serviceWorker" in navigator)) return;
+
+    // The service worker is cache-first for same-origin static assets and
+    // CACHE_VERSION is bumped by hand — so in dev it happily serves a previous
+    // session's JS chunks over a running dev server, which looks exactly like
+    // "my code didn't apply". Register only in production, and tear down any
+    // worker an earlier dev session already installed.
+    if (process.env.NODE_ENV !== "production") {
+      navigator.serviceWorker
+        .getRegistrations()
+        .then((regs) => regs.forEach((r) => r.unregister()))
+        .catch(() => {});
+      return;
     }
+
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
   }, []);
 
   if (!ready) {
@@ -62,7 +75,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <h1 className="text-xl font-bold text-[var(--primary)]">ItreSplit</h1>
           <button
             onClick={handleSignOut}
-            className="text-xs font-medium text-gray-400 hover:text-gray-600 transition-colors"
+            className="text-xs font-medium text-ink-muted hover:text-ink-muted transition-colors"
           >
             Sign out
           </button>

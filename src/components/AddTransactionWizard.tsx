@@ -11,7 +11,6 @@ import Step2_InputMethod from "./wizard/Step2_InputMethod";
 import Step2_PaymentDetails from "./wizard/Step2_PaymentDetails";
 import Step3_ExpensePeople from "./wizard/Step3_ExpensePeople";
 import Step3b_ManualExpenseDetails from "./wizard/Step3b_ManualExpenseDetails";
-import Step3_ScanProcessing from "./wizard/Step3_ScanProcessing";
 import Step3_ScanDetails from "./wizard/Step3_ScanDetails";
 import Step4_SplitMethod from "./wizard/Step4_SplitMethod";
 import Step4_ItemAssignment from "./wizard/Step4_ItemAssignment";
@@ -400,6 +399,7 @@ export default function AddTransactionWizard() {
               user={user}
               users={groupMembers}
               selectedGroupId={selectedGroupId}
+              amount={amount}
               onNext={handleNext}
               onBack={handleBack}
             />
@@ -476,7 +476,7 @@ export default function AddTransactionWizard() {
         <div className="flex items-center justify-between mb-2">
           <button
             onClick={handleCancel}
-            className="text-sm text-gray-500 hover:text-gray-700"
+            className="text-sm text-ink-muted hover:text-ink"
           >
             ← Cancel
           </button>
@@ -484,7 +484,7 @@ export default function AddTransactionWizard() {
             Step {step} of {txType === "payment" ? "3" : "6"}
           </span>
         </div>
-        <div className="h-1 bg-gray-200 rounded-full overflow-hidden">
+        <div className="h-1 bg-canvas rounded-full overflow-hidden">
           <div
             className="h-full bg-[var(--primary)] transition-all duration-300"
             style={{
@@ -495,7 +495,7 @@ export default function AddTransactionWizard() {
       </div>
 
       {error && (
-        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+        <div className="mb-4 px-4 py-3 bg-negative-tint border border-negative-soft rounded-xl text-sm text-negative">
           ⚠ {error}
         </div>
       )}

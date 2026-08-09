@@ -5,7 +5,9 @@ import Link from "next/link";
 import UserPicker from "@/components/UserPicker";
 import ErrorDialog from "@/components/ErrorDialog";
 import PullToRefresh from "@/components/PullToRefresh";
+import PaidStamp from "@/components/PaidStamp";
 import { getSessionUser } from "@/lib/session";
+import { isSettled } from "@/lib/settled";
 
 /**
  * Drag-to-reorder hook with iOS-style physics
@@ -266,7 +268,7 @@ export default function GroupsPage() {
   if (!user) {
     return (
       <main className="min-h-dvh flex items-center justify-center p-4">
-        <p className="text-sm text-gray-500">Please select a user from the home page first.</p>
+        <p className="text-sm text-ink-muted">Please select a user from the home page first.</p>
       </main>
     );
   }
@@ -280,17 +282,20 @@ export default function GroupsPage() {
           {/* Hero number card with animated background */}
           <div
             className={`rounded-2xl p-6 text-center mb-4 relative overflow-hidden border ${
-              balance.netBalance >= 0 ? 'border-gray-200' : 'border-red-100'
+              balance.netBalance >= 0 ? 'border-hairline' : 'border-negative-soft'
             }`}
             style={{
               background: balance.netBalance >= 0
-                ? 'linear-gradient(135deg, rgba(255,255,255,0.4) 0%, rgba(248,250,252,0.3) 100%)'
+                ? 'var(--color-surface)'
                 : 'linear-gradient(135deg, rgba(254,226,226,0.4) 0%, rgba(253,242,242,0.3) 100%)',
-              boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03), 0 4px 8px rgba(0,0,0,0.02)'
+              boxShadow: '0 1px 2px color-mix(in srgb, var(--color-blueberry-900) 5%, transparent)'
             }}
           >
-            {/* Animated background */}
-            {balance.netBalance > 0 ? (
+            {/* Ambient state — see the note on the home card. Settled gets
+                the PAID watermark rather than nothing at all. */}
+            {isSettled(balance) ? (
+              <PaidStamp />
+            ) : balance.netBalance > 0 ? (
               <div className="absolute inset-0 pointer-events-none">
                 <div className="raining-cash">
                   {Array.from({ length: Math.min(Math.max(Math.floor(balance.netBalance / 2), 6), 30) }).map((_, i) => (
@@ -308,8 +313,12 @@ export default function GroupsPage() {
               </div>
             ) : null}
 
-            <p className="text-sm text-gray-400 uppercase tracking-wider mb-2 relative z-10">
-              {balance.netBalance >= 0 ? "UP GOOD" : "DOWN BAD"}
+            <p className="text-sm text-ink-muted uppercase tracking-wider mb-2 relative z-10">
+              {isSettled(balance)
+                ? "ALL SQUARE"
+                : balance.netBalance >= 0
+                ? "UP GOOD"
+                : "DOWN BAD"}
             </p>
             <p className={`text-4xl font-bold ${balance.netBalance >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]"} relative z-10`}>
               {balance.netBalance >= 0 ? "+" : "-"}${Math.abs(balance.netBalance).toFixed(2)}
@@ -328,10 +337,10 @@ export default function GroupsPage() {
       )}
 
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-bold text-gray-900">Your Groups</h1>
+        <h1 className="text-xl font-bold text-ink">Your Groups</h1>
         <button
           onClick={() => setShowCreate(!showCreate)}
-          className="text-sm font-semibold text-[var(--primary)] px-3 py-1.5 border border-[var(--primary)] rounded-lg hover:bg-blue-50"
+          className="text-sm font-semibold text-[var(--primary)] px-3 py-1.5 border border-[var(--primary)] rounded-lg hover:bg-blueberry-100"
         >
           {showCreate ? "Cancel" : "+ New group"}
         </button>
@@ -339,7 +348,7 @@ export default function GroupsPage() {
 
       {/* Error banner */}
       {error && (
-        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+        <div className="mb-4 px-4 py-3 bg-negative-tint border border-negative-soft rounded-xl text-sm text-negative">
           ⚠ {error}
         </div>
       )}
@@ -347,14 +356,14 @@ export default function GroupsPage() {
       {/* Create group form */}
       {showCreate && (
         <div
-          className="mb-4 rounded-xl p-4 space-y-3 border border-gray-200 backdrop-blur-sm"
+          className="mb-4 rounded-xl p-4 space-y-3 border border-hairline backdrop-blur-sm"
           style={{
-            background: 'linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(248,250,252,0.25) 100%)',
-            boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03)'
+            background: 'var(--color-surface)',
+            boxShadow: '0 1px 2px color-mix(in srgb, var(--color-blueberry-900) 5%, transparent)'
           }}
         >
           <div>
-            <label className="text-xs font-medium text-gray-500 mb-1 block">Group name</label>
+            <label className="text-xs font-medium text-ink-muted mb-1 block">Group name</label>
             <input
               type="text"
               value={newName}
@@ -364,7 +373,7 @@ export default function GroupsPage() {
             />
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-500 mb-1 block">
+            <label className="text-xs font-medium text-ink-muted mb-1 block">
               Participants (you&apos;re always included)
             </label>
             <UserPicker
@@ -390,7 +399,7 @@ export default function GroupsPage() {
           <div className="animate-spin w-6 h-6 border-4 border-[var(--border)] border-t-[var(--primary)] rounded-full" />
         </div>
       ) : groups.length === 0 ? (
-        <p className="text-sm text-gray-400 text-center py-8">
+        <p className="text-sm text-ink-muted text-center py-8">
           No groups yet — create one to start splitting!
         </p>
       ) : (
@@ -412,7 +421,7 @@ export default function GroupsPage() {
               />
             ))}
             {activeGroups.length === 0 && (
-              <p className="text-sm text-gray-400 text-center py-4">All your groups are settled 🎉</p>
+              <p className="text-sm text-ink-muted text-center py-4">All your groups are settled 🎉</p>
             )}
           </div>
 
@@ -421,7 +430,7 @@ export default function GroupsPage() {
             <div className="mt-4">
               <button
                 onClick={() => setShowSettled(!showSettled)}
-                className="w-full px-4 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors"
+                className="w-full px-4 py-2.5 text-sm font-medium text-ink-muted bg-canvas rounded-xl hover:bg-canvas transition-colors"
               >
                 {showSettled ? "Hide" : "Show"} settled groups ({settledGroups.length})
               </button>
@@ -476,9 +485,9 @@ function GroupRow({
   if (isDragging) {
     return (
       <div
-        className="flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-200 backdrop-blur-sm relative z-50 cursor-grabbing"
+        className="flex items-center gap-3 px-4 py-3 rounded-xl border border-hairline backdrop-blur-sm relative z-50 cursor-grabbing"
         style={{
-          background: 'linear-gradient(135deg, rgba(255,255,255,0.5) 0%, rgba(248,250,252,0.4) 100%)',
+          background: 'var(--color-surface)',
           boxShadow: '0 8px 16px rgba(0,0,0,0.15), 0 2px 4px rgba(0,0,0,0.1)',
           transform: `translateY(${dragOffset}px) scale(1.05)`,
           opacity: 0.9,
@@ -491,7 +500,7 @@ function GroupRow({
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
       >
-        <div className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400">
+        <div className="absolute left-2 top-1/2 -translate-y-1/2 text-ink-muted">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
             <circle cx="9" cy="5" r="1.5"/>
             <circle cx="15" cy="5" r="1.5"/>
@@ -509,20 +518,20 @@ function GroupRow({
           }}
         />
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-gray-900 truncate">{group.name}</p>
-          <p className="text-xs text-gray-400">
+          <p className="text-sm font-semibold text-ink truncate">{group.name}</p>
+          <p className="text-xs text-ink-muted">
             {group.members.length} member{group.members.length === 1 ? "" : "s"}
           </p>
         </div>
         <div className="text-right">
           {Math.abs(net) < 0.005 ? (
-            <p className="text-xs text-gray-400">Settled</p>
+            <p className="text-xs text-ink-muted">Settled</p>
           ) : (
             <>
               <p className={`text-sm font-semibold ${net > 0 ? "text-[var(--success)]" : "text-[var(--danger)]"}`}>
                 {net > 0 ? "+" : "-"}${Math.abs(net).toFixed(2)}
               </p>
-              <p className="text-[10px] text-gray-400">
+              <p className="text-[10px] text-ink-muted">
                 {net > 0 ? "you get back" : "you owe"}
               </p>
             </>
@@ -535,10 +544,10 @@ function GroupRow({
   return (
     <Link
       href={`/groups/${group.id}`}
-      className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:scale-[1.02] border border-gray-200 hover:border-gray-300 backdrop-blur-sm"
+      className="flex items-center gap-3 px-4 py-3 rounded-xl pressable border border-hairline hover:border-hairline backdrop-blur-sm"
       style={{
-        background: 'linear-gradient(135deg, rgba(255,255,255,0.3) 0%, rgba(248,250,252,0.2) 100%)',
-        boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03)',
+        background: 'var(--color-surface)',
+        boxShadow: '0 1px 2px color-mix(in srgb, var(--color-blueberry-900) 5%, transparent)',
         transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease',
       }}
       onTouchStart={onTouchStart}
@@ -556,20 +565,20 @@ function GroupRow({
         }}
       />
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-gray-900 truncate">{group.name}</p>
-        <p className="text-xs text-gray-400">
+        <p className="text-sm font-semibold text-ink truncate">{group.name}</p>
+        <p className="text-xs text-ink-muted">
           {group.members.length} member{group.members.length === 1 ? "" : "s"}
         </p>
       </div>
       <div className="text-right">
         {Math.abs(net) < 0.005 ? (
-          <p className="text-xs text-gray-400">Settled</p>
+          <p className="text-xs text-ink-muted">Settled</p>
         ) : (
           <>
             <p className={`text-sm font-semibold ${net > 0 ? "text-[var(--success)]" : "text-[var(--danger)]"}`}>
               {net > 0 ? "+" : "-"}${Math.abs(net).toFixed(2)}
             </p>
-            <p className="text-[10px] text-gray-400">
+            <p className="text-[10px] text-ink-muted">
               {net > 0 ? "you get back" : "you owe"}
             </p>
           </>

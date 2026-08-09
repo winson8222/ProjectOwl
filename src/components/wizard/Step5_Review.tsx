@@ -1,5 +1,8 @@
 "use client";
 
+import UserAvatar from "@/components/UserAvatar";
+import { tapMedium } from "@/lib/haptics";
+
 interface Step5_ReviewProps {
   txType: "expense" | "payment";
   amount: number;
@@ -22,7 +25,15 @@ interface Step5_ReviewProps {
 }
 
 /**
- * Step 5: Review and save
+ * Step 5: review and save.
+ *
+ * The old version summarised the split as "Participants: 4 people", which is
+ * the one fact on the screen you can't actually check. This shows every
+ * person and the exact amount they'll owe — a review screen has to show what
+ * you're about to commit, or it's just a delay before the save button.
+ *
+ * Shares come from whichever path produced them: item assignment totals for
+ * scans, splitValues for manual even/custom.
  */
 export default function Step5_Review({
   txType,
@@ -42,145 +53,164 @@ export default function Step5_Review({
   groups,
   users,
   inputMethod,
-  assignmentResults
+  assignmentResults,
 }: Step5_ReviewProps) {
   const group = groups.find((g: any) => g.id === selectedGroupId);
   const payer = users.find((u: any) => u.id === paidBy);
   const recipient = users.find((u: any) => u.id === toUserId);
-  const participantList = selectedParticipants.map((id) => {
-    const u = users.find((user: any) => user.id === id);
-    return { id, name: u?.name || "" };
+
+  const shares: Record<string, number> =
+    inputMethod === "scan" && assignmentResults?.totals
+      ? assignmentResults.totals
+      : splitValues;
+
+  const nameFor = (id: string) => {
+    const u = users.find((x: any) => x.id === id);
+    return id === user?.id ? "You" : u?.name ?? "Someone";
+  };
+  const rawName = (id: string) =>
+    users.find((x: any) => x.id === id)?.name ?? "?";
+
+  const dateLabel = new Date(date).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
   });
 
+  const methodLabel =
+    inputMethod === "scan" && assignmentResults
+      ? "Split by item"
+      : splitMode === "even"
+      ? "Split evenly"
+      : "Custom amounts";
+
   return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-bold text-gray-900 text-center mb-6">
-        Review & Save
+    <div>
+      <h2 className="text-title2 font-bold text-ink mb-6">
+        {txType === "payment" ? "Confirm this payment" : "Does this look right?"}
       </h2>
 
-      {/* Summary Card */}
+      {/* ── The headline: what's being committed ─────────────────── */}
       <div
-        className="rounded-2xl p-5 backdrop-blur-sm"
+        className="rounded-t-[14px] px-5 pt-6 pb-5 text-center"
         style={{
-          background: 'linear-gradient(135deg, rgba(255,255,255,0.4) 0%, rgba(248,250,252,0.3) 100%)',
-          border: '1px solid rgba(176,176,176,0.2)',
-          boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03), 0 4px 8px rgba(0,0,0,0.02)'
+          background: "var(--color-surface)",
+          border: "1px solid var(--color-hairline)",
+          borderBottom: "none",
         }}
       >
-        <div className="flex items-center gap-2 mb-4">
-          <span className="text-2xl">{txType === "payment" ? "💸" : "🧾"}</span>
-          <h3 className="text-lg font-bold text-gray-900">
-            {txType === "payment" ? "Payment" : "Expense"}
-          </h3>
-        </div>
+        <p
+          className="text-display font-bold tabular"
+          style={{
+            fontFamily: "var(--font-display)",
+            color: "var(--color-blueberry-600)",
+          }}
+        >
+          ${amount.toFixed(2)}
+        </p>
+        {txType === "expense" && title && (
+          <p className="text-headline font-semibold text-ink mt-1">{title}</p>
+        )}
+        <p className="text-subhead text-ink-muted mt-1">
+          {dateLabel}
+          {group ? ` · ${group.name}` : ""}
+        </p>
+      </div>
 
-        <div className="space-y-3">
-          <div className="flex justify-between items-center">
-            <span className="text-sm text-gray-500">Amount</span>
-            <span className="text-lg font-bold text-gray-900">${amount.toFixed(2)}</span>
-          </div>
+      <div className="receipt-edge-bottom" />
 
-          <div className="flex justify-between items-center">
-            <span className="text-sm text-gray-500">Date</span>
-            <span className="text-sm text-gray-900">
-              {new Date(date).toLocaleDateString("en-US", {
-                month: "short",
-                day: "numeric",
-                year: "numeric"
-              })}
-            </span>
-          </div>
-
-          {group && (
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-500">Group</span>
-              <span className="text-sm text-gray-900">{group.name}</span>
-            </div>
-          )}
-
-          {txType === "expense" && (
-            <>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-500">Paid by</span>
-                <span className="text-sm text-gray-900">
-                  {paidBy === user?.id ? "You" : payer?.name || "Someone"}
-                </span>
-              </div>
-
-              {inputMethod === "scan" && assignmentResults ? (
-                <>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-500">Split method</span>
-                    <span className="text-sm text-gray-900">Item assignment</span>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-500">Split method</span>
-                    <span className="text-sm text-gray-900 capitalize">{splitMode} split</span>
-                  </div>
-                </>
-              )}
-
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-500">Participants</span>
-                <span className="text-sm text-gray-900">{selectedParticipants.length} people</span>
-              </div>
-            </>
-          )}
-
-          {txType === "payment" && (
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-500">Paying to</span>
-              <span className="text-sm text-gray-900">
-                {toUserId === user?.id ? "You" : recipient?.name || "Someone"}
+      {/* ── Who it lands on ──────────────────────────────────────── */}
+      <div className="mt-5">
+        {txType === "payment" ? (
+          <div className="flex items-center justify-center gap-4 py-2">
+            <div className="flex flex-col items-center gap-1.5">
+              <UserAvatar name={rawName(paidBy) || user?.name} size="lg" />
+              <span className="text-footnote text-ink-muted">
+                {nameFor(paidBy)}
               </span>
             </div>
-          )}
-        </div>
+            <svg
+              width="28"
+              height="16"
+              viewBox="0 0 28 16"
+              fill="none"
+              stroke="var(--color-blueberry-600)"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M2 8h22M20 4l4 4-4 4" />
+            </svg>
+            <div className="flex flex-col items-center gap-1.5">
+              <UserAvatar name={rawName(toUserId)} size="lg" />
+              <span className="text-footnote text-ink-muted">
+                {nameFor(toUserId)}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="flex items-baseline justify-between mb-3">
+              <p className="text-footnote font-semibold text-ink-muted uppercase tracking-wider">
+                {nameFor(paidBy)} paid · {methodLabel}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              {selectedParticipants.map((id) => (
+                <div
+                  key={id}
+                  className="flex items-center gap-3 px-3.5 rounded-[14px]"
+                  style={{
+                    minHeight: 56,
+                    background: "var(--color-surface)",
+                    border: "1px solid var(--color-hairline)",
+                  }}
+                >
+                  <UserAvatar name={rawName(id)} size="md" />
+                  <span className="text-callout font-medium text-ink truncate">
+                    {nameFor(id)}
+                  </span>
+                  <span className="leader" aria-hidden />
+                  <span className="text-callout font-semibold text-ink tabular shrink-0">
+                    ${(shares[id] ?? 0).toFixed(2)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
-      {/* Ready to save indicator */}
-      <div
-        className="rounded-xl p-4 text-center backdrop-blur-sm"
-        style={{
-          background: 'linear-gradient(135deg, rgba(16,185,129,0.1) 0%, rgba(20,184,166,0.05) 100%)',
-          border: '1px solid rgba(16,185,129,0.2)'
-        }}
-      >
-        <div className="flex items-center justify-center gap-2">
-          <span className="text-lg">✓</span>
-          <span className="text-sm font-semibold text-emerald-700">
-            Ready to save
-          </span>
-        </div>
-      </div>
-
-      {/* Navigation */}
-      <div className="flex gap-3 pt-4">
+      {/* ── Save ─────────────────────────────────────────────────── */}
+      <div className="flex gap-3 pt-7">
         <button
           onClick={onBack}
           disabled={saving}
-          className="flex-1 px-4 py-3 text-sm font-medium text-gray-600 rounded-xl backdrop-blur-sm transition-all disabled:opacity-50"
+          className="pressable px-5 rounded-[12px] text-body font-medium text-ink disabled:opacity-40"
           style={{
-            border: '1px solid rgba(176,176,176,0.2)',
-            background: 'linear-gradient(135deg, rgba(255,255,255,0.3) 0%, rgba(248,250,252,0.2) 100%)'
+            minHeight: 50,
+            background: "var(--color-surface)",
+            border: "1px solid var(--color-hairline)",
           }}
         >
-          ← Back
+          Back
         </button>
         <button
-          onClick={onSave}
-          disabled={saving}
-          className="flex-1 px-4 py-3 text-sm font-semibold text-white rounded-xl backdrop-blur-sm transition-all disabled:opacity-50"
-          style={{
-            background: 'linear-gradient(135deg, rgba(58,133,197,0.9) 0%, rgba(42,107,165,0.85) 100%)',
-            border: '1px solid rgba(58,133,197,0.4)',
-            boxShadow: '0 2px 4px rgba(58,133,197,0.2), 0 4px 8px rgba(58,133,197,0.15)'
+          onClick={() => {
+            tapMedium();
+            onSave();
           }}
+          disabled={saving}
+          className="pressable flex-1 rounded-[12px] text-body font-semibold text-white disabled:opacity-50"
+          style={{ minHeight: 50, background: "var(--color-blueberry-600)" }}
         >
-          {saving ? "Saving..." : "Save Transaction"}
+          {saving
+            ? "Saving…"
+            : txType === "payment"
+            ? "Record payment"
+            : "Save expense"}
         </button>
       </div>
     </div>
