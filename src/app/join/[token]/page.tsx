@@ -69,8 +69,8 @@ export default function JoinPage() {
           >
             👥
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-1">{preview.group.name}</h1>
-          <p className="text-sm text-gray-500 mb-8">
+          <h1 className="text-2xl font-bold text-ink mb-1">{preview.group.name}</h1>
+          <p className="text-sm text-ink-muted mb-8">
             {preview.invitedBy} invited you ·{" "}
             {preview.memberCount} member{preview.memberCount === 1 ? "" : "s"}
           </p>
@@ -91,20 +91,20 @@ export default function JoinPage() {
               {joining ? "Joining..." : "Join group"}
             </button>
           )}
-          {error && <p className="mt-4 text-sm text-red-600">⚠ {error}</p>}
+          {error && <p className="mt-4 text-sm text-negative">⚠ {error}</p>}
         </>
       ) : (
         <>
           <div className="text-5xl mb-4">🔗</div>
-          <h1 className="text-xl font-bold text-gray-900 mb-2">Invite not found</h1>
-          <p className="text-sm text-gray-500 mb-8 text-center">
+          <h1 className="text-xl font-bold text-ink mb-2">Invite not found</h1>
+          <p className="text-sm text-ink-muted mb-8 text-center">
             {error ?? "This invite link is invalid or has expired."}
             <br />
             Ask for a fresh link, or get added by email.
           </p>
           <Link
             href="/groups"
-            className="px-6 py-2.5 text-sm font-semibold text-[var(--primary)] border border-[var(--border)] rounded-xl hover:bg-gray-50 transition-colors"
+            className="px-6 py-2.5 text-sm font-semibold text-[var(--primary)] border border-[var(--border)] rounded-xl hover:bg-canvas transition-colors"
           >
             Go to my groups
           </Link>

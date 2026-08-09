@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import UserAvatar from "@/components/UserAvatar";
 import ErrorDialog from "@/components/ErrorDialog";
+import SettledOverlay from "@/components/SettledOverlay";
+import { PaymentDiagram } from "@/components/wizard/TypeDiagrams";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { getSessionUser } from "@/lib/session";
 import { ERROR_MESSAGES, mapErrorMessage } from "@/lib/constants";
@@ -41,6 +43,7 @@ export default function NewPaymentPage() {
   const [plan, setPlan] = useState<any[]>([]);
 
   const [saving, setSaving] = useState(false);
+  const [celebrating, setCelebrating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dialogError, setDialogError] = useState<{ title: string; message: string } | null>(null);
   const [showAllErrors, setShowAllErrors] = useState(false);
@@ -126,6 +129,20 @@ export default function NewPaymentPage() {
       });
       const json = await response.json();
       if (json.success) {
+        // If this was the group's only outstanding transfer and it covers the
+        // full amount, the group is now square — worth marking rather than
+        // dropping straight into the activity feed.
+        const clearsGroup =
+          plan.length <= 1 &&
+          youOweRecipient > 0 &&
+          amount >= youOweRecipient - 0.005;
+        if (clearsGroup) {
+          setCelebrating(true);
+          setTimeout(() => {
+            window.location.href = "/activity";
+          }, 2200);
+          return;
+        }
         window.location.href = "/activity";
       } else {
         setDialogError({
@@ -143,7 +160,7 @@ export default function NewPaymentPage() {
   if (!user) {
     return (
       <main className="min-h-dvh flex items-center justify-center p-4">
-        <p className="text-sm text-gray-500">Please select a user from the home page first.</p>
+        <p className="text-sm text-ink-muted">Please select a user from the home page first.</p>
       </main>
     );
   }
@@ -157,6 +174,15 @@ export default function NewPaymentPage() {
     ? plan.find((t) => t.fromUser?.id === recipient.id && t.toUser?.id === user?.id)?.amount ?? 0
     : 0;
 
+  if (celebrating) {
+    return (
+      <SettledOverlay
+        title="All square"
+        detail={`Nobody owes anybody in ${group?.name ?? "this group"}`}
+      />
+    );
+  }
+
   return (
     <main
       className={`min-h-dvh px-4 pt-6 max-w-lg mx-auto transition-all duration-700 ease-out content-with-floating-nav ${
@@ -165,15 +191,19 @@ export default function NewPaymentPage() {
     >
       <button
         onClick={() => router.back()}
-        className="text-sm text-gray-500 hover:text-gray-700 mb-4 block"
+        className="text-sm text-ink-muted hover:text-ink mb-4 block"
       >
         ← Back
       </button>
 
-      {/* Green money-transfer hero — visually distinct from the expense form */}
-      <div className="rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white px-5 py-5 mb-6 shadow-md">
-        <h1 className="text-xl font-bold flex items-center gap-2">
-          <span className="text-2xl">💸</span> Record a Payment
+      {/* Payment hero. Blueberry like everything else — payments are told apart
+          by the arrow visual and the wording, not by running a second palette. */}
+      <div className="rounded-2xl bg-gradient-to-br from-blueberry-600 to-blueberry-700 text-white px-5 py-5 mb-6 shadow-md">
+        <h1 className="text-title2 font-bold flex items-center gap-2.5">
+          <span className="text-white/90 shrink-0">
+            <PaymentDiagram />
+          </span>
+          Record a payment
         </h1>
         <p className="text-sm text-white/85 mt-1">
           Pay someone back — this reduces what you owe them
@@ -182,7 +212,7 @@ export default function NewPaymentPage() {
 
       {groupsLoaded && groups.length === 0 ? (
         <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl px-4 py-8 text-center">
-          <p className="text-sm text-gray-500 mb-2">
+          <p className="text-sm text-ink-muted mb-2">
             Payments happen within a group — you&apos;re not in any yet.
           </p>
           <button
@@ -198,21 +228,21 @@ export default function NewPaymentPage() {
           <div className="flex items-center justify-center gap-5 py-2">
             <div className="flex flex-col items-center gap-1.5">
               <UserAvatar name={user.name} size="lg" />
-              <span className="text-xs font-medium text-gray-600">You</span>
+              <span className="text-xs font-medium text-ink-muted">You</span>
             </div>
-            <span className="text-2xl text-emerald-500 font-bold">→</span>
+            <span className="text-2xl text-blueberry-600 font-bold">→</span>
             <div className="flex flex-col items-center gap-1.5">
               {recipient ? (
                 <>
                   <UserAvatar name={recipient.name} size="lg" />
-                  <span className="text-xs font-medium text-gray-600">{recipient.name}</span>
+                  <span className="text-xs font-medium text-ink-muted">{recipient.name}</span>
                 </>
               ) : (
                 <>
-                  <div className="w-12 h-12 rounded-full border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-300 text-xl">
+                  <div className="w-12 h-12 rounded-full border-2 border-dashed border-hairline flex items-center justify-center text-ink-muted text-xl">
                     ?
                   </div>
-                  <span className="text-xs text-gray-400">Pick below</span>
+                  <span className="text-xs text-ink-muted">Pick below</span>
                 </>
               )}
             </div>
@@ -221,33 +251,33 @@ export default function NewPaymentPage() {
           {/* ── Owe/owed reference from the group's settle-up plan ─── */}
           {recipient && (
             youOweRecipient > 0.005 ? (
-              <div className="flex items-center justify-between gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-xl">
-                <p className="text-sm text-red-700">
+              <div className="flex items-center justify-between gap-3 px-4 py-3 bg-negative-tint border border-negative-soft rounded-xl">
+                <p className="text-sm text-negative">
                   You owe <span className="font-semibold">{recipient.name}</span>{" "}
                   <span className="font-semibold">${youOweRecipient.toFixed(2)}</span>
-                  {group && <span className="text-red-400"> per {group.name}&apos;s settle-up plan</span>}
+                  {group && <span className="text-negative"> per {group.name}&apos;s settle-up plan</span>}
                 </p>
                 <button
                   type="button"
                   onClick={() => setAmount(Math.round(youOweRecipient * 100) / 100)}
-                  className="px-3 py-1.5 text-xs font-semibold text-white bg-red-500 rounded-lg hover:bg-red-600 transition-colors shrink-0"
+                  className="px-3 py-1.5 text-xs font-semibold text-white bg-negative rounded-lg hover:bg-negative transition-colors shrink-0"
                 >
                   Pay ${youOweRecipient.toFixed(2)}
                 </button>
               </div>
             ) : recipientOwesYou > 0.005 ? (
-              <div className="px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-xl">
-                <p className="text-sm text-emerald-700">
+              <div className="px-4 py-3 bg-positive-tint border border-positive-soft rounded-xl">
+                <p className="text-sm text-positive">
                   <span className="font-semibold">{recipient.name}</span> pays{" "}
                   <span className="font-semibold">you ${recipientOwesYou.toFixed(2)}</span>
-                  {group && <span className="text-emerald-500"> in {group.name}&apos;s settle-up plan</span>} —
+                  {group && <span className="text-positive"> in {group.name}&apos;s settle-up plan</span>} —
                   you don&apos;t owe them anything
                 </p>
               </div>
             ) : (
-              <div className="px-4 py-3 bg-gray-50 border border-[var(--border)] rounded-xl">
-                <p className="text-sm text-gray-500">
-                  Nothing to pay <span className="font-medium text-gray-700">{recipient.name}</span>
+              <div className="px-4 py-3 bg-canvas border border-[var(--border)] rounded-xl">
+                <p className="text-sm text-ink-muted">
+                  Nothing to pay <span className="font-medium text-ink">{recipient.name}</span>
                   {group && <> in {group.name}&apos;s settle-up plan</>}
                 </p>
               </div>
@@ -255,12 +285,12 @@ export default function NewPaymentPage() {
           )}
 
           {/* ── Amount — big and centered ──────────────────────────── */}
-          <div className="bg-emerald-50 border border-emerald-200 rounded-2xl px-4 py-5">
-            <p className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wider text-center mb-2">
+          <div className="bg-blueberry-100 border border-hairline rounded-2xl px-4 py-5">
+            <p className="text-caption font-semibold text-blueberry-600 uppercase tracking-wider text-center mb-2">
               Amount
             </p>
             <div className="flex items-center justify-center gap-1">
-              <span className="text-2xl font-semibold text-emerald-600">$</span>
+              <span className="text-2xl font-semibold text-blueberry-600">$</span>
               <input
                 type="number"
                 value={amount || ""}
@@ -268,7 +298,7 @@ export default function NewPaymentPage() {
                 step="0.01"
                 min="0"
                 placeholder="0.00"
-                className="w-40 text-4xl font-bold text-gray-900 text-center bg-transparent focus:outline-none placeholder:text-gray-300"
+                className="w-40 text-4xl font-bold text-ink text-center bg-transparent focus:outline-none placeholder:text-ink-muted"
               />
             </div>
             {showAllErrors && amount <= 0 && (
@@ -280,7 +310,7 @@ export default function NewPaymentPage() {
 
           {/* ── Recipient ──────────────────────────────────────────── */}
           <div>
-            <label className="text-xs font-medium text-gray-500 mb-2 block">Pay to</label>
+            <label className="text-xs font-medium text-ink-muted mb-2 block">Pay to</label>
             <div className="flex flex-wrap gap-2">
               {recipients.map((m: any) => (
                 <button
@@ -289,8 +319,8 @@ export default function NewPaymentPage() {
                   onClick={() => setToUserId(m.id)}
                   className={`flex items-center gap-2 px-3 py-2 text-sm rounded-xl border transition-colors ${
                     toUserId === m.id
-                      ? "border-emerald-500 bg-emerald-50 text-emerald-700 font-semibold"
-                      : "border-[var(--border)] bg-white text-gray-700 hover:bg-gray-50"
+                      ? "border-blueberry-600 bg-blueberry-100 text-blueberry-600 font-semibold"
+                      : "border-[var(--border)] bg-surface-raised text-ink hover:bg-canvas"
                   }`}
                 >
                   <UserAvatar name={m.name} size="sm" />
@@ -298,7 +328,7 @@ export default function NewPaymentPage() {
                 </button>
               ))}
               {recipients.length === 0 && (
-                <p className="text-sm text-gray-400">No other members in this group</p>
+                <p className="text-sm text-ink-muted">No other members in this group</p>
               )}
             </div>
             {showAllErrors && !toUserId && (
@@ -309,11 +339,11 @@ export default function NewPaymentPage() {
           {/* ── Group + date (compact row) ─────────────────────────── */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-medium text-gray-500 mb-1 block">Group</label>
+              <label className="text-xs font-medium text-ink-muted mb-1 block">Group</label>
               <select
                 value={selectedGroupId}
                 onChange={(e) => setSelectedGroupId(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-surface-raised focus:outline-none focus:ring-2 focus:ring-blueberry-500"
               >
                 {groups.map((g) => (
                   <option key={g.id} value={g.id}>{g.name}</option>
@@ -321,12 +351,12 @@ export default function NewPaymentPage() {
               </select>
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-500 mb-1 block">Date</label>
+              <label className="text-xs font-medium text-ink-muted mb-1 block">Date</label>
               <input
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-surface-raised focus:outline-none focus:ring-2 focus:ring-blueberry-500"
               />
             </div>
           </div>
@@ -338,7 +368,7 @@ export default function NewPaymentPage() {
           <button
             onClick={handleSave}
             disabled={saving || !toUserId || amount <= 0}
-            className="w-full px-4 py-3.5 text-sm font-semibold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+            className="w-full px-4 py-3.5 text-sm font-semibold text-white bg-blueberry-600 rounded-xl hover:bg-blueberry-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
           >
             {saving
               ? "Saving..."
@@ -349,7 +379,7 @@ export default function NewPaymentPage() {
         </div>
       )}
 
-      {saving && <LoadingOverlay />}
+      {saving && <LoadingOverlay message="Recording payment…" />}
 
       <ErrorDialog
         open={!!dialogError}

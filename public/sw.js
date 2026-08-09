@@ -10,7 +10,7 @@
 //
 // Bump CACHE_VERSION when shell assets change meaningfully so stale caches
 // get cleared on activate (no build-hash wiring yet — manual bump).
-const CACHE_VERSION = "v1";
+const CACHE_VERSION = "v2";
 const SHELL_CACHE = `shell-${CACHE_VERSION}`;
 const DATA_CACHE = `data-${CACHE_VERSION}`;
 
@@ -21,6 +21,38 @@ const SHELL_URLS = [
   "/icons/icon-512.png",
   "/icons/apple-touch-icon.png",
 ];
+
+// ── Local development kill switch ─────────────────────────────────────
+// A worker registered against http://localhost:3000 outlives the process
+// that installed it, so it keeps serving an earlier session's JS chunks to
+// every later `npm run dev` — indistinguishable from "my code didn't apply".
+// Skipping registration on the client can't help a browser that already has
+// a worker installed, because the stale worker is what's serving the client
+// code. The browser DOES re-fetch this file on navigation, so having the
+// worker uninstall itself is the only fix that reaches those browsers.
+const IS_LOCAL =
+  self.location.hostname === "localhost" ||
+  self.location.hostname === "127.0.0.1" ||
+  self.location.hostname.endsWith(".local") ||
+  /^(192\.168|10)\./.test(self.location.hostname);
+
+if (IS_LOCAL) {
+  self.addEventListener("install", () => self.skipWaiting());
+  self.addEventListener("activate", (event) => {
+    event.waitUntil(
+      (async () => {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+        await self.registration.unregister();
+        // Reload open tabs so they pick up un-intercepted assets immediately.
+        const windows = await self.clients.matchAll({ type: "window" });
+        windows.forEach((c) => c.navigate(c.url));
+      })()
+    );
+  });
+  // No fetch handler on localhost: every request goes straight to the dev
+  // server. Everything below is production-only.
+} else {
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -61,6 +93,8 @@ self.addEventListener("fetch", (event) => {
 
   event.respondWith(cacheFirst(request, SHELL_CACHE));
 });
+
+} // end production-only block
 
 async function networkFirst(request, cacheName) {
   const cache = await caches.open(cacheName);

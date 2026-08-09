@@ -63,10 +63,10 @@ export default function FormField({
 
   return (
     <div className={className}>
-      <label className="text-xs font-medium text-gray-500 mb-1 block">
+      <label className="text-xs font-medium text-ink-muted mb-1 block">
         {label}
         {labelSuffix && (
-          <span className="text-gray-400 font-normal ml-1">{labelSuffix}</span>
+          <span className="text-ink-muted font-normal ml-1">{labelSuffix}</span>
         )}
       </label>
       {child}

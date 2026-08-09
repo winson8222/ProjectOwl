@@ -91,8 +91,8 @@ export default function ReceiptUploader({
           transition-colors duration-200
           ${
             isDragging
-              ? "border-[var(--primary)] bg-blue-50"
-              : "border-[var(--border)] hover:border-[var(--primary)] hover:bg-gray-50"
+              ? "border-[var(--primary)] bg-blueberry-100"
+              : "border-[var(--border)] hover:border-[var(--primary)] hover:bg-canvas"
           }
           ${disabled ? "opacity-50 cursor-not-allowed" : ""}
         `}
@@ -108,11 +108,11 @@ export default function ReceiptUploader({
         />
 
         <div className="text-4xl mb-3">📄</div>
-        <p className="text-sm font-medium text-gray-700 mb-1">
+        <p className="text-sm font-medium text-ink mb-1">
           Drop a receipt photo here
         </p>
-        <p className="text-xs text-gray-500">or tap to browse</p>
-        <p className="text-xs text-gray-400 mt-2">
+        <p className="text-xs text-ink-muted">or tap to browse</p>
+        <p className="text-xs text-ink-muted mt-2">
           JPEG, PNG, WebP — up to 10 MB
         </p>
       </div>

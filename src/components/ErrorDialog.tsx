@@ -1,5 +1,7 @@
 "use client";
 
+import BottomSheet from "./BottomSheet";
+
 interface ErrorDialogProps {
   open: boolean;
   title?: string;
@@ -9,33 +11,34 @@ interface ErrorDialogProps {
 }
 
 /**
- * Modal overlay for error messages, matching the look of ConfirmDialog.
- * Use this for POST action failures (save, delete, mark-paid).
+ * Error surface for failed actions (save, delete, mark-paid).
+ *
+ * Presented as a bottom sheet rather than a centred dialog — same props, so
+ * every call site is unchanged. The ⚠️ emoji it used to lead with is gone:
+ * the message says what went wrong, and a warning glyph above it just delays
+ * reading that.
  */
 export default function ErrorDialog({
   open,
-  title = "Error",
+  title = "Something went wrong",
   message,
-  dismissLabel = "Dismiss",
+  dismissLabel = "OK",
   onDismiss,
 }: ErrorDialogProps) {
-  if (!open) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="bg-white rounded-2xl p-6 shadow-xl max-w-sm w-full">
-        <div className="flex flex-col items-center text-center mb-4">
-          <span className="text-3xl mb-3">⚠️</span>
-          <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-        </div>
-        <p className="text-sm text-gray-500 mb-6 text-center">{message}</p>
-        <button
-          onClick={onDismiss}
-          className="w-full px-4 py-2.5 text-sm font-medium text-white bg-[var(--primary)] rounded-lg hover:bg-[var(--primary-hover)] transition-colors"
-        >
-          {dismissLabel}
-        </button>
-      </div>
-    </div>
+    <BottomSheet open={open} onClose={onDismiss} label={title}>
+      <h3 className="text-title2 font-bold text-ink">{title}</h3>
+      <p className="text-body text-ink-muted mt-2 mb-5">{message}</p>
+      <button
+        onClick={onDismiss}
+        className="pressable w-full rounded-[12px] text-body font-semibold text-white"
+        style={{
+          minHeight: 50,
+          background: "var(--color-blueberry-600)",
+        }}
+      >
+        {dismissLabel}
+      </button>
+    </BottomSheet>
   );
 }

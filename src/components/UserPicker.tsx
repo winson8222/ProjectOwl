@@ -70,10 +70,10 @@ export default function UserPicker({
   if (loading) {
     return (
       <div className="space-y-2">
-        {label && <p className="text-sm font-medium text-gray-700">{label}</p>}
+        {label && <p className="text-sm font-medium text-ink">{label}</p>}
         <div className="flex gap-2 animate-pulse">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="w-16 h-16 bg-gray-200 rounded-xl" />
+            <div key={i} className="w-16 h-16 bg-canvas rounded-xl" />
           ))}
         </div>
       </div>
@@ -82,7 +82,7 @@ export default function UserPicker({
 
   return (
     <div className="space-y-2">
-      {label && <p className="text-sm font-medium text-gray-700">{label}</p>}
+      {label && <p className="text-sm font-medium text-ink">{label}</p>}
       <div className="flex flex-wrap gap-2">
         {users.map((user) => {
           const isSelected = selectedUserIds.includes(user.id);
@@ -92,12 +92,12 @@ export default function UserPicker({
               onClick={() => toggle(user.id)}
               className={`flex flex-col items-center gap-1 p-2 rounded-xl border-2 transition-all min-w-[64px] ${
                 isSelected
-                  ? "border-[var(--primary)] bg-blue-50"
-                  : "border-transparent bg-gray-50 hover:bg-gray-100"
+                  ? "border-[var(--primary)] bg-blueberry-100"
+                  : "border-transparent bg-canvas hover:bg-canvas"
               }`}
             >
               <UserAvatar name={user.name} size="sm" />
-              <span className="text-xs font-medium text-gray-700 truncate max-w-[60px]">
+              <span className="text-xs font-medium text-ink truncate max-w-[60px]">
                 {user.name}
               </span>
               {isSelected && (
