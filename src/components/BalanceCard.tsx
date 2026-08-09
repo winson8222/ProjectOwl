@@ -14,7 +14,7 @@ export default function BalanceCard({ netBalance, totalOwed, totalOwe }: Balance
 
   return (
     <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 text-center">
-      <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">
+      <p className="text-xs text-ink-muted uppercase tracking-wider mb-1">
         Net Balance
       </p>
       <p className={`text-3xl font-bold ${isPositive ? "text-[var(--success)]" : "text-[var(--danger)]"}`}>
@@ -23,12 +23,12 @@ export default function BalanceCard({ netBalance, totalOwed, totalOwe }: Balance
       <div className="flex justify-center gap-6 mt-3">
         <div className="text-center">
           <p className="text-lg font-semibold text-[var(--success)]">+${totalOwed.toFixed(2)}</p>
-          <p className="text-xs text-gray-400">owed to you</p>
+          <p className="text-xs text-ink-muted">owed to you</p>
         </div>
         <div className="w-px bg-[var(--border)]" />
         <div className="text-center">
           <p className="text-lg font-semibold text-[var(--danger)]">-${totalOwe.toFixed(2)}</p>
-          <p className="text-xs text-gray-400">you owe</p>
+          <p className="text-xs text-ink-muted">you owe</p>
         </div>
       </div>
     </div>

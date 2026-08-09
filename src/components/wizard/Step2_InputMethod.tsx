@@ -2,6 +2,9 @@
 
 import { useState, useCallback } from "react";
 import UserPicker from "@/components/UserPicker";
+import { ScanDiagram, ManualDiagram } from "./TypeDiagrams";
+import ScanLoader from "@/components/ScanLoader";
+import { tapLight } from "@/lib/haptics";
 
 interface Step2_InputMethodProps {
   inputMethod: "scan" | "manual";
@@ -60,26 +63,38 @@ export default function Step2_InputMethod({
       if (data.success) {
         onScan(data);
       } else {
-        setError(data.error || "Failed to extract receipt");
+        setError(
+          data.error ||
+            "Couldn't read that receipt. Try a straighter photo with the whole receipt in frame."
+        );
       }
     } catch {
-      setError("Failed to connect to the server");
+      setError("Couldn't reach the server. Check your connection and try again.");
     } finally {
       setUploading(false);
     }
   };
 
+  // Full-screen takeover while the receipt is being read, rather than a
+  // spinner inside the card. Purely presentational — same `uploading` flag.
+  if (uploading) {
+    return <ScanLoader />;
+  }
+
   if (showScan) {
     return (
       <div className="space-y-4">
-        <h2 className="text-xl font-bold text-gray-900 text-center mb-4">
-          Scan Receipt
-        </h2>
+        <div className="text-center mb-4">
+          <h2 className="text-title2 font-bold text-ink">ItreAI</h2>
+          <p className="text-subhead text-ink-muted mt-1">
+            Get the whole receipt in frame, straight on
+          </p>
+        </div>
 
         <div className="rounded-2xl p-8 text-center backdrop-blur-sm"
              style={{
-               background: 'linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(248,250,252,0.25) 100%)',
-               border: '1px solid rgba(176,176,176,0.2)'
+               background: 'var(--color-surface)',
+               border: '1px solid var(--color-hairline)'
              }}>
           <input
             type="file"
@@ -96,20 +111,24 @@ export default function Step2_InputMethod({
             htmlFor="scan-input"
             className="cursor-pointer inline-flex flex-col items-center gap-3"
           >
-            <div className="w-16 h-16 rounded-full bg-[var(--primary)] text-white flex items-center justify-center text-3xl">
-              {uploading ? "⏳" : "📷"}
-            </div>
-            <span className="text-sm font-medium text-gray-700">
-              {uploading ? "Processing..." : "Tap to scan receipt"}
+            <span
+              className="w-20 h-20 rounded-full flex items-center justify-center text-white"
+              style={{
+                background:
+                  "linear-gradient(135deg, var(--color-blueberry-600) 0%, var(--color-blueberry-700) 100%)",
+              }}
+            >
+              <ScanDiagram />
             </span>
+            <span className="text-body font-medium text-ink">Take a photo</span>
           </label>
-          <p className="text-xs text-gray-400 mt-2">
-            Take a photo of your receipt
+          <p className="text-footnote text-ink-muted mt-2">
+            Or pick one from your camera roll
           </p>
         </div>
 
         {error && (
-          <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+          <div className="px-4 py-3 bg-negative-tint border border-negative-soft rounded-xl text-sm text-negative">
             ⚠ {error}
           </div>
         )}
@@ -119,61 +138,98 @@ export default function Step2_InputMethod({
             setShowScan(false);
             setError(null);
           }}
-          className="w-full px-4 py-3 text-sm font-medium text-gray-600 rounded-xl backdrop-blur-sm"
+          className="w-full px-4 py-3 text-sm font-medium text-ink-muted rounded-xl backdrop-blur-sm"
           style={{
-            border: '1px solid rgba(176,176,176,0.2)',
-            background: 'linear-gradient(135deg, rgba(255,255,255,0.3) 0%, rgba(248,250,252,0.2) 100%)'
+            border: '1px solid var(--color-hairline)',
+            background: 'var(--color-surface)'
           }}
         >
-          ← Back to method selection
+          ← Choose a different way
         </button>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-bold text-gray-900 text-center mb-6">
-        How would you like to add this expense?
-      </h2>
+    <div className="space-y-3">
+      <h2 className="text-title2 font-bold text-ink mb-5">How do you want to add it?</h2>
 
-      <div className="grid grid-cols-2 gap-4">
-        {/* Scan Card */}
-        <button
-          onClick={() => {
-            onMethodChange("scan");
-            setShowScan(true);
-          }}
-          className="p-6 rounded-2xl backdrop-blur-sm transition-all hover:scale-[1.02]"
+      {/* ItreAI leads and carries the accent — it's the path we want people on,
+          and the one that justifies the app existing. */}
+      <button
+        onClick={() => {
+          tapLight();
+          onMethodChange("scan");
+          setShowScan(true);
+        }}
+        className="pressable w-full flex items-center gap-4 p-4 rounded-[14px] text-left"
+        style={{
+          background:
+            "linear-gradient(135deg, var(--color-blueberry-600) 0%, var(--color-blueberry-700) 100%)",
+          border: "1px solid var(--color-blueberry-700)",
+          boxShadow:
+            "0 2px 6px color-mix(in srgb, var(--color-blueberry-900) 22%, transparent)",
+        }}
+      >
+        <span
+          className="shrink-0 flex items-center justify-center rounded-[10px] text-white"
+          style={{ width: 60, height: 60, background: "rgba(255,255,255,0.14)" }}
+        >
+          <ScanDiagram />
+        </span>
+        <span className="min-w-0">
+          <span className="flex items-baseline gap-1.5">
+            <span className="text-headline font-semibold text-white">ItreAI</span>
+            <span
+              className="text-caption font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded"
+              style={{ background: "rgba(255,255,255,0.18)", color: "white" }}
+            >
+              Scan
+            </span>
+          </span>
+          <span
+            className="block text-subhead mt-0.5"
+            style={{ color: "rgba(255,255,255,0.82)" }}
+          >
+            Photograph the receipt — every item and price is read for you
+          </span>
+        </span>
+      </button>
+
+      <button
+        onClick={() => {
+          tapLight();
+          onMethodChange("manual");
+          setTimeout(() => onNext(), 200);
+        }}
+        className="pressable w-full flex items-center gap-4 p-4 rounded-[14px] text-left"
+        style={{
+          background: "var(--color-surface)",
+          border: "1px solid var(--color-hairline)",
+          boxShadow:
+            "0 1px 2px color-mix(in srgb, var(--color-blueberry-900) 5%, transparent)",
+        }}
+      >
+        <span
+          className="shrink-0 flex items-center justify-center rounded-[10px]"
           style={{
-            background: 'linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(248,250,252,0.25) 100%)',
-            border: '1px solid rgba(176,176,176,0.2)',
-            boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03), 0 4px 8px rgba(0,0,0,0.02)'
+            width: 60,
+            height: 60,
+            background: "var(--color-surface-raised)",
+            color: "var(--color-blueberry-600)",
           }}
         >
-          <div className="text-4xl mb-3">📷</div>
-          <h3 className="text-lg font-bold text-gray-900 mb-1">Scan Receipt</h3>
-          <p className="text-sm text-gray-500">Auto-extract items</p>
-        </button>
-
-        {/* Manual Card */}
-        <button
-          onClick={() => {
-            onMethodChange("manual");
-            setTimeout(() => onNext(), 200);
-          }}
-          className="p-6 rounded-2xl backdrop-blur-sm transition-all hover:scale-[1.02]"
-          style={{
-            background: 'linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(248,250,252,0.25) 100%)',
-            border: '1px solid rgba(176,176,176,0.2)',
-            boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03), 0 4px 8px rgba(0,0,0,0.02)'
-          }}
-        >
-          <div className="text-4xl mb-3">⌨️</div>
-          <h3 className="text-lg font-bold text-gray-900 mb-1">Enter Manually</h3>
-          <p className="text-sm text-gray-500">Type the details</p>
-        </button>
-      </div>
+          <ManualDiagram />
+        </span>
+        <span className="min-w-0">
+          <span className="block text-headline font-semibold text-ink">
+            Enter it myself
+          </span>
+          <span className="block text-subhead text-ink-muted mt-0.5">
+            Type the title and total by hand
+          </span>
+        </span>
+      </button>
     </div>
   );
 }

@@ -1,5 +1,8 @@
 "use client";
 
+import BottomSheet from "./BottomSheet";
+import { tapLight } from "@/lib/haptics";
+
 interface ConfirmDialogProps {
   open: boolean;
   title: string;
@@ -12,7 +15,15 @@ interface ConfirmDialogProps {
 }
 
 /**
- * Reusable confirmation modal.
+ * Confirmation sheet.
+ *
+ * Actions stack full-width instead of sitting side by side: two 50% buttons
+ * put Cancel and a destructive Confirm within a thumb-width of each other,
+ * which is how people delete things they meant to keep. Confirm leads because
+ * it's the action being asked about; Cancel sits below it, quiet.
+ *
+ * Destructive variants are neither swipe- nor backdrop-dismissible — an
+ * irreversible choice should require actually answering the question.
  */
 export default function ConfirmDialog({
   open,
@@ -24,32 +35,46 @@ export default function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
-  if (!open) return null;
+  const danger = variant === "danger";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="bg-white rounded-2xl p-6 shadow-xl max-w-sm w-full">
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">{title}</h3>
-        <p className="text-sm text-gray-500 mb-6">{message}</p>
-        <div className="flex gap-3">
-          <button
-            onClick={onCancel}
-            className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-          >
-            {cancelLabel}
-          </button>
-          <button
-            onClick={onConfirm}
-            className={`flex-1 px-4 py-2.5 text-sm font-medium text-white rounded-lg transition-colors ${
-              variant === "danger"
-                ? "bg-[var(--danger)] hover:bg-red-700"
-                : "bg-[var(--primary)] hover:bg-[var(--primary-hover)]"
-            }`}
-          >
-            {confirmLabel}
-          </button>
-        </div>
+    <BottomSheet
+      open={open}
+      onClose={onCancel}
+      label={title}
+      dismissible={!danger}
+    >
+      <h3 className="text-title2 font-bold text-ink">{title}</h3>
+      <p className="text-body text-ink-muted mt-2 mb-5">{message}</p>
+
+      <div className="space-y-2.5">
+        <button
+          onClick={() => {
+            tapLight();
+            onConfirm();
+          }}
+          className="pressable w-full rounded-[12px] text-body font-semibold text-white"
+          style={{
+            minHeight: 50,
+            background: danger
+              ? "var(--color-negative)"
+              : "var(--color-blueberry-600)",
+          }}
+        >
+          {confirmLabel}
+        </button>
+        <button
+          onClick={onCancel}
+          className="pressable w-full rounded-[12px] text-body font-medium text-ink"
+          style={{
+            minHeight: 50,
+            background: "var(--color-surface)",
+            border: "1px solid var(--color-hairline)",
+          }}
+        >
+          {cancelLabel}
+        </button>
       </div>
-    </div>
+    </BottomSheet>
   );
 }

@@ -42,12 +42,12 @@ export default function Step4_ItemAssignment({
 
   if (participants.length === 0) {
     return (
-      <div className="fixed inset-0 z-50 bg-white flex items-center justify-center p-4">
+      <div className="fixed inset-0 z-50 bg-surface-raised flex items-center justify-center p-4">
         <div className="text-center">
-          <p className="text-gray-500">No participants selected</p>
+          <p className="text-ink-muted">No participants selected</p>
           <button
             onClick={onBack}
-            className="mt-4 px-4 py-2 text-sm font-medium text-gray-600 border border-gray-300 rounded-lg"
+            className="mt-4 px-4 py-2 text-sm font-medium text-ink-muted border border-hairline rounded-lg"
           >
             ← Back
           </button>
@@ -58,12 +58,12 @@ export default function Step4_ItemAssignment({
 
   if (items.length === 0) {
     return (
-      <div className="fixed inset-0 z-50 bg-white flex items-center justify-center p-4">
+      <div className="fixed inset-0 z-50 bg-surface-raised flex items-center justify-center p-4">
         <div className="text-center">
-          <p className="text-gray-500">No items found in receipt</p>
+          <p className="text-ink-muted">No items found in receipt</p>
           <button
             onClick={onBack}
-            className="mt-4 px-4 py-2 text-sm font-medium text-gray-600 border border-gray-300 rounded-lg"
+            className="mt-4 px-4 py-2 text-sm font-medium text-ink-muted border border-hairline rounded-lg"
           >
             ← Back
           </button>

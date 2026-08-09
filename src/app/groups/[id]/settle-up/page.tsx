@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import UserAvatar from "@/components/UserAvatar";
 import ErrorDialog from "@/components/ErrorDialog";
+import SettledOverlay from "@/components/SettledOverlay";
 import { getSessionUser } from "@/lib/session";
 
 /**
@@ -22,6 +23,7 @@ export default function GroupSettleUpPage() {
   const [error, setError] = useState<string | null>(null);
   const [settling, setSettling] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [celebrating, setCelebrating] = useState(false);
   const [dialogError, setDialogError] = useState<{ title: string; message: string } | null>(null);
 
   const loadData = useCallback((currentUser: any) => {
@@ -60,8 +62,17 @@ export default function GroupSettleUpPage() {
         });
         const json = await response.json();
         if (json.success) {
-          setMessage("Marked as paid!");
-          setTimeout(() => window.location.reload(), 1200);
+          // If this was the last transfer in the plan, the group is now square
+          // — that's the moment worth marking. The reload delay already
+          // existed; the stamp just fills a pause that used to show a string.
+          const clearsGroup = plan.length <= 1;
+          if (clearsGroup) {
+            setCelebrating(true);
+            setTimeout(() => window.location.reload(), 2200);
+          } else {
+            setMessage("Marked as paid");
+            setTimeout(() => window.location.reload(), 1200);
+          }
         } else {
           setDialogError({
             title: "Payment failed",
@@ -80,7 +91,7 @@ export default function GroupSettleUpPage() {
   if (!user) {
     return (
       <main className="min-h-dvh flex items-center justify-center p-4">
-        <p className="text-sm text-gray-500">Please select a user from the home page first.</p>
+        <p className="text-sm text-ink-muted">Please select a user from the home page first.</p>
       </main>
     );
   }
@@ -93,31 +104,40 @@ export default function GroupSettleUpPage() {
     );
   }
 
+  if (celebrating) {
+    return (
+      <SettledOverlay
+        title="All square"
+        detail={`Nobody owes anybody in ${group?.name ?? "this group"}`}
+      />
+    );
+  }
+
   return (
     <main className="min-h-dvh px-4 pt-6 max-w-lg mx-auto content-with-floating-nav">
       <Link
         href={`/groups/${groupId}`}
-        className="text-sm text-gray-500 hover:text-gray-700 mb-4 block"
+        className="text-sm text-ink-muted hover:text-ink mb-4 block"
       >
         ← {group?.name ?? "Group"}
       </Link>
 
       <div className="mb-6">
-        <h1 className="text-xl font-bold text-gray-900">Settle Up</h1>
-        <p className="text-sm text-gray-500 mt-0.5">
+        <h1 className="text-xl font-bold text-ink">Settle Up</h1>
+        <p className="text-sm text-ink-muted mt-0.5">
           Fewest payments to clear the whole group
         </p>
       </div>
 
       {/* Error banner */}
       {error && (
-        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+        <div className="mb-4 px-4 py-3 bg-negative-tint border border-negative-soft rounded-xl text-sm text-negative">
           ⚠ {error}
         </div>
       )}
 
       {message && (
-        <div className="mb-4 px-4 py-2 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
+        <div className="mb-4 px-4 py-2 bg-positive-tint border border-positive-soft rounded-lg text-sm text-positive">
           {message}
         </div>
       )}
@@ -125,8 +145,8 @@ export default function GroupSettleUpPage() {
       {plan.length === 0 ? (
         <div className="text-center py-12">
           <p className="text-3xl mb-2">✅</p>
-          <p className="text-sm text-gray-500 font-medium">All settled up!</p>
-          <p className="text-xs text-gray-400 mt-1">No outstanding balances in this group</p>
+          <p className="text-sm text-ink-muted font-medium">All settled up!</p>
+          <p className="text-xs text-ink-muted mt-1">No outstanding balances in this group</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -141,13 +161,13 @@ export default function GroupSettleUpPage() {
               >
                 <UserAvatar name={t.fromUser.name} size="sm" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-gray-900">
+                  <p className="text-sm text-ink">
                     <span className="font-medium">{youPay ? "You" : t.fromUser.name}</span>
-                    <span className="text-gray-400"> pays </span>
+                    <span className="text-ink-muted"> pays </span>
                     <span className="font-medium">{youReceive ? "you" : t.toUser.name}</span>
                   </p>
                   <p className={`text-xs font-semibold ${
-                    youReceive ? "text-[var(--success)]" : youPay ? "text-[var(--danger)]" : "text-gray-500"
+                    youReceive ? "text-[var(--success)]" : youPay ? "text-[var(--danger)]" : "text-ink-muted"
                   }`}>
                     ${t.amount.toFixed(2)}
                   </p>

@@ -1,75 +1,91 @@
 "use client";
 
+import { ExpenseDiagram, PaymentDiagram } from "./TypeDiagrams";
+import { tapLight } from "@/lib/haptics";
+
 interface Step1_ChooseTypeProps {
   txType: "expense" | "payment";
   onTypeChange: (type: "expense" | "payment") => void;
   onNext: () => void;
 }
 
+const OPTIONS = [
+  {
+    type: "expense" as const,
+    title: "Expense",
+    detail: "One person paid — split it between everyone",
+    Diagram: ExpenseDiagram,
+  },
+  {
+    type: "payment" as const,
+    title: "Payment",
+    detail: "Pay someone back what you already owe",
+    Diagram: PaymentDiagram,
+  },
+];
+
 /**
- * Step 1: Choose transaction type
- * Big card selection for Add Expense vs Add Payment
+ * Step 1: expense or payment.
+ *
+ * Stacked full-width rows rather than side-by-side cards — two columns forced
+ * the descriptions into three cramped lines each, and a row is a bigger, more
+ * thumb-reachable target.
+ *
+ * Both options are Blueberry. Payments used to carry a separate green identity
+ * here and on /payments/new, which amounted to a second palette running beside
+ * the primary one; the two are distinguished by the diagram and the wording
+ * instead of by hue.
  */
 export default function Step1_ChooseType({ txType, onTypeChange, onNext }: Step1_ChooseTypeProps) {
   return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-bold text-gray-900 text-center mb-6">
-        What do you want to add?
-      </h2>
+    <div className="space-y-3">
+      <h2 className="text-title2 font-bold text-ink mb-5">What are you adding?</h2>
 
-      <div className="grid grid-cols-2 gap-4">
-        {/* Expense Card */}
-        <button
-          onClick={() => {
-            onTypeChange("expense");
-            setTimeout(() => onNext(), 200);
-          }}
-          className={`p-6 rounded-2xl backdrop-blur-sm transition-all hover:scale-[1.02] ${
-            txType === "expense" ? "ring-2 ring-[var(--primary)]" : ""
-          }`}
-          style={{
-            background: txType === "expense"
-              ? 'linear-gradient(135deg, rgba(58,133,197,0.15) 0%, rgba(58,133,197,0.08) 100%)'
-              : 'linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(248,250,252,0.25) 100%)',
-            border: '1px solid rgba(176,176,176,0.2)',
-            boxShadow: txType === "expense"
-              ? '0 1px 2px rgba(58,133,197,0.1), 0 2px 4px rgba(58,133,197,0.08), 0 4px 8px rgba(58,133,197,0.06)'
-              : '0 1px 2px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03), 0 4px 8px rgba(0,0,0,0.02)'
-          }}
-        >
-          <div className="text-4xl mb-3">🧾</div>
-          <h3 className="text-lg font-bold text-gray-900 mb-1">Add Expense</h3>
-          <p className="text-sm text-gray-500">Split costs with friends</p>
-        </button>
-
-        {/* Payment Card */}
-        <button
-          onClick={() => {
-            onTypeChange("payment");
-            setTimeout(() => onNext(), 200);
-          }}
-          className={`p-6 rounded-2xl backdrop-blur-sm transition-all hover:scale-[1.02] ${
-            txType === "payment" ? "ring-2 ring-[var(--primary)]" : ""
-          }`}
-          style={{
-            background: txType === "payment"
-              ? 'linear-gradient(135deg, rgba(58,133,197,0.15) 0%, rgba(58,133,197,0.08) 100%)'
-              : 'linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(248,250,252,0.25) 100%)',
-            border: '1px solid rgba(176,176,176,0.2)',
-            boxShadow: txType === "payment"
-              ? '0 1px 2px rgba(58,133,197,0.1), 0 2px 4px rgba(58,133,197,0.08), 0 4px 8px rgba(58,133,197,0.06)'
-              : '0 1px 2px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03), 0 4px 8px rgba(0,0,0,0.02)'
-          }}
-        >
-          <div className="text-4xl mb-3">💸</div>
-          <h3 className="text-lg font-bold text-gray-900 mb-1">Add Payment</h3>
-          <p className="text-sm text-gray-500">Pay someone back</p>
-        </button>
-      </div>
-
-      <p className="text-xs text-gray-400 text-center pt-4">
-        Choose the type of transaction you want to add
-      </p>
+      {OPTIONS.map(({ type, title, detail, Diagram }) => {
+        const selected = txType === type;
+        return (
+          <button
+            key={type}
+            onClick={() => {
+              tapLight();
+              onTypeChange(type);
+              setTimeout(() => onNext(), 200);
+            }}
+            aria-pressed={selected}
+            className="pressable w-full flex items-center gap-4 p-4 rounded-[14px] text-left transition-colors"
+            style={{
+              background: selected
+                ? "var(--color-blueberry-100)"
+                : "var(--color-surface)",
+              border: `1px solid ${
+                selected ? "var(--color-blueberry-600)" : "var(--color-hairline)"
+              }`,
+              boxShadow:
+                "0 1px 2px color-mix(in srgb, var(--color-blueberry-900) 5%, transparent)",
+            }}
+          >
+            <span
+              className="shrink-0 flex items-center justify-center rounded-[10px]"
+              style={{
+                width: 60,
+                height: 60,
+                background: "var(--color-surface-raised)",
+                color: "var(--color-blueberry-600)",
+              }}
+            >
+              <Diagram />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-headline font-semibold text-ink">
+                {title}
+              </span>
+              <span className="block text-subhead text-ink-muted mt-0.5">
+                {detail}
+              </span>
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { tapLight } from "@/lib/haptics";
 
 interface Group {
   id: string;
@@ -58,10 +59,14 @@ export default function GroupPickerWheel({
     const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
     setStartY(clientY);
 
-    // Long press to expand (300ms)
+    // Long press still expands, but it's now a shortcut rather than the only
+    // way in — the tap handler below is the discoverable path. Nothing on the
+    // collapsed card ever signalled that a 300ms hold was required, and native
+    // iOS pickers open on tap.
     longPressTimer.current = setTimeout(() => {
       setIsExpanded(true);
       setIsPressed(false);
+      tapLight();
     }, 300);
   };
 
@@ -77,6 +82,16 @@ export default function GroupPickerWheel({
         setIsExpanded(false);
       }, 200);
     }
+  };
+
+  /** Tap opens the wheel. Suppressed if the long-press timer already fired
+   *  (the card is expanded) or if the press turned into a drag. */
+  const handleTap = () => {
+    if (isExpanded || isDragging) return;
+    clearTimeout(longPressTimer.current);
+    setIsPressed(false);
+    setIsExpanded(true);
+    tapLight();
   };
 
   // Handle drag in expanded mode
@@ -138,6 +153,17 @@ export default function GroupPickerWheel({
       {/* Collapsed state - single group card */}
       {!isExpanded && (
         <div
+          role="button"
+          tabIndex={0}
+          aria-expanded={isExpanded}
+          aria-label={`Group: ${selectedGroup?.name ?? "none"}. Tap to change.`}
+          onClick={handleTap}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              handleTap();
+            }
+          }}
           onTouchStart={handlePressStart}
           onTouchMove={handleDragMove}
           onTouchEnd={handlePressEnd}
@@ -148,10 +174,10 @@ export default function GroupPickerWheel({
           className={`rounded-xl border transition-all duration-200 ${
             isPressed
               ? "border-[var(--primary)] scale-105"
-              : "border-gray-200"
+              : "border-hairline"
           }`}
           style={{
-            background: 'linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(248,250,252,0.25) 100%)',
+            background: 'var(--color-surface)',
             boxShadow: isPressed
               ? '0 2px 4px rgba(58, 133, 197, 0.15), 0 4px 8px rgba(58, 133, 197, 0.1), 0 8px 16px rgba(58, 133, 197, 0.05)'
               : '0 2px 4px rgba(0,0,0,0.06), 0 4px 8px rgba(0,0,0,0.04), 0 8px 12px rgba(0,0,0,0.02)'
@@ -170,13 +196,13 @@ export default function GroupPickerWheel({
             </div>
 
             {/* Group name */}
-            <h3 className="text-sm font-semibold text-gray-900 flex-1">
+            <h3 className="text-sm font-semibold text-ink flex-1">
               {selectedGroup?.name}
             </h3>
 
             {/* Chevron indicator */}
             <div className={`transition-transform duration-200 ${isPressed ? 'rotate-180' : ''}`}>
-              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 text-ink-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
             </div>
@@ -200,10 +226,10 @@ export default function GroupPickerWheel({
             style={{ width: '300px' }}
           >
             <div
-              className="rounded-3xl border border-gray-200/60 overflow-hidden backdrop-blur-md"
+              className="rounded-3xl border border-hairline/60 overflow-hidden backdrop-blur-md"
               style={{
                 height: `${containerHeight}px`,
-                background: 'linear-gradient(135deg, rgba(255,255,255,0.4) 0%, rgba(248,250,252,0.3) 100%)',
+                background: 'var(--color-surface)',
                 boxShadow: '0 4px 8px rgba(0,0,0,0.08), 0 8px 16px rgba(0,0,0,0.06), 0 16px 32px rgba(0,0,0,0.04)'
               }}
             >
@@ -247,7 +273,7 @@ export default function GroupPickerWheel({
                       {/* Group name */}
                       <span
                         className={`font-medium ${
-                          isSelected ? "text-[var(--primary)] text-lg" : "text-gray-600"
+                          isSelected ? "text-[var(--primary)] text-lg" : "text-ink-muted"
                         }`}
                       >
                         {group.name}

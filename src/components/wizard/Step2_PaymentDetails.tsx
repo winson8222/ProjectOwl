@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { PaymentDiagram } from "./TypeDiagrams";
 
 interface Step2_PaymentDetailsProps {
   amount: number;
@@ -60,15 +61,15 @@ export default function Step2_PaymentDetails({
   if (!isReady) {
     return (
       <div className="space-y-4">
-        <h2 className="text-xl font-bold text-gray-900 text-center mb-6">
+        <h2 className="text-xl font-bold text-ink text-center mb-6">
           Payment Details
         </h2>
         <div className="rounded-xl p-8 text-center backdrop-blur-sm"
              style={{
-               background: 'linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(248,250,252,0.25) 100%)',
-               border: '1px solid rgba(176,176,176,0.2)'
+               background: 'var(--color-surface)',
+               border: '1px solid var(--color-hairline)'
              }}>
-          <div className="animate-pulse text-gray-400">Loading...</div>
+          <div className="animate-pulse text-ink-muted">Loading...</div>
         </div>
       </div>
     );
@@ -76,29 +77,35 @@ export default function Step2_PaymentDetails({
 
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-bold text-gray-900 text-center mb-6">
+      <h2 className="text-xl font-bold text-ink text-center mb-6">
         Payment Details
       </h2>
 
-      {/* Green money-transfer hero */}
+      {/* Payment hero. Blueberry like the rest — the arrow diagram and the
+          wording carry the distinction, not a second palette. */}
       <div
-        className="rounded-2xl text-white px-5 py-5 mb-6"
+        className="rounded-[14px] text-white px-5 py-5 mb-6"
         style={{
-          background: 'linear-gradient(135deg, rgba(16,185,129,0.9) 0%, rgba(20,184,166,0.85) 100%)',
-          boxShadow: '0 2px 4px rgba(16,185,129,0.2), 0 4px 8px rgba(16,185,129,0.15)'
+          background:
+            'linear-gradient(135deg, var(--color-blueberry-600) 0%, var(--color-blueberry-700) 100%)',
+          boxShadow:
+            '0 2px 6px color-mix(in srgb, var(--color-blueberry-900) 22%, transparent)'
         }}
       >
-        <h3 className="text-xl font-bold flex items-center gap-2">
-          <span className="text-2xl">💸</span> Record a Payment
+        <h3 className="text-title2 font-bold flex items-center gap-2.5">
+          <span className="text-white/90 shrink-0">
+            <PaymentDiagram />
+          </span>
+          Record a payment
         </h3>
-        <p className="text-sm text-white/85 mt-1">
-          Pay someone back — this reduces what you owe them
+        <p className="text-subhead text-white/80 mt-1">
+          Paying someone back — this reduces what you owe them
         </p>
       </div>
 
       {/* Error */}
       {error && (
-        <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+        <div className="px-4 py-3 bg-negative-tint border border-negative-soft rounded-xl text-sm text-negative">
           ⚠ {error}
         </div>
       )}
@@ -106,19 +113,19 @@ export default function Step2_PaymentDetails({
       {/* Amount */}
       <div className="rounded-xl p-4 space-y-3 backdrop-blur-sm"
            style={{
-             background: 'linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(248,250,252,0.25) 100%)',
-             border: '1px solid rgba(176,176,176,0.2)',
-             boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03)'
+             background: 'var(--color-surface)',
+             border: '1px solid var(--color-hairline)',
+             boxShadow: '0 1px 2px color-mix(in srgb, var(--color-blueberry-900) 5%, transparent)'
            }}>
-        <label className="text-sm font-medium text-gray-700">Amount</label>
+        <label className="text-sm font-medium text-ink">Amount</label>
         <div className="flex items-center gap-2">
-          <span className="text-2xl text-gray-400">$</span>
+          <span className="text-2xl text-ink-muted">$</span>
           <input
             type="number"
             value={amount || ""}
             onChange={(e) => setAmount(parseFloat(e.target.value) || 0)}
             placeholder="0.00"
-            className="flex-1 text-2xl font-bold text-gray-900 px-3 py-2 border border-[var(--border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+            className="flex-1 text-2xl font-bold text-ink px-3 py-2 border border-[var(--border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
             step="0.01"
             min="0"
           />
@@ -128,11 +135,11 @@ export default function Step2_PaymentDetails({
       {/* Date */}
       <div className="rounded-xl p-4 backdrop-blur-sm"
            style={{
-             background: 'linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(248,250,252,0.25) 100%)',
-             border: '1px solid rgba(176,176,176,0.2)',
-             boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03)'
+             background: 'var(--color-surface)',
+             border: '1px solid var(--color-hairline)',
+             boxShadow: '0 1px 2px color-mix(in srgb, var(--color-blueberry-900) 5%, transparent)'
            }}>
-        <label className="text-sm font-medium text-gray-700 block mb-2">Date</label>
+        <label className="text-sm font-medium text-ink block mb-2">Date</label>
         <input
           type="date"
           value={date}
@@ -145,11 +152,11 @@ export default function Step2_PaymentDetails({
       {groups.length > 0 && (
         <div className="rounded-xl p-4 backdrop-blur-sm"
              style={{
-               background: 'linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(248,250,252,0.25) 100%)',
-               border: '1px solid rgba(176,176,176,0.2)',
-               boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03)'
+               background: 'var(--color-surface)',
+               border: '1px solid var(--color-hairline)',
+               boxShadow: '0 1px 2px color-mix(in srgb, var(--color-blueberry-900) 5%, transparent)'
              }}>
-          <label className="text-sm font-medium text-gray-700 block mb-2">Group</label>
+          <label className="text-sm font-medium text-ink block mb-2">Group</label>
           <select
             value={selectedGroupId}
             onChange={(e) => setSelectedGroupId(e.target.value)}
@@ -168,11 +175,11 @@ export default function Step2_PaymentDetails({
       {/* Recipient */}
       <div className="rounded-xl p-4 backdrop-blur-sm"
            style={{
-             background: 'linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(248,250,252,0.25) 100%)',
-             border: '1px solid rgba(176,176,176,0.2)',
-             boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03)'
+             background: 'var(--color-surface)',
+             border: '1px solid var(--color-hairline)',
+             boxShadow: '0 1px 2px color-mix(in srgb, var(--color-blueberry-900) 5%, transparent)'
            }}>
-        <label className="text-sm font-medium text-gray-700 block mb-2">Paying to</label>
+        <label className="text-sm font-medium text-ink block mb-2">Paying to</label>
         <select
           value={toUserId}
           onChange={(e) => setToUserId(e.target.value)}
@@ -191,10 +198,10 @@ export default function Step2_PaymentDetails({
       <div className="flex gap-3 pt-4">
         <button
           onClick={onBack}
-          className="flex-1 px-4 py-3 text-sm font-medium text-gray-600 rounded-xl backdrop-blur-sm transition-all"
+          className="flex-1 px-4 py-3 text-sm font-medium text-ink-muted rounded-xl backdrop-blur-sm transition-all"
           style={{
-            border: '1px solid rgba(176,176,176,0.2)',
-            background: 'linear-gradient(135deg, rgba(255,255,255,0.3) 0%, rgba(248,250,252,0.2) 100%)'
+            border: '1px solid var(--color-hairline)',
+            background: 'var(--color-surface)'
           }}
         >
           ← Back
@@ -205,11 +212,11 @@ export default function Step2_PaymentDetails({
           className="flex-1 px-4 py-3 text-sm font-semibold text-white rounded-xl backdrop-blur-sm transition-all disabled:opacity-50"
           style={{
             background: isValid
-              ? 'linear-gradient(135deg, rgba(58,133,197,0.9) 0%, rgba(42,107,165,0.85) 100%)'
-              : 'linear-gradient(135deg, rgba(176,176,176,0.3) 0%, rgba(176,176,176,0.2) 100%)',
-            border: '1px solid rgba(58,133,197,0.4)',
+              ? 'var(--color-blueberry-600)'
+              : 'var(--color-hairline)',
+            border: '1px solid var(--color-blueberry-700)',
             boxShadow: isValid
-              ? '0 2px 4px rgba(58,133,197,0.2), 0 4px 8px rgba(58,133,197,0.15)'
+              ? '0 2px 6px color-mix(in srgb, var(--color-blueberry-900) 22%, transparent)'
               : 'none'
           }}
         >
