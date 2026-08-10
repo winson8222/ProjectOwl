@@ -8,9 +8,20 @@
 // that. Writes (non-GET) and cross-origin requests (Supabase, Gemini) are
 // never intercepted.
 //
-// Bump CACHE_VERSION when shell assets change meaningfully so stale caches
-// get cleared on activate (no build-hash wiring yet — manual bump).
-const CACHE_VERSION = "v2";
+// CACHE_VERSION comes from this script's own registration URL (?v=<sha>),
+// which AppShell sets from the build's commit SHA.
+//
+// It used to be a hand-bumped constant, and in practice it never got bumped.
+// Cleanup on activate only deletes caches whose NAME differs from the current
+// one, so a version that never changes means cleanup never runs: every deploy
+// added a new set of hashed chunks and removed none, and Cache Storage grew
+// without bound until the browser evicted the whole origin.
+//
+// Reading it from the URL keeps this file free of build tooling — public/ is
+// served verbatim, so nothing can inline a value into it. The literal below
+// is only a fallback for a registration that passes no ?v=.
+const CACHE_VERSION =
+  new URLSearchParams(self.location.search).get("v") || "v2";
 const SHELL_CACHE = `shell-${CACHE_VERSION}`;
 const DATA_CACHE = `data-${CACHE_VERSION}`;
 
