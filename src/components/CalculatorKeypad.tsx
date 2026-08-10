@@ -7,6 +7,8 @@ interface CalculatorKeypadProps {
   initialValue?: number;
   onConfirm: (value: number) => void;
   title?: string;
+  /** What's being entered. Percentages read as "12%", money as "$12". */
+  unit?: "$" | "%";
 }
 
 /**
@@ -19,6 +21,7 @@ export default function CalculatorKeypad({
   initialValue = 0,
   onConfirm,
   title = "Enter amount",
+  unit = "$",
 }: CalculatorKeypadProps) {
   const [expression, setExpression] = useState<string>("");
 
@@ -142,11 +145,13 @@ export default function CalculatorKeypad({
               className="text-display font-bold text-ink tabular"
               style={{ fontFamily: "var(--font-display)" }}
             >
-              ${displayValue}
+              {unit === "$" ? `$${displayValue}` : `${displayValue}%`}
             </div>
             {expression.includes('+') && (
               <div className="text-subhead text-ink-muted mt-1 tabular">
-                = ${evaluateExpression(expression).toFixed(2)}
+                {unit === "$"
+                  ? `= $${evaluateExpression(expression).toFixed(2)}`
+                  : `= ${evaluateExpression(expression).toFixed(2)}%`}
               </div>
             )}
           </div>

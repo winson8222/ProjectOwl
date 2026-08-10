@@ -6,6 +6,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useSpring, animated } from "@react-spring/web";
 import { HomeIcon, GroupsIcon, AddIcon, ActivityIcon } from "./NavIcons";
 import { tapLight } from "@/lib/haptics";
+import { guardedNavigate } from "@/lib/draft-guard";
 
 const TABS = [
   { href: "/", label: "Home", Icon: HomeIcon },
@@ -85,7 +86,9 @@ export default function BottomNav() {
   const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
     e.preventDefault();
     tapLight();
-    router.push(href);
+    // Routed through the guard so an unsaved expense draft gets a chance to
+    // stop the move — otherwise tapping a tab silently discards it.
+    guardedNavigate(() => router.push(href));
   };
 
   return (

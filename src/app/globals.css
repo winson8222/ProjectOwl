@@ -733,6 +733,23 @@ main {
   }
 }
 
+/* Mirror of .animate-slide-in-right, used when returning to a page via
+   back-navigation instead of navigating forward into it. */
+.animate-slide-in-left {
+  animation: slideInLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideInLeft {
+  0% {
+    opacity: 0;
+    transform: translateX(-100%);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 /* Clearance for pages that stack a FAB above the nav island (group detail,
    settle-up, transaction detail). Same island clearance plus room for the
    FAB itself. */
