@@ -1,5 +1,58 @@
 # ProjectOwl — Devlog
 
+## 2026-08-10 — Add is the expense path; payments move to settle-up
+
+The Add tab opened on "What are you adding? Expense / Payment" — a fork the
+overwhelming majority of taps resolved the same way, and one asked before the
+app knows anything about you. Payment is now reached from the place where it
+means something.
+
+### Done
+- **Wizard is expense-only** (`AddTransactionWizard`). `Step1_ChooseType` and
+  `Step2_PaymentDetails` deleted, along with `txType`/`toUserId` state and the
+  payment branch of `handleSave`. Add drops straight onto the method choice.
+- **Five steps, not six.** Both branches are now
+  `1 Method → 2 Details → 3 People → 4 Split/Items → 5 Review`. Step count and
+  progress width read one `TOTAL_STEPS` constant; the `txType === "payment" ? 3 : 6`
+  ternaries and the `txType` guards inside every `case` are gone.
+- **`Step5_Review` lost its payment branch** — the two-avatar arrow view, the
+  `txType`/`toUserId` props, and the "Record payment" button label.
+- **"Record a payment" now lives on the group settle-up page**, under the
+  transfer plan, linking to `/payments/new?groupId=…`. It renders in both
+  states — including "All settled up!" — because that's exactly the case the
+  per-row Pay buttons can't reach.
+- **Group page FAB is a single direct link** to a new expense for that group,
+  replacing the `+` that expanded into a two-item menu.
+
+### Fixed
+- **Cancel didn't leave the page.** It reset state to step 1 and stopped there,
+  which on screen looked like the button doing nothing. Now clears the draft
+  and returns to wherever the wizard was opened from, with step 1's Back doing
+  the same. The reset still has to run — see below.
+
+### Architecture decisions
+1. **Payment is a group-scoped act, not a global one.** It needs a recipient
+   and an amount you owe them; the Add tab knows neither. On the settle-up page
+   the numbers are already on screen next to it. The free-form entry stays
+   alongside the per-transfer Pay buttons rather than replacing them: the plan
+   covers exact transfers, this covers part payments, repayments outside the
+   simplified plan, and squaring up after the group already reads as settled.
+2. **Leaving the wizard must reset it.** `/transactions/new` is one of the four
+   tabs `PageSlider` keeps mounted simultaneously, so the component outlives
+   navigating away — without the reset you return to a half-filled wizard on
+   step 4. This is why Cancel was written as a state reset in the first place;
+   it just never also navigated.
+3. **`history.length` guards the back.** `router.back()` is right when
+   something pushed us here, but wrong on a cold start at `/transactions/new`
+   (shared link, PWA launch, hard refresh) where it would leave the app. The
+   fallback routes to the deep-linked group if there is one, else home.
+
+### Verification
+`tsc --noEmit` clean. Not verified: behaviour on a device. Wizard steps are
+still not history entries, so the hardware back button exits the wizard from
+step 4 rather than stepping to 3 — making it step-aware means pushing a history
+entry per step, which interacts with `PageSlider`'s swipe-push navigation.
+
 ## 2026-08-06 — UI overhaul: Blueberry/Cream design system, bottom sheets, ItreAI loader
 
 Visual and interaction-level pass only — no navigation flow, screen structure,

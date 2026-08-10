@@ -11,7 +11,7 @@ import UserPicker from "@/components/UserPicker";
 import ErrorDialog from "@/components/ErrorDialog";
 import { getSessionUser } from "@/lib/session";
 import { authMode } from "@/lib/auth/mode";
-import { tapHeavy, tapError } from "@/lib/haptics";
+import { tapHeavy, tapError, tapLight } from "@/lib/haptics";
 
 /**
  * Group detail page — members / balances / settle-up actions, pairwise
@@ -29,7 +29,6 @@ export default function GroupDetailPage() {
 
   const [showMembers, setShowMembers] = useState(false);
   const [showBalances, setShowBalances] = useState(false);
-  const [fabOpen, setFabOpen] = useState(false);
 
   const loadData = useCallback((currentUser: any) => {
     fetch(`/api/groups/${groupId}?userId=${currentUser.id}`)
@@ -247,42 +246,24 @@ export default function GroupDetailPage() {
         )}
       </div>
 
-      {/* Floating add button — opens a choice: new expense or record a payment */}
-      {fabOpen && (
-        <div
-          className="fixed inset-0 bg-black/20 z-30"
-          onClick={() => setFabOpen(false)}
-          aria-hidden
-        />
-      )}
-      <div className="fixed bottom-24 right-5 z-30 flex flex-col items-end gap-3">
-        {fabOpen && (
-          <>
-            <Link
-              href={`/payments/new?groupId=${groupId}`}
-              className="flex items-center gap-2 px-4 py-3 bg-blueberry-600 text-white rounded-full shadow-lg text-sm font-semibold hover:bg-blueberry-700 transition-colors"
-            >
-              💸 Record a payment
-            </Link>
-            <Link
-              href={`/transactions/new?groupId=${groupId}`}
-              className="flex items-center gap-2 px-4 py-3 bg-[var(--primary)] text-white rounded-full shadow-lg text-sm font-semibold hover:bg-[var(--primary-hover)] transition-colors"
-            >
-              🧾 New transaction
-            </Link>
-          </>
-        )}
-        <button
-          onClick={() => setFabOpen((o) => !o)}
-          className={`w-14 h-14 bg-[var(--primary)] text-white rounded-full flex items-center justify-center text-3xl font-light shadow-lg hover:bg-[var(--primary-hover)] transition-transform ${
-            fabOpen ? "rotate-45" : ""
-          }`}
-          aria-label={fabOpen ? "Close add menu" : "Add transaction or payment"}
-          aria-expanded={fabOpen}
-        >
-          +
-        </button>
-      </div>
+      {/* Floating add button — goes straight to a new expense for this group.
+          It used to open a two-item menu (expense / payment); paying someone
+          back now lives on the settle-up page, where the amounts you owe are
+          on screen next to it. */}
+      <Link
+        href={`/transactions/new?groupId=${groupId}`}
+        onClick={() => tapLight()}
+        aria-label="Add an expense to this group"
+        className="pressable fixed bottom-24 right-5 z-30 w-14 h-14 rounded-full flex items-center justify-center text-3xl font-light text-white"
+        style={{
+          background: "var(--color-blueberry-600)",
+          border: "1px solid var(--color-blueberry-700)",
+          boxShadow:
+            "0 8px 24px color-mix(in srgb, var(--color-blueberry-900) 24%, transparent), 0 1px 2px color-mix(in srgb, var(--color-blueberry-900) 8%, transparent)",
+        }}
+      >
+        +
+      </Link>
 
       {/* Members sheet */}
       {showMembers && (

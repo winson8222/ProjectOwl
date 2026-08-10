@@ -6,9 +6,7 @@ import UserPicker from "@/components/UserPicker";
 import SplitInput from "@/components/SplitInput";
 import ErrorDialog from "@/components/ErrorDialog";
 import { getSessionUser } from "@/lib/session";
-import Step1_ChooseType from "./wizard/Step1_ChooseType";
 import Step2_InputMethod from "./wizard/Step2_InputMethod";
-import Step2_PaymentDetails from "./wizard/Step2_PaymentDetails";
 import Step3_ExpensePeople from "./wizard/Step3_ExpensePeople";
 import Step3b_ManualExpenseDetails from "./wizard/Step3b_ManualExpenseDetails";
 import Step3_ScanDetails from "./wizard/Step3_ScanDetails";
@@ -17,9 +15,16 @@ import Step4_ItemAssignment from "./wizard/Step4_ItemAssignment";
 import Step5_Review from "./wizard/Step5_Review";
 import ItemAssigner from "@/components/ItemAssigner";
 
+const TOTAL_STEPS = 5;
+
 /**
- * Multi-step wizard for adding transactions
- * Breaks down the complex form into focused steps
+ * Multi-step wizard for adding an expense.
+ *
+ * Expense-only by design: "Add" in the nav is the expense path and drops
+ * straight into "how do you want to add it?". Paying someone back is not a
+ * thing you do from the global Add tab — it only makes sense inside a group,
+ * where you can see who you owe, so it lives on the group page and is handled
+ * by /payments/new.
  */
 export default function AddTransactionWizard() {
   const router = useRouter();
@@ -29,13 +34,9 @@ export default function AddTransactionWizard() {
 
   // Read query params for deep-link support (e.g. /transactions/new?groupId=…)
   const queryGroupId = searchParams.get("groupId") || "";
-  const queryToUserId = searchParams.get("toUserId") || "";
   const queryAmount = parseFloat(searchParams.get("amount") || "") || 0;
 
-  // Transaction type state
-  const [txType, setTxType] = useState<"expense" | "payment">("expense");
-
-  // Input method state (for expense)
+  // Input method state
   const [inputMethod, setInputMethod] = useState<"scan" | "manual">("manual");
 
   // Core transaction data
@@ -45,7 +46,6 @@ export default function AddTransactionWizard() {
   const [paidBy, setPaidBy] = useState("");
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
   const [title, setTitle] = useState("");
-  const [toUserId, setToUserId] = useState(queryToUserId);
   const [description, setDescription] = useState("");
 
   // Split state
@@ -71,18 +71,12 @@ export default function AddTransactionWizard() {
   const [groupsLoaded, setGroupsLoaded] = useState(false);
 
   // Group members for the currently selected group — used to scope
-  // the participant picker and payment recipients to group members only.
+  // the participant picker to group members only.
   const groupMembers = useMemo(() => {
     if (!selectedGroupId) return [];
     const group = groups.find((g: any) => g.id === selectedGroupId);
     return group?.members || [];
   }, [selectedGroupId, groups]);
-
-  // Convenience: payment recipients = other group members (excludes current user)
-  const recipients = useMemo(
-    () => groupMembers.filter((m: any) => m.id !== user?.id),
-    [groupMembers, user]
-  );
 
   const plan = [] as any[];
   const balance = null as any;
@@ -107,34 +101,45 @@ export default function AddTransactionWizard() {
     // useSearchParams), so state is already seeded correctly.
   }, []);
 
+  // Both branches are 5 steps and diverge only at 2 and 4:
+  //   scan:   1 Method → 2 Scan details → 3 People → 4 Items  → 5 Review
+  //   manual: 1 Method → 2 Details      → 3 People → 4 Split  → 5 Review
   const handleNext = () => {
-    // For payments: max 3 steps
-    if (txType === "payment") {
-      if (step < 3) setStep(step + 1);
-      return;
-    }
-
-    // For expenses with scan: different flow
-    if (txType === "expense" && inputMethod === "scan") {
-      // Scan flow: 1→2→3→4→5→6
-      // 1: Choose type, 2: Method, 3: Details, 4: People, 5: Items, 6: Review
-      if (step < 6) setStep(step + 1);
-      return;
-    }
-
-    // For expenses with manual: 1→2→3→4→5→6
-    // 1: Choose type, 2: Method, 3: Details, 4: People, 5: Split, 6: Review
-    if (step < 6) setStep(step + 1);
+    if (step < TOTAL_STEPS) setStep(step + 1);
   };
 
+  /**
+   * Return to wherever the wizard was opened from — the group page, the tab
+   * you were on before Add, whatever pushed us here.
+   *
+   * `history.length` guards the case where /transactions/new was the entry URL
+   * (shared link, hard refresh, PWA cold start): there's nothing to go back to,
+   * so fall back to the group we were deep-linked into, else home.
+   */
+  const leaveWizard = () => {
+    if (window.history.length > 1) {
+      router.back();
+      return;
+    }
+    router.push(queryGroupId ? `/groups/${queryGroupId}` : "/");
+  };
+
+  // Step 1 has nowhere to go back to inside the wizard, so its Back leaves.
   const handleBack = () => {
     if (step > 1) setStep(step - 1);
+    else leaveWizard();
   };
 
+  /**
+   * Clear the draft, then leave.
+   *
+   * The reset is not optional: /transactions/new is one of the four tabs
+   * PageSlider keeps mounted at once, so this component survives navigating
+   * away — without it you'd come back to a half-filled wizard on step 4.
+   */
   const handleCancel = () => {
     const currentUser = getSessionUser();
     setStep(1);
-    setTxType("expense");
     setInputMethod("manual");
     setAmount(queryAmount);
     setDate(new Date().toISOString().split("T")[0]);
@@ -142,7 +147,6 @@ export default function AddTransactionWizard() {
     setPaidBy(currentUser?.id || "");
     setSelectedParticipants([]);
     setTitle("");
-    setToUserId(queryToUserId);
     setDescription("");
     setSplitMode("even");
     setSplitValues({});
@@ -152,6 +156,8 @@ export default function AddTransactionWizard() {
     setAssignmentResults(null);
     setError(null);
     setDialogError(null);
+
+    leaveWizard();
   };
 
   const handleSave = async () => {
@@ -159,37 +165,6 @@ export default function AddTransactionWizard() {
     setError(null);
 
     try {
-      // Payment mode
-      if (txType === "payment") {
-        if (!amount || !selectedGroupId || !toUserId) {
-          setError("Please fill in all required fields");
-          return;
-        }
-
-        const res = await fetch("/api/transactions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: `Payment to ${toUserId}`,
-            totalAmount: amount,
-            paidByUserId: user.id,
-            groupId: selectedGroupId,
-            transactionDate: date,
-            type: "payment",
-            participants: [{ userId: toUserId, shareAmount: amount }],
-          }),
-        });
-
-        const json = await res.json();
-        if (json.success) {
-          window.location.href = "/activity";
-        } else {
-          setError(json.error || "Failed to save payment");
-        }
-        return;
-      }
-
-      // Expense mode
       if (!amount || !selectedGroupId || !paidBy || selectedParticipants.length === 0) {
         setError("Please fill in all required fields");
         return;
@@ -270,90 +245,38 @@ export default function AddTransactionWizard() {
     switch (step) {
       case 1:
         return (
-          <Step1_ChooseType
-            txType={txType}
-            onTypeChange={setTxType}
+          <Step2_InputMethod
+            inputMethod={inputMethod}
+            onMethodChange={(method) => {
+              setInputMethod(method);
+              if (method === "manual") handleNext();
+            }}
             onNext={handleNext}
+            onBack={handleBack}
+            onScan={(response) => {
+              setScanResult(response.data);
+              setScanItems(response.data.menu);
+              setScanStatus("extracted");
+              setAmount(response.data.total_price || 0);
+              // Auto-populate title from merchant if available
+              if (response.data.merchant) {
+                setTitle(response.data.merchant);
+              }
+              // After scan, go straight to the details step
+              setStep(2);
+            }}
+            amount={amount}
+            setAmount={setAmount}
+            date={date}
+            setDate={setDate}
+            selectedGroupId={selectedGroupId}
+            setSelectedGroupId={setSelectedGroupId}
+            groups={groups}
+            user={user}
           />
         );
       case 2:
-        if (txType === "expense") {
-          return (
-            <Step2_InputMethod
-              inputMethod={inputMethod}
-              onMethodChange={(method) => {
-                setInputMethod(method);
-                if (method === "manual") handleNext();
-              }}
-              onNext={handleNext}
-              onBack={handleBack}
-              onScan={(response) => {
-                setScanResult(response.data);
-                setScanItems(response.data.menu);
-                setScanStatus("extracted");
-                setAmount(response.data.total_price || 0);
-                // Auto-populate title from merchant if available
-                if (response.data.merchant) {
-                  setTitle(response.data.merchant);
-                }
-                // After scan, directly go to step 3
-                setStep(3);
-              }}
-              amount={amount}
-              setAmount={setAmount}
-              date={date}
-              setDate={setDate}
-              selectedGroupId={selectedGroupId}
-              setSelectedGroupId={setSelectedGroupId}
-              groups={groups}
-              user={user}
-            />
-          );
-        } else {
-          return (
-            <Step2_PaymentDetails
-              amount={amount}
-              setAmount={setAmount}
-              date={date}
-              setDate={setDate}
-              selectedGroupId={selectedGroupId}
-              setSelectedGroupId={setSelectedGroupId}
-              toUserId={toUserId}
-              setToUserId={setToUserId}
-              groups={groups}
-              recipients={recipients}
-              user={user}
-              onNext={handleNext}
-              onBack={handleBack}
-            />
-          );
-        }
-      case 3:
-        if (txType === "payment") {
-          return (
-            <Step5_Review
-              txType={txType}
-              amount={amount}
-              date={date}
-              title={title}
-              paidBy={paidBy}
-              toUserId={toUserId}
-              selectedGroupId={selectedGroupId}
-              selectedParticipants={selectedParticipants}
-              splitMode={splitMode}
-              splitValues={splitValues}
-              onSave={handleSave}
-              onBack={handleBack}
-              saving={saving}
-              user={user}
-              groups={groups}
-              users={groupMembers}
-              inputMethod={inputMethod}
-              assignmentResults={assignmentResults}
-            />
-          );
-        }
-        if (txType === "expense" && inputMethod === "manual") {
+        if (inputMethod === "manual") {
           return (
             <Step3b_ManualExpenseDetails
               amount={amount}
@@ -370,7 +293,7 @@ export default function AddTransactionWizard() {
               setTitle={setTitle}
             />
           );
-        } else if (txType === "expense" && inputMethod === "scan") {
+        } else {
           // For scan mode, show simplified details (no amount input needed)
           return (
             <Step3_ScanDetails
@@ -387,27 +310,23 @@ export default function AddTransactionWizard() {
             />
           );
         }
-        return null;
+      case 3:
+        return (
+          <Step3_ExpensePeople
+            paidBy={paidBy}
+            setPaidBy={setPaidBy}
+            selectedParticipants={selectedParticipants}
+            setSelectedParticipants={setSelectedParticipants}
+            user={user}
+            users={groupMembers}
+            selectedGroupId={selectedGroupId}
+            amount={amount}
+            onNext={handleNext}
+            onBack={handleBack}
+          />
+        );
       case 4:
-        if (txType === "expense") {
-          return (
-            <Step3_ExpensePeople
-              paidBy={paidBy}
-              setPaidBy={setPaidBy}
-              selectedParticipants={selectedParticipants}
-              setSelectedParticipants={setSelectedParticipants}
-              user={user}
-              users={groupMembers}
-              selectedGroupId={selectedGroupId}
-              amount={amount}
-              onNext={handleNext}
-              onBack={handleBack}
-            />
-          );
-        }
-        return null;
-      case 5:
-        if (txType === "expense" && inputMethod === "scan") {
+        if (inputMethod === "scan") {
           // Scan flow: Item assignment
           return (
             <Step4_ItemAssignment
@@ -422,34 +341,29 @@ export default function AddTransactionWizard() {
             />
           );
         }
-        if (txType === "expense" && inputMethod === "manual") {
-          // Manual flow: Split method
-          return (
-            <Step4_SplitMethod
-              splitMode={splitMode}
-              onModeChange={setSplitMode}
-              splitValues={splitValues}
-              onChange={setSplitValues}
-              participants={selectedParticipants.map(id => {
-                const member = groupMembers.find((u: any) => u.id === id);
-                return { id, name: member?.name || "" };
-              })}
-              totalAmount={amount}
-              onNext={handleNext}
-              onBack={handleBack}
-            />
-          );
-        }
-        return null;
-      case 6:
+        // Manual flow: Split method
+        return (
+          <Step4_SplitMethod
+            splitMode={splitMode}
+            onModeChange={setSplitMode}
+            splitValues={splitValues}
+            onChange={setSplitValues}
+            participants={selectedParticipants.map(id => {
+              const member = groupMembers.find((u: any) => u.id === id);
+              return { id, name: member?.name || "" };
+            })}
+            totalAmount={amount}
+            onNext={handleNext}
+            onBack={handleBack}
+          />
+        );
+      case 5:
         return (
           <Step5_Review
-            txType={txType}
             amount={amount}
             date={date}
             title={title}
             paidBy={paidBy}
-            toUserId={toUserId}
             selectedGroupId={selectedGroupId}
             selectedParticipants={selectedParticipants}
             splitMode={splitMode}
@@ -474,22 +388,22 @@ export default function AddTransactionWizard() {
       {/* Progress indicator */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-2">
+          {/* On step 1 nothing has been entered yet, so this is just "leave" —
+              calling it Cancel there implies you're throwing something away. */}
           <button
             onClick={handleCancel}
             className="text-sm text-ink-muted hover:text-ink"
           >
-            ← Cancel
+            {step === 1 ? "← Back" : "← Cancel"}
           </button>
           <span className="text-sm font-semibold text-[var(--primary)]">
-            Step {step} of {txType === "payment" ? "3" : "6"}
+            Step {step} of {TOTAL_STEPS}
           </span>
         </div>
         <div className="h-1 bg-canvas rounded-full overflow-hidden">
           <div
             className="h-full bg-[var(--primary)] transition-all duration-300"
-            style={{
-              width: `${(step / (txType === "payment" ? 3 : 6)) * 100}%`
-            }}
+            style={{ width: `${(step / TOTAL_STEPS) * 100}%` }}
           />
         </div>
       </div>
