@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import TransactionCard from "@/components/TransactionCard";
@@ -12,6 +12,7 @@ import ErrorDialog from "@/components/ErrorDialog";
 import { getSessionUser } from "@/lib/session";
 import { authMode } from "@/lib/auth/mode";
 import { tapHeavy, tapError, tapLight } from "@/lib/haptics";
+import { consumeBackNavigation } from "@/lib/nav-direction";
 
 /**
  * Group detail page — members / balances / settle-up actions, pairwise
@@ -29,6 +30,37 @@ export default function GroupDetailPage() {
 
   const [showMembers, setShowMembers] = useState(false);
   const [showBalances, setShowBalances] = useState(false);
+
+  // Entering via back-navigation (e.g. from the add-expense wizard) should
+  // slide in from the left, mirroring the forward slide-in-from-right.
+  // Applied imperatively (not via a className string) because Next's
+  // back/forward cache can reactivate this component without remounting it,
+  // which would skip a plain useState lazy initializer.
+  const mainRef = useRef<HTMLElement>(null);
+  const hasPlayedEntrance = useRef(false);
+
+  useLayoutEffect(() => {
+    const el = mainRef.current;
+    if (!el) return;
+
+    const playSlideIn = (direction: "left" | "right") => {
+      el.classList.remove("animate-slide-in-left", "animate-slide-in-right");
+      void el.offsetWidth; // force reflow so the animation replays
+      el.classList.add(direction === "left" ? "animate-slide-in-left" : "animate-slide-in-right");
+    };
+
+    if (!hasPlayedEntrance.current) {
+      hasPlayedEntrance.current = true;
+      playSlideIn(consumeBackNavigation() ? "left" : "right");
+    }
+
+    // Catches the case where this page was reactivated from cache rather
+    // than remounted: the popstate that brought us back fires while this
+    // listener is live, and forces a fresh slide-left regardless.
+    const handlePopState = () => playSlideIn("left");
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [loading, group]);
 
   const loadData = useCallback((currentUser: any) => {
     fetch(`/api/groups/${groupId}?userId=${currentUser.id}`)
@@ -114,7 +146,10 @@ export default function GroupDetailPage() {
   }
 
   return (
-    <main className="min-h-dvh px-4 pt-6 max-w-lg mx-auto animate-slide-in-right content-with-floating-nav">
+    <main
+      ref={mainRef}
+      className="min-h-dvh px-4 pt-6 max-w-lg mx-auto animate-slide-in-right content-with-floating-nav"
+    >
       <Link href="/groups" className="text-sm text-ink-muted hover:text-ink mb-4 block">
         ← Groups
       </Link>
