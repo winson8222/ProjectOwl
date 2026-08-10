@@ -18,8 +18,6 @@ interface Step5_ReviewProps {
   user: any;
   groups: any[];
   users: any[];
-  inputMethod: "scan" | "manual";
-  assignmentResults: any;
 }
 
 /**
@@ -30,8 +28,9 @@ interface Step5_ReviewProps {
  * person and the exact amount they'll owe — a review screen has to show what
  * you're about to commit, or it's just a delay before the save button.
  *
- * Shares come from whichever path produced them: item assignment totals for
- * scans, splitValues for manual even/custom.
+ * splitValues is the live source of truth for both flows by this point —
+ * for scan it was seeded from the item allocation on the previous step, then
+ * left editable, same as manual custom amounts.
  */
 export default function Step5_Review({
   amount,
@@ -48,15 +47,9 @@ export default function Step5_Review({
   user,
   groups,
   users,
-  inputMethod,
-  assignmentResults,
 }: Step5_ReviewProps) {
   const group = groups.find((g: any) => g.id === selectedGroupId);
-
-  const shares: Record<string, number> =
-    inputMethod === "scan" && assignmentResults?.totals
-      ? assignmentResults.totals
-      : splitValues;
+  const shares: Record<string, number> = splitValues;
 
   const nameFor = (id: string) => {
     const u = users.find((x: any) => x.id === id);
@@ -71,12 +64,7 @@ export default function Step5_Review({
     year: "numeric",
   });
 
-  const methodLabel =
-    inputMethod === "scan" && assignmentResults
-      ? "Split by item"
-      : splitMode === "even"
-      ? "Split evenly"
-      : "Custom amounts";
+  const methodLabel = splitMode === "even" ? "Split evenly" : "Custom amounts";
 
   return (
     <div>

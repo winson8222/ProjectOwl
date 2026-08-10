@@ -8,6 +8,8 @@ interface Step4_ItemAssignmentProps {
   users: any[];
   onAssign: (results: any) => void;
   onBack: () => void;
+  /** Restore prior per-unit assignments when re-opening to edit. */
+  initialUnitState?: Record<string, string[]>;
 }
 
 /**
@@ -18,7 +20,8 @@ export default function Step4_ItemAssignment({
   selectedParticipants,
   users,
   onAssign,
-  onBack
+  onBack,
+  initialUnitState
 }: Step4_ItemAssignmentProps) {
   const participants = selectedParticipants.map(id => {
     const user = users.find((u: any) => u.id === id);
@@ -78,6 +81,7 @@ export default function Step4_ItemAssignment({
       participants={participants}
       onConfirm={handleConfirm}
       onCancel={handleCancel}
+      initialUnitState={initialUnitState}
     />
   );
 }

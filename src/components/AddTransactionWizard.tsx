@@ -54,6 +54,9 @@ export default function AddTransactionWizard() {
 
   // Item assignment state (for scan flow)
   const [assignmentResults, setAssignmentResults] = useState<any>(null);
+  // Scan flow's step 4 has two phases: assigning items, then adjusting the
+  // resulting split (which also shows the allocation for re-editing).
+  const [scanSplitPhase, setScanSplitPhase] = useState<"assign" | "adjust">("assign");
 
   // Scanning state
   const [scanResult, setScanResult] = useState<any>(null);
@@ -154,6 +157,7 @@ export default function AddTransactionWizard() {
     setScanItems([]);
     setScanStatus("idle");
     setAssignmentResults(null);
+    setScanSplitPhase("assign");
     setError(null);
     setDialogError(null);
 
@@ -170,34 +174,16 @@ export default function AddTransactionWizard() {
         return;
       }
 
-      let transactionParticipants;
-
-      // For scan flow with item assignments, use assignment results
-      if (inputMethod === "scan" && assignmentResults) {
-        transactionParticipants = selectedParticipants.map((pid) => ({
-          userId: pid,
-          shareAmount: assignmentResults.totals[pid] ?? 0,
-        }));
-      } else {
-        // For manual flow, use split calculations
-        transactionParticipants = selectedParticipants.map((pid) => ({
-          userId: pid,
-          shareAmount:
-            splitMode === "even"
-              ? Math.round((amount / selectedParticipants.length) * 100) / 100
-              : splitValues[pid] ?? 0,
-        }));
-
-        // Handle rounding for even split
-        if (splitMode === "even") {
-          const total = transactionParticipants.reduce((s, p) => s + p.shareAmount, 0);
-          const diff = Math.round((amount - total) * 100) / 100;
-          if (Math.abs(diff) > 0.001 && transactionParticipants.length > 0) {
-            transactionParticipants[transactionParticipants.length - 1].shareAmount =
-              Math.round((transactionParticipants[transactionParticipants.length - 1].shareAmount + diff) * 100) / 100;
-          }
-        }
-      }
+      // splitValues is the live source of truth for both flows: seeded from
+      // even/custom entry for manual, seeded from the item allocation (then
+      // freely editable) for scan.
+      const transactionParticipants = selectedParticipants.map((pid) => ({
+        userId: pid,
+        shareAmount:
+          splitMode === "even"
+            ? Math.round((amount / selectedParticipants.length) * 100) / 100
+            : splitValues[pid] ?? 0,
+      }));
 
       // Handle rounding for even split
       if (splitMode === "even") {
@@ -239,6 +225,13 @@ export default function AddTransactionWizard() {
       setSaving(false);
     }
   };
+
+  // Shared between the manual Split step and the scan flow's post-allocation
+  // adjust step — both render Step4_SplitMethod against the same people.
+  const splitParticipants = selectedParticipants.map((id) => {
+    const member = groupMembers.find((u: any) => u.id === id);
+    return { id, name: member?.name || "" };
+  });
 
   // Render current step
   const renderStep = () => {
@@ -327,17 +320,47 @@ export default function AddTransactionWizard() {
         );
       case 4:
         if (inputMethod === "scan") {
-          // Scan flow: Item assignment
+          if (scanSplitPhase === "assign") {
+            // Scan flow, phase 1: item assignment
+            return (
+              <Step4_ItemAssignment
+                scanItems={assignmentResults ? assignmentResults.items : scanItems}
+                selectedParticipants={selectedParticipants}
+                users={groupMembers}
+                initialUnitState={assignmentResults?.unitState}
+                onAssign={(results) => {
+                  setAssignmentResults(results);
+                  setSplitValues(results.totals);
+                  setSplitMode("custom");
+                  setScanSplitPhase("adjust");
+                }}
+                onBack={handleBack}
+              />
+            );
+          }
+          // Scan flow, phase 2: adjust the resulting split, with the
+          // allocation shown above it for re-editing.
+          const allocationTotal =
+            Math.round(
+              Object.values(assignmentResults?.totals ?? {}).reduce(
+                (s: number, v: any) => s + v,
+                0
+              ) * 100
+            ) / 100;
           return (
-            <Step4_ItemAssignment
-              scanItems={scanItems}
-              selectedParticipants={selectedParticipants}
-              users={groupMembers}
-              onAssign={(results) => {
-                setAssignmentResults(results);
-                handleNext();
-              }}
-              onBack={handleBack}
+            <Step4_SplitMethod
+              splitMode={splitMode}
+              onModeChange={setSplitMode}
+              splitValues={splitValues}
+              onChange={setSplitValues}
+              participants={splitParticipants}
+              totalAmount={amount}
+              onNext={handleNext}
+              onBack={() => setScanSplitPhase("assign")}
+              assignmentResults={assignmentResults}
+              onEditAllocation={() => setScanSplitPhase("assign")}
+              allocationTotal={allocationTotal}
+              onUseAllocationTotal={() => setAmount(allocationTotal)}
             />
           );
         }
@@ -348,10 +371,7 @@ export default function AddTransactionWizard() {
             onModeChange={setSplitMode}
             splitValues={splitValues}
             onChange={setSplitValues}
-            participants={selectedParticipants.map(id => {
-              const member = groupMembers.find((u: any) => u.id === id);
-              return { id, name: member?.name || "" };
-            })}
+            participants={splitParticipants}
             totalAmount={amount}
             onNext={handleNext}
             onBack={handleBack}
@@ -374,8 +394,6 @@ export default function AddTransactionWizard() {
             user={user}
             groups={groups}
             users={groupMembers}
-            inputMethod={inputMethod}
-            assignmentResults={assignmentResults}
           />
         );
       default:
