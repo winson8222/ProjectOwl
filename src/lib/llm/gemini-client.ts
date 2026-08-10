@@ -66,14 +66,16 @@ const RECEIPT_RESPONSE_SCHEMA = {
  * response_schema and structured output parsing. The SDK's TypeScript types
  * may not fully support responseSchema yet.
  *
- * Endpoint: gemini-2.0-flash (fast, cheap) — can switch to gemini-2.5-flash
- * for higher accuracy by passing a different model name to the constructor.
+ * Endpoint: gemini-flash-latest — a Google-maintained alias for the current
+ * recommended flash model, so this doesn't 404 for new API keys/projects
+ * when a dated model version (e.g. gemini-2.5-flash) gets retired for them.
+ * Pass a specific model name to the constructor to pin a version instead.
  */
 export class GeminiClient implements LLMClient {
   private apiKey: string;
   private model: string;
 
-  constructor(apiKey: string, model = "gemini-2.5-flash") {
+  constructor(apiKey: string, model = "gemini-flash-latest") {
     this.apiKey = apiKey;
     this.model = model;
   }
