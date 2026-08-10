@@ -45,7 +45,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    navigator.serviceWorker.register("/sw.js").catch(() => {});
+    // The ?v= is what makes each deploy a distinct registration. sw.js itself
+    // is byte-identical between builds, so without it the browser's
+    // script-comparison finds no change, never installs a new worker, and the
+    // previous build's cached chunks are never purged.
+    const version = process.env.NEXT_PUBLIC_SW_VERSION || "dev";
+    navigator.serviceWorker.register(`/sw.js?v=${version}`).catch(() => {});
   }, []);
 
   if (!ready) {
