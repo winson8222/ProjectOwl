@@ -2,6 +2,7 @@
 
 import BottomNav from "@/components/BottomNav";
 import DebugMenu from "@/components/DebugMenu";
+import DraftLeaveGuard from "@/components/DraftLeaveGuard";
 import LoginScreen from "@/components/LoginScreen";
 import PageSlider from "@/components/PageSlider";
 import OfflineBanner from "@/components/OfflineBanner";
@@ -88,6 +89,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <div className="content-with-nav" style={{ position: 'relative', height: '100%' }}>{children}</div>
       )}
       <BottomNav />
+      <DraftLeaveGuard />
       <DebugMenu />
     </>
   );

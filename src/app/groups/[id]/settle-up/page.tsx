@@ -6,7 +6,9 @@ import { useParams } from "next/navigation";
 import UserAvatar from "@/components/UserAvatar";
 import ErrorDialog from "@/components/ErrorDialog";
 import SettledOverlay from "@/components/SettledOverlay";
+import { PaymentDiagram } from "@/components/wizard/TypeDiagrams";
 import { getSessionUser } from "@/lib/session";
+import { tapLight } from "@/lib/haptics";
 
 /**
  * Group settle-up — the minimum-transfer plan that clears every balance
@@ -194,6 +196,44 @@ export default function GroupSettleUpPage() {
           })}
         </div>
       )}
+
+      {/* Free-form payment entry. The rows above cover the plan's transfers
+          exactly; this is the way in for everything else — a part payment, a
+          repayment that isn't in the simplified plan, or squaring up after the
+          group already reads as settled. It lives here rather than on the Add
+          tab because paying someone back only means anything next to the
+          amounts you owe. */}
+      <Link
+        href={`/payments/new?groupId=${groupId}`}
+        onClick={() => tapLight()}
+        className="pressable mt-6 w-full flex items-center gap-3 p-4 rounded-[14px] text-left"
+        style={{
+          background: "var(--color-surface)",
+          border: "1px solid var(--color-hairline)",
+          boxShadow:
+            "0 1px 2px color-mix(in srgb, var(--color-blueberry-900) 5%, transparent)",
+        }}
+      >
+        <span
+          className="shrink-0 flex items-center justify-center rounded-[10px]"
+          style={{
+            width: 44,
+            height: 44,
+            background: "var(--color-surface-raised)",
+            color: "var(--color-blueberry-600)",
+          }}
+        >
+          <PaymentDiagram className="w-7 h-7" />
+        </span>
+        <span className="min-w-0">
+          <span className="block text-headline font-semibold text-ink">
+            Record a payment
+          </span>
+          <span className="block text-subhead text-ink-muted mt-0.5">
+            Paid someone a different amount, or someone not listed above
+          </span>
+        </span>
+      </Link>
 
       <ErrorDialog
         open={!!dialogError}

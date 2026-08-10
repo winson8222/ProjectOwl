@@ -7,9 +7,10 @@
  * needed — used by both the CLI (`npm run test:settlement`) and the debug
  * API endpoint.
  */
+import fs from "node:fs/promises";
+import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
-import { migrate } from "drizzle-orm/pglite/migrator";
 import { sql } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { getBalance } from "../actions/balances";
@@ -38,11 +39,64 @@ export interface SuiteResult {
 
 type TestDb = ReturnType<typeof drizzle<typeof schema>>;
 
+/**
+ * Stand in for the parts of Supabase this schema depends on.
+ *
+ * 0004_enable_rls.sql writes its policies against `auth.uid()`, which only
+ * exists on Supabase. PGlite is plain Postgres, so migrating into it died on
+ * `schema "auth" does not exist` and took the whole suite down with it.
+ *
+ * Defining the same function up front lets every real migration apply
+ * unchanged, so the suite keeps exercising the schema production actually
+ * has — RLS policies included — rather than whichever subset happens to be
+ * portable. The body matches Supabase's own definition; it returns NULL here
+ * because nothing sets a JWT claim, which is fine: PGlite connects as the
+ * table owner, and owners bypass RLS unless FORCE ROW LEVEL SECURITY is set.
+ *
+ * Test-harness only. Nothing in drizzle/ is touched, so this can't affect a
+ * real migration against Supabase or a local Postgres.
+ */
+async function stubSupabaseAuth(client: PGlite) {
+  await client.exec(`
+    CREATE SCHEMA IF NOT EXISTS auth;
+    CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid
+      LANGUAGE sql STABLE
+      AS $$
+        SELECT nullif(current_setting('request.jwt.claims', true)::json ->> 'sub', '')::uuid
+      $$;
+  `);
+}
+
+/**
+ * Apply every migration in journal order, the way psql would.
+ *
+ * Not drizzle's migrator: that splits a file on `--> statement-breakpoint`
+ * markers and sends each piece as a prepared statement. 0004_enable_rls.sql
+ * is hand-written and has no such markers, so the whole file arrived as one
+ * statement and PGlite refused it ("cannot insert multiple commands into a
+ * prepared statement"). `exec` runs a multi-statement script directly, which
+ * is what that file is.
+ *
+ * Reading the journal rather than globbing keeps the order authoritative and
+ * skips any .sql file that isn't actually a registered migration.
+ */
+async function applyMigrations(client: PGlite) {
+  const dir = path.join(process.cwd(), "drizzle");
+  const journal = JSON.parse(
+    await fs.readFile(path.join(dir, "meta", "_journal.json"), "utf8")
+  ) as { entries: { idx: number; tag: string }[] };
+
+  for (const entry of [...journal.entries].sort((a, b) => a.idx - b.idx)) {
+    await client.exec(await fs.readFile(path.join(dir, `${entry.tag}.sql`), "utf8"));
+  }
+}
+
 /** Create a fresh in-memory database and apply the real migrations. */
 async function createTestDb() {
   const client = new PGlite(); // in-memory, nothing touches disk
+  await stubSupabaseAuth(client);
+  await applyMigrations(client);
   const db = drizzle(client, { schema });
-  await migrate(db, { migrationsFolder: "drizzle" });
   return { client, db };
 }
 

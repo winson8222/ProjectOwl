@@ -78,14 +78,24 @@ export async function POST(
 
     return NextResponse.json({ success: true, data: result } as ExtractApiResponse, { status: 200 });
   } catch (err) {
+    // Always log the real thing — quota exhaustion vs. a bad key vs. a
+    // safety block are the same message to the user but very different to
+    // whoever is on call.
+    console.error("Error in /api/receipts/extract:", err);
+
+    // Every message goes through mapErrorMessage, including AppError's.
+    // LLMError extends AppError and carries the provider's raw response
+    // ("Gemini API returned 429: {...quota...}"), so returning err.message
+    // directly leaked Google's error text — and our billing state — straight
+    // into the UI. mapErrorMessage rewrites anything recognisably internal
+    // and passes genuinely user-facing AppError messages through untouched.
     if (err instanceof AppError) {
       return NextResponse.json<ApiErrorResponse>(
-        apiError(err.message, err.code),
+        apiError(mapErrorMessage(err), err.code),
         { status: err.httpStatus }
       );
     }
 
-    console.error("Unexpected error in /api/receipts/extract:", err);
     return NextResponse.json<ApiErrorResponse>(
       apiError(mapErrorMessage(err), CODES.INTERNAL_ERROR),
       { status: 500 }

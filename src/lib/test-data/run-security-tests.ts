@@ -9,11 +9,14 @@
  */
 import { transactionAmountsValid, settlementAmountValid, clampLimit } from "../security";
 import { debugEndpointsEnabled } from "../debug-guard";
+import { mapErrorMessage } from "../constants";
+import { AppError } from "../errors";
 import {
   MONEY_FIXTURES,
   SETTLEMENT_AMOUNT_FIXTURES,
   LIMIT_FIXTURES,
   DEBUG_GATE_FIXTURES,
+  ERROR_MESSAGE_FIXTURES,
 } from "./security-fixtures";
 
 export interface CaseResult {
@@ -96,6 +99,31 @@ export function runSecurityTests(): SuiteResult {
       description: f.description,
       passed: actual === f.expectEnabled,
       detail: actual === f.expectEnabled ? undefined : `expected enabled=${f.expectEnabled}, got ${actual}`,
+    });
+  }
+
+  // Wrapped in AppError, which is the path that actually leaked: LLMError
+  // extends AppError, so a route returning err.message for AppError skipped
+  // sanitising entirely. Testing through the wrapper keeps that specific
+  // regression covered rather than only the bare-string case.
+  for (const f of ERROR_MESSAGE_FIXTURES) {
+    const actual = mapErrorMessage(new AppError(f.raw, "LLM_FAILED", 502));
+    const leaked = (f.mustNotContain ?? []).filter((s) =>
+      actual.toLowerCase().includes(s.toLowerCase())
+    );
+    const wrongMessage = f.expect !== undefined && actual !== f.expect;
+
+    cases.push({
+      group: "error-sanitisation",
+      name: f.name,
+      description: f.description,
+      passed: leaked.length === 0 && !wrongMessage,
+      detail:
+        leaked.length > 0
+          ? `leaked internal detail ${leaked.map((s) => `"${s}"`).join(", ")} in: ${actual}`
+          : wrongMessage
+          ? `expected "${f.expect}", got "${actual}"`
+          : undefined,
     });
   }
 
