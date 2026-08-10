@@ -1,21 +1,22 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import UserPicker from "@/components/UserPicker";
 import SplitInput from "@/components/SplitInput";
 import ErrorDialog from "@/components/ErrorDialog";
 import { getSessionUser } from "@/lib/session";
+import { deriveScannedAdjustments, ZERO_ADJUSTMENTS } from "@/lib/adjustments";
+import { setDraftDirty } from "@/lib/draft-guard";
 import Step2_InputMethod from "./wizard/Step2_InputMethod";
 import Step3_ExpensePeople from "./wizard/Step3_ExpensePeople";
 import Step3b_ManualExpenseDetails from "./wizard/Step3b_ManualExpenseDetails";
 import Step3_ScanDetails from "./wizard/Step3_ScanDetails";
 import Step4_SplitMethod from "./wizard/Step4_SplitMethod";
 import Step4_ItemAssignment from "./wizard/Step4_ItemAssignment";
-import Step5_Review from "./wizard/Step5_Review";
 import ItemAssigner from "@/components/ItemAssigner";
 
-const TOTAL_STEPS = 5;
+const TOTAL_STEPS = 4;
 
 /**
  * Multi-step wizard for adding an expense.
@@ -28,6 +29,7 @@ const TOTAL_STEPS = 5;
  */
 export default function AddTransactionWizard() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const [step, setStep] = useState(1);
   const [user, setUser] = useState<any>(null);
@@ -104,9 +106,13 @@ export default function AddTransactionWizard() {
     // useSearchParams), so state is already seeded correctly.
   }, []);
 
-  // Both branches are 5 steps and diverge only at 2 and 4:
-  //   scan:   1 Method → 2 Scan details → 3 People → 4 Items  → 5 Review
-  //   manual: 1 Method → 2 Details      → 3 People → 4 Split  → 5 Review
+  // Both branches are 4 steps and diverge only at 2 and 4:
+  //   scan:   1 Method → 2 Scan details → 3 People → 4 Items → Split → save
+  //   manual: 1 Method → 2 Details      → 3 People → 4 Split → save
+  //
+  // The split step saves directly. A separate review screen restated numbers
+  // that are already on it — the per-person amounts and, for scans, the item
+  // allocation — so it only stood between the user and a finished split.
   const handleNext = () => {
     if (step < TOTAL_STEPS) setStep(step + 1);
   };
@@ -133,14 +139,8 @@ export default function AddTransactionWizard() {
     else leaveWizard();
   };
 
-  /**
-   * Clear the draft, then leave.
-   *
-   * The reset is not optional: /transactions/new is one of the four tabs
-   * PageSlider keeps mounted at once, so this component survives navigating
-   * away — without it you'd come back to a half-filled wizard on step 4.
-   */
-  const handleCancel = () => {
+  /** Wipe the draft back to a blank expense. */
+  const resetDraft = useCallback(() => {
     const currentUser = getSessionUser();
     setStep(1);
     setInputMethod("manual");
@@ -160,7 +160,39 @@ export default function AddTransactionWizard() {
     setScanSplitPhase("assign");
     setError(null);
     setDialogError(null);
+  }, [queryAmount, queryGroupId]);
 
+  /**
+   * Clear the draft whenever the wizard stops being the visible tab.
+   *
+   * /transactions/new is one of the four tabs PageSlider keeps mounted at
+   * once, so this component survives navigating away — leaving via the nav
+   * bar (rather than Cancel) used to leave the whole draft sitting there, and
+   * re-opening Add would drop you back into a half-finished scan on step 4.
+   * Resetting on the way out means opening Add always starts blank.
+   */
+  const onWizardRoute = pathname === "/transactions/new";
+  useEffect(() => {
+    if (!onWizardRoute) resetDraft();
+  }, [onWizardRoute, resetDraft]);
+
+  /**
+   * Tell the nav whether leaving would throw work away.
+   *
+   * Step 1 is just the method picker — nothing has been entered yet, so
+   * leaving from there is free and shouldn't nag. Anything past it means the
+   * user has typed an amount, picked people, or assigned a receipt.
+   */
+  const hasProgress = onWizardRoute && (step > 1 || !!scanResult);
+  useEffect(() => {
+    setDraftDirty(hasProgress);
+    return () => setDraftDirty(false);
+  }, [hasProgress]);
+
+  /** Abandon the expense and leave. Explicit, so it doesn't ask again. */
+  const handleCancel = () => {
+    setDraftDirty(false);
+    resetDraft();
     leaveWizard();
   };
 
@@ -215,6 +247,8 @@ export default function AddTransactionWizard() {
 
       const json = await res.json();
       if (json.success) {
+        // Saved, so there's nothing left to warn about losing.
+        setDraftDirty(false);
         window.location.href = "/activity";
       } else {
         setError(json.error || "Failed to save transaction");
@@ -225,6 +259,13 @@ export default function AddTransactionWizard() {
       setSaving(false);
     }
   };
+
+  // Tax / service charge / discount read off the receipt. Seeds the
+  // allocation page and is what its "Reset to scan" restores.
+  const scannedAdjustments = useMemo(
+    () => (scanResult ? deriveScannedAdjustments(scanResult) : ZERO_ADJUSTMENTS),
+    [scanResult]
+  );
 
   // Shared between the manual Split step and the scan flow's post-allocation
   // adjust step — both render Step4_SplitMethod against the same people.
@@ -324,17 +365,26 @@ export default function AddTransactionWizard() {
             // Scan flow, phase 1: item assignment
             return (
               <Step4_ItemAssignment
-                scanItems={assignmentResults ? assignmentResults.items : scanItems}
+                scanItems={scanItems}
                 selectedParticipants={selectedParticipants}
                 users={groupMembers}
+                initialEditedItems={assignmentResults?.items}
                 initialUnitState={assignmentResults?.unitState}
+                scannedAdjustments={scannedAdjustments}
+                scannedTotal={scanResult?.total_price}
+                initialAdjustments={assignmentResults?.adjustments}
+                initialTotal={assignmentResults?.total}
                 onAssign={(results) => {
                   setAssignmentResults(results);
                   setSplitValues(results.totals);
                   setSplitMode("custom");
+                  // The reconciled allocation total is the real expense
+                  // amount — the scanned total alone missed the tax.
+                  setAmount(results.total);
                   setScanSplitPhase("adjust");
                 }}
                 onBack={handleBack}
+                onCancel={handleCancel}
               />
             );
           }
@@ -355,7 +405,8 @@ export default function AddTransactionWizard() {
               onChange={setSplitValues}
               participants={splitParticipants}
               totalAmount={amount}
-              onNext={handleNext}
+              onSave={handleSave}
+              saving={saving}
               onBack={() => setScanSplitPhase("assign")}
               assignmentResults={assignmentResults}
               onEditAllocation={() => setScanSplitPhase("assign")}
@@ -373,27 +424,9 @@ export default function AddTransactionWizard() {
             onChange={setSplitValues}
             participants={splitParticipants}
             totalAmount={amount}
-            onNext={handleNext}
-            onBack={handleBack}
-          />
-        );
-      case 5:
-        return (
-          <Step5_Review
-            amount={amount}
-            date={date}
-            title={title}
-            paidBy={paidBy}
-            selectedGroupId={selectedGroupId}
-            selectedParticipants={selectedParticipants}
-            splitMode={splitMode}
-            splitValues={splitValues}
             onSave={handleSave}
-            onBack={handleBack}
             saving={saving}
-            user={user}
-            groups={groups}
-            users={groupMembers}
+            onBack={handleBack}
           />
         );
       default:
@@ -406,17 +439,23 @@ export default function AddTransactionWizard() {
       {/* Progress indicator */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-2">
-          {/* On step 1 nothing has been entered yet, so this is just "leave" —
-              calling it Cancel there implies you're throwing something away. */}
-          <button
-            onClick={handleCancel}
-            className="text-sm text-ink-muted hover:text-ink"
-          >
-            {step === 1 ? "← Back" : "← Cancel"}
-          </button>
           <span className="text-sm font-semibold text-[var(--primary)]">
             Step {step} of {TOTAL_STEPS}
           </span>
+          {/* Always present and always a real button: dropping a
+              half-entered expense shouldn't mean hunting for the way out.
+              Each step's own Back button handles stepping backwards. */}
+          <button
+            onClick={handleCancel}
+            className="pressable rounded-full px-3.5 text-footnote font-semibold text-ink-muted"
+            style={{
+              minHeight: 34,
+              background: "var(--color-surface)",
+              border: "1px solid var(--color-hairline)",
+            }}
+          >
+            Cancel
+          </button>
         </div>
         <div className="h-1 bg-canvas rounded-full overflow-hidden">
           <div

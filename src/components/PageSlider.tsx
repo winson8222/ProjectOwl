@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useSwipeable } from "react-swipeable";
 import { useSpring, animated } from "@react-spring/web";
+import { guardedNavigate } from "@/lib/draft-guard";
 import HomePage from "@/app/page";
 import GroupsPage from "@/app/groups/page";
 import NewTransactionPage from "@/app/transactions/new/page";
@@ -87,20 +88,28 @@ export default function PageSlider() {
       const newX = -currentPageIndex * pageWidth.current + e.deltaX;
       api.set({ x: newX });
     },
+    // Swiping between tabs leaves the page just as a nav tap does, so it goes
+    // through the same unsaved-draft guard. When the guard blocks, the track
+    // springs back to where it was rather than sitting mid-drag behind the
+    // prompt.
     onSwipedLeft: () => {
+      const snapBack = () => api.start({ x: -currentPageIndex * pageWidth.current });
       if (currentPageIndex < pages.length - 1) {
         const nextPage = pages[currentPageIndex + 1];
-        router.push(nextPage);
+        guardedNavigate(() => router.push(nextPage));
+        snapBack();
       } else {
-        api.start({ x: -currentPageIndex * pageWidth.current });
+        snapBack();
       }
     },
     onSwipedRight: () => {
+      const snapBack = () => api.start({ x: -currentPageIndex * pageWidth.current });
       if (currentPageIndex > 0) {
         const prevPage = pages[currentPageIndex - 1];
-        router.push(prevPage);
+        guardedNavigate(() => router.push(prevPage));
+        snapBack();
       } else {
-        api.start({ x: -currentPageIndex * pageWidth.current });
+        snapBack();
       }
     },
     trackMouse: true,

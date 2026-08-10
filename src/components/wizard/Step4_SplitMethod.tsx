@@ -3,6 +3,8 @@
 import SplitInput from "@/components/SplitInput";
 import UserAvatar from "@/components/UserAvatar";
 import type { AssignmentResult } from "@/components/ItemAssigner";
+import { lineAmount } from "@/lib/adjustments";
+import { tapMedium } from "@/lib/haptics";
 
 interface Step4_SplitMethodProps {
   splitMode: "even" | "custom";
@@ -11,7 +13,9 @@ interface Step4_SplitMethodProps {
   onChange: (values: Record<string, number>) => void;
   participants: any[];
   totalAmount: number;
-  onNext: () => void;
+  /** Saves the expense — this is the last step. */
+  onSave: () => void;
+  saving: boolean;
   onBack: () => void;
 
   // Scan-flow only: shows the item allocation above the split editor and a
@@ -23,11 +27,16 @@ interface Step4_SplitMethodProps {
 }
 
 /**
- * Step 4 (Expense): Choose split method.
+ * Step 4 (Expense): Choose split method, then save. This is the last step.
  *
  * Shared between the manual and scan flows. For scan, `assignmentResults` is
  * passed so the item allocation shows above the split editor — the split
  * itself is always editable from here regardless of how it was seeded.
+ *
+ * Saving happens here rather than on a following review screen: everything a
+ * review would have restated (each person's amount, and for scans the item
+ * allocation) is already on this page and editable, so a read-only copy of it
+ * was just a step between the user and a saved expense.
  */
 export default function Step4_SplitMethod({
   splitMode,
@@ -36,7 +45,8 @@ export default function Step4_SplitMethod({
   onChange,
   participants,
   totalAmount,
-  onNext,
+  onSave,
+  saving,
   onBack,
   assignmentResults,
   onEditAllocation,
@@ -45,6 +55,26 @@ export default function Step4_SplitMethod({
 }: Step4_SplitMethodProps) {
   const nameFor = (userId: string) =>
     participants.find((p) => p.id === userId)?.name || "?";
+
+  // Only the lines that carry a value — an empty "Discount $0.00" row is
+  // noise on a recap screen.
+  const itemsSum =
+    assignmentResults?.items.reduce((s, it) => s + it.price, 0) ?? 0;
+  const adjustmentLines = assignmentResults?.adjustments
+    ? (
+        [
+          { label: "Tax", line: assignmentResults.adjustments.tax, negative: false },
+          {
+            label: "Discount",
+            line: assignmentResults.adjustments.discount,
+            negative: true,
+          },
+          { label: "Other", line: assignmentResults.adjustments.misc, negative: false },
+        ] as const
+      )
+        .map((row) => ({ ...row, amount: lineAmount(row.line, itemsSum) }))
+        .filter((row) => row.amount !== 0)
+    : [];
 
   return (
     <div>
@@ -103,6 +133,25 @@ export default function Step4_SplitMethod({
             })}
           </div>
 
+          {/* Tax / discount / other on their own lines, so the rows above
+              visibly add up to the allocation total instead of falling short
+              by an unexplained amount. */}
+          {adjustmentLines.map(({ label, amount, negative }) => (
+            <div key={label} className="flex items-baseline px-3.5 mb-1">
+              <span className="text-footnote text-ink-muted">{label}</span>
+              <span className="leader" aria-hidden />
+              <span
+                className="text-footnote font-semibold tabular"
+                style={{
+                  color: negative ? "var(--color-positive)" : "var(--color-ink)",
+                }}
+              >
+                {negative ? "−" : "+"}${amount.toFixed(2)}
+              </span>
+            </div>
+          ))}
+          {adjustmentLines.length > 0 && <div className="mb-2" />}
+
           {onUseAllocationTotal && allocationTotal != null && (
             <button
               onClick={onUseAllocationTotal}
@@ -131,7 +180,8 @@ export default function Step4_SplitMethod({
       <div className="flex gap-3 pt-7">
         <button
           onClick={onBack}
-          className="pressable px-5 rounded-[12px] text-body font-medium text-ink"
+          disabled={saving}
+          className="pressable px-5 rounded-xl text-body font-medium text-ink disabled:opacity-40"
           style={{
             minHeight: 50,
             background: "var(--color-surface)",
@@ -141,11 +191,15 @@ export default function Step4_SplitMethod({
           Back
         </button>
         <button
-          onClick={onNext}
-          className="pressable flex-1 rounded-[12px] text-body font-semibold text-white"
+          onClick={() => {
+            tapMedium();
+            onSave();
+          }}
+          disabled={saving}
+          className="pressable flex-1 rounded-xl text-body font-semibold text-white disabled:opacity-50"
           style={{ minHeight: 50, background: "var(--color-blueberry-600)" }}
         >
-          Review
+          {saving ? "Saving…" : "Save expense"}
         </button>
       </div>
     </div>

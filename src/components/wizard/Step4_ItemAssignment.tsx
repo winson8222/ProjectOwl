@@ -1,15 +1,28 @@
 "use client";
 
 import ItemAssigner from "@/components/ItemAssigner";
+import type { Adjustments } from "@/lib/adjustments";
 
 interface Step4_ItemAssignmentProps {
+  /** Items as scanned — the "reset to scan" baseline. */
   scanItems: any[];
   selectedParticipants: string[];
   users: any[];
   onAssign: (results: any) => void;
+  /** Step back to the people picker, keeping the draft. */
   onBack: () => void;
+  /** Abandon the whole expense. */
+  onCancel: () => void;
+  /** Restore previously edited item prices when re-opening to edit. */
+  initialEditedItems?: { nm: string; price: number; cnt?: number }[];
   /** Restore prior per-unit assignments when re-opening to edit. */
   initialUnitState?: Record<string, string[]>;
+  /** Tax/discount and total read off the receipt — the "reset to scan" state. */
+  scannedAdjustments?: Adjustments;
+  scannedTotal?: number;
+  /** Restore previously edited tax/discount lines and total when re-opening. */
+  initialAdjustments?: Adjustments;
+  initialTotal?: number;
 }
 
 /**
@@ -21,7 +34,13 @@ export default function Step4_ItemAssignment({
   users,
   onAssign,
   onBack,
-  initialUnitState
+  onCancel,
+  initialEditedItems,
+  initialUnitState,
+  scannedAdjustments,
+  scannedTotal,
+  initialAdjustments,
+  initialTotal
 }: Step4_ItemAssignmentProps) {
   const participants = selectedParticipants.map(id => {
     const user = users.find((u: any) => u.id === id);
@@ -37,10 +56,6 @@ export default function Step4_ItemAssignment({
 
   const handleConfirm = (result: any) => {
     onAssign(result);
-  };
-
-  const handleCancel = () => {
-    onBack();
   };
 
   if (participants.length === 0) {
@@ -80,8 +95,14 @@ export default function Step4_ItemAssignment({
       items={items}
       participants={participants}
       onConfirm={handleConfirm}
-      onCancel={handleCancel}
+      onBack={onBack}
+      onCancel={onCancel}
+      initialEditedItems={initialEditedItems}
       initialUnitState={initialUnitState}
+      scannedAdjustments={scannedAdjustments}
+      scannedTotal={scannedTotal}
+      initialAdjustments={initialAdjustments}
+      initialTotal={initialTotal}
     />
   );
 }

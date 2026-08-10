@@ -12,6 +12,7 @@
  */
 import type { AllocItem, UnitState } from "../allocation";
 import { unitKey } from "../allocation";
+import type { ScannedReceiptTotals } from "../adjustments";
 import type { ReceiptExtractionResult } from "../schemas/receipt";
 
 export interface AllocationFixture {
@@ -20,6 +21,8 @@ export interface AllocationFixture {
   items: AllocItem[];
   /** Per-unit user assignment. */
   unitState: UnitState;
+  /** Signed tax (+) / discount (−) spread over the receipt. Defaults to 0. */
+  adjustment?: number;
   /** Expected per-user totals after allocation (the prefilled custom split). */
   expectedTotals: Record<string, number>;
   /** Expected count of unassigned units (defaults to 0). */
@@ -140,6 +143,117 @@ export const ALLOCATION_FIXTURES: AllocationFixture[] = [
     expectedTotals: { [A]: 20 },
     expectedUnassigned: 1,
   },
+  {
+    name: "tax-proportional",
+    description:
+      "$100 of food (You $70, Alex $30) plus $10 tax — tax follows what each ordered, not a 50/50 split.",
+    items: [
+      { nm: "Pizza", price: 70 },
+      { nm: "Salad", price: 30 },
+    ],
+    unitState: { [unitKey(0, 0)]: [A], [unitKey(1, 0)]: [B] },
+    adjustment: 10,
+    // You carry 70% of the tax ($7), Alex 30% ($3).
+    expectedTotals: { [A]: 77, [B]: 33 },
+  },
+  {
+    name: "discount-proportional",
+    description:
+      "$100 of food (You $60, Alex $40) less a $15 discount — the saving is shared in the same proportion.",
+    items: [
+      { nm: "Steak", price: 60 },
+      { nm: "Wine", price: 40 },
+    ],
+    unitState: { [unitKey(0, 0)]: [A], [unitKey(1, 0)]: [B] },
+    adjustment: -15,
+    expectedTotals: { [A]: 51, [B]: 34 },
+  },
+  {
+    name: "tax-rounding-thirds",
+    description:
+      "A $10 item split three ways with $1 tax — both the item and the tax must land exactly, totalling $11.00.",
+    items: [{ nm: "Nachos", price: 10 }],
+    unitState: { [unitKey(0, 0)]: [A, B, C] },
+    adjustment: 1,
+    // Item: 3.34 / 3.33 / 3.33. Tax: 0.34 / 0.33 / 0.33 — the stray cent goes
+    // to the largest remainder, so the totals sum to exactly $11.00.
+    expectedTotals: { [A]: 3.68, [B]: 3.66, [C]: 3.66 },
+  },
+];
+
+/**
+ * Fixtures for `deriveScannedAdjustment` — what tax/discount the allocation
+ * page opens prefilled with, given what the scan read off the receipt.
+ */
+export interface PrefillFixture {
+  name: string;
+  description: string;
+  receipt: ScannedReceiptTotals;
+  /** Expected resolved dollar amounts on each line. */
+  expectedTax: number;
+  expectedDiscount: number;
+}
+
+export const PREFILL_FIXTURES: PrefillFixture[] = [
+  {
+    name: "prefill-derives-missing-tax",
+    description:
+      "Receipt with no tax field at all — the $0.97 gap between the items and the printed total becomes the tax.",
+    receipt: {
+      menu: [{ price: 8.5 }, { price: 3.58 }],
+      total_price: 13.05,
+    },
+    expectedTax: 0.97,
+    expectedDiscount: 0,
+  },
+  {
+    name: "prefill-trusts-reconciling-tax",
+    description:
+      "Scanned tax of $10 agrees with the total, so it's used as-is.",
+    receipt: {
+      menu: [{ price: 70 }, { price: 30 }],
+      tax_price: 10,
+      total_price: 110,
+    },
+    expectedTax: 10,
+    expectedDiscount: 0,
+  },
+  {
+    name: "prefill-ignores-double-counted-service",
+    description:
+      "Service charge listed BOTH as a menu line and as service_price — trusting the field would double-count it to $134.50, so the derived $0 wins.",
+    receipt: {
+      menu: [{ price: 42 }, { price: 28 }, { price: 12.5 }, { price: 16 }, { price: 18 }],
+      service_price: 18,
+      total_price: 116.5,
+    },
+    expectedTax: 0,
+    expectedDiscount: 0,
+  },
+  {
+    name: "prefill-discount-onto-its-own-line",
+    description: "A $15 discount reconciles, and lands on the discount line.",
+    receipt: {
+      menu: [{ price: 60 }, { price: 40 }],
+      discount_price: 15,
+      total_price: 85,
+    },
+    expectedTax: 0,
+    expectedDiscount: 15,
+  },
+  {
+    name: "prefill-tax-and-discount-together",
+    description:
+      "Both a $12 tax and a $7 voucher on one receipt — they fill separate lines rather than netting to $5.",
+    receipt: {
+      menu: [{ price: 100 }],
+      tax_price: 12,
+      discount_price: 7,
+      total_price: 105,
+    },
+    expectedTax: 12,
+    expectedDiscount: 7,
+  },
 ];
 
 /**
@@ -196,6 +310,35 @@ export const MOCK_RECEIPTS: MockReceipt[] = [
       ],
       subtotal_price: 90.0,
       total_price: 90.0,
+    },
+  },
+  {
+    name: "cafe-with-tax",
+    label: "Café (tax, no tax field)",
+    // Deliberately has no tax_price: the $0.97 gap between the items and the
+    // total has to be derived. Mirrors the receipt that first surfaced the
+    // missing-tax bug.
+    data: {
+      menu: [
+        { nm: "Flat White", cnt: 1, price: 8.5 },
+        { nm: "Banana Bread", cnt: 1, price: 3.58 },
+      ],
+      subtotal_price: 12.08,
+      total_price: 13.05,
+    },
+  },
+  {
+    name: "takeout-discount",
+    label: "Takeout (10% off)",
+    data: {
+      menu: [
+        { nm: "Pad Thai", cnt: 2, price: 36.0 },
+        { nm: "Spring Rolls", cnt: 1, price: 9.0 },
+        { nm: "Mango Sticky Rice", cnt: 1, price: 15.0 },
+      ],
+      subtotal_price: 60.0,
+      discount_price: 6.0,
+      total_price: 54.0,
     },
   },
 ];
