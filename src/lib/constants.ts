@@ -108,7 +108,8 @@ export const ERROR_MESSAGES = {
   // LLM
   LLM_GENERIC: (status: number, detail: string) =>
     `Gemini API returned ${status}: ${detail}`,
-  LLM_QUOTA: "You've exceeded the Gemini API daily quota. Enable billing or wait for reset.",
+  // User-facing: says nothing about which provider or whose billing.
+  LLM_QUOTA: "Receipt scanning is unavailable right now. Please try again later.",
   LLM_NO_CONTENT: (reason: string) =>
     `Gemini returned no content (${reason}). The image may have been blocked by safety filters.`,
   LLM_INVALID_JSON: (preview: string) =>
@@ -151,7 +152,25 @@ export const MAPPED_ERRORS: { pattern: RegExp; message: string }[] = [
   { pattern: /UNIQUE constraint failed/i,
     message: "A duplicate entry was found. Please use different values." },
 
-  // Generic database errors
+  // Postgres — the app's actual database. Its errors quote schema, table and
+  // column names ("relation \"transactions\" does not exist"), which is a map
+  // of the schema for anyone reading an error toast. The SQLite patterns
+  // below are kept because the in-memory PGlite test suites and older
+  // fixtures still surface that wording.
+  { pattern: /relation ".*" does not exist|schema ".*" does not exist/i,
+    message: "Database is missing required tables. Try resetting the database." },
+  { pattern: /duplicate key value violates unique constraint/i,
+    message: "A duplicate entry was found. Please use different values." },
+  { pattern: /violates not-null constraint/i,
+    message: "A required field is missing." },
+  { pattern: /violates check constraint/i,
+    message: "That value isn't allowed. Please check the amounts and try again." },
+  { pattern: /column ".*" does not exist|syntax error at or near|invalid input syntax/i,
+    message: "A database error occurred. Please try again." },
+  { pattern: /ECONNREFUSED|connection terminated|too many clients/i,
+    message: "Database connection failed. Please try again." },
+
+  // Generic database errors (SQLite-era wording)
   { pattern: /cannot open database/i,
     message: "Database connection failed. Please try again." },
   { pattern: /no such table/i,
@@ -172,6 +191,18 @@ export const MAPPED_ERRORS: { pattern: RegExp; message: string }[] = [
     message: "Received an unexpected response from the server." },
 
   // LLM / Gemini errors — never expose provider details to the user
+  //
+  // Rate limiting and quota exhaustion come first, because they're the one
+  // case where "please try again" is actively wrong — an exhausted daily
+  // quota won't recover on a retry. The wording names neither the provider
+  // nor our billing state: which vendor we use and whether we've paid them
+  // is not the user's problem, and "check your plan and billing details"
+  // read as though it were theirs.
+  //
+  // Matches "returned 429" rather than a bare 429 so it can't fire on a
+  // money amount like "$429.00" in an unrelated error.
+  { pattern: /returned 429|RESOURCE_EXHAUSTED|rate.?limit|quota/i,
+    message: "Receipt scanning is unavailable right now. Enter the expense manually, or try scanning again later." },
   { pattern: /Gemini API returned/i,
     message: "Failed to scan receipt. Please try again." },
   { pattern: /Gemini returned no text|finishReason|blocked|safety filter/i,

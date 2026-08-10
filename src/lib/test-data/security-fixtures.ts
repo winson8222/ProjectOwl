@@ -149,3 +149,93 @@ export const DEBUG_GATE_FIXTURES: DebugGateFixture[] = [
     expectEnabled: true,
   },
 ];
+
+// ── Error-message sanitisation ──────────────────────────────────────
+/**
+ * Raw internal errors must never reach the client.
+ *
+ * The LLM client throws `LLMError` carrying the provider's verbatim response
+ * body, and `LLMError extends AppError` — so an API route that returns
+ * `err.message` for AppError bypasses the sanitiser and puts Google's error
+ * text, our rate-limit state and billing links straight into the UI. That
+ * happened in /api/receipts/extract. These fixtures assert on
+ * `mapErrorMessage`, which every route's catch block must run its message
+ * through, and check both that the leak is scrubbed and that genuinely
+ * user-facing messages survive it.
+ */
+export interface ErrorMessageFixture {
+  name: string;
+  description: string;
+  /** The raw message thrown internally. */
+  raw: string;
+  /** Substrings that must NOT survive into the user-facing message. */
+  mustNotContain?: string[];
+  /** Exact user-facing message expected out. */
+  expect?: string;
+}
+
+export const ERROR_MESSAGE_FIXTURES: ErrorMessageFixture[] = [
+  {
+    name: "gemini-429-quota",
+    description:
+      "CRITICAL: a quota 429 must not leak the provider, the quota state, or Google's billing links.",
+    raw: 'Gemini API returned 429: { "error": { "code": 429, "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. * Quota exceeded for metric: generate_requests_per_model_per_day" } }',
+    mustNotContain: ["Gemini", "quota", "billing", "google.dev", "429", "http"],
+    expect:
+      "Receipt scanning is unavailable right now. Enter the expense manually, or try scanning again later.",
+  },
+  {
+    name: "gemini-404-model-retired",
+    description:
+      "A 404 for a retired model is our configuration problem, not something to show the user.",
+    raw: 'Gemini API returned 404: { "error": { "message": "This model models/gemini-2.5-flash is no longer available to new users." } }',
+    mustNotContain: ["Gemini", "gemini-2.5-flash", "404", "model"],
+    expect: "Failed to scan receipt. Please try again.",
+  },
+  {
+    name: "gemini-500-generic",
+    description: "Any other provider failure collapses to the same generic message.",
+    raw: 'Gemini API returned 500: { "error": { "message": "Internal error encountered." } }',
+    mustNotContain: ["Gemini", "500", "Internal error"],
+    expect: "Failed to scan receipt. Please try again.",
+  },
+  {
+    name: "missing-api-key",
+    description: "A missing key is reported as unavailable, without naming the env var's value.",
+    raw: "GEMINI_API_KEY is not set",
+    expect: "Scan is unavailable. The API key has not been configured.",
+  },
+  {
+    name: "safety-block",
+    description: "Safety-filter blocks become advice about the photo, not a finishReason dump.",
+    raw: "Gemini returned no text content (finishReason: SAFETY)",
+    mustNotContain: ["Gemini", "finishReason", "SAFETY"],
+    expect: "Receipt scan returned no data. The image may be invalid or blurry.",
+  },
+  {
+    name: "invalid-json-response",
+    description: "A malformed model response must not echo the raw body back.",
+    raw: 'Gemini response was not valid JSON: <!DOCTYPE html><html><body>502 Bad Gateway',
+    mustNotContain: ["Gemini", "DOCTYPE", "502"],
+  },
+  {
+    name: "postgres-error-passthrough",
+    description: "Database internals are scrubbed the same way as provider errors.",
+    raw: 'relation "transactions" does not exist',
+    mustNotContain: ["relation", "transactions"],
+  },
+  {
+    name: "user-facing-message-survives",
+    description:
+      "Genuinely user-facing AppError text must pass through untouched — sanitising must not flatten every error into 'something went wrong'.",
+    raw: "Transaction not found",
+    expect: "Transaction not found",
+  },
+  {
+    name: "money-amount-not-mistaken-for-429",
+    description:
+      "Regression: a split mismatch quoting $429.00 must not match the rate-limit rule and get rewritten.",
+    raw: "Split amounts ($429.00) don't equal total ($430.00)",
+    expect: "Split amounts ($429.00) don't equal total ($430.00)",
+  },
+];

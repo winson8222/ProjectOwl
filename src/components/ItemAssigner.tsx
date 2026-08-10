@@ -1,9 +1,35 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
 import UserAvatar, { avatarTone } from "@/components/UserAvatar";
+import AdjustmentRow from "@/components/AdjustmentRow";
+import CalculatorKeypad from "@/components/CalculatorKeypad";
+import {
+  ZERO_ADJUSTMENTS,
+  lineAmount,
+  lineFromAmount,
+  netAdjustment,
+  type AdjustmentKey,
+  type Adjustments,
+} from "@/lib/adjustments";
 import { computeAllocation, unitKey, type UnitState } from "@/lib/allocation";
 import { tapLight, tapMedium } from "@/lib/haptics";
+
+const round2 = (n: number): number => Math.round(n * 100) / 100;
+
+/** Which number the calculator keypad is currently editing. */
+type NumericTarget =
+  | { kind: "item"; index: number }
+  | { kind: "total" }
+  | { kind: "adjustment"; key: AdjustmentKey };
+
+/** The non-item lines, in the order they'd appear at the foot of a receipt. */
+const ADJUSTMENT_ROWS: { key: AdjustmentKey; label: string; negative?: boolean }[] = [
+  { key: "tax", label: "Tax" },
+  { key: "discount", label: "Discount", negative: true },
+  { key: "misc", label: "Other" },
+];
 
 interface ScannedItem {
   id: number; // temporary index
@@ -22,22 +48,44 @@ export interface AssignmentResult {
   items: { nm: string; price: number; cnt?: number }[];
   /** Per-item, per-user resolved share amounts — index matches items[].
    *  Shares can be uneven when a multi-quantity item's units go to
-   *  different people. */
+   *  different people. Item value only — excludes tax/discount. */
   assignmentsByItem: { userId: string; shareAmount: number }[][];
-  /** Per-participant calculated totals */
+  /** Per-participant final totals, tax/discount included. */
   totals: Record<string, number>;
   /** Raw per-unit assignment state ("<itemIdx>:<unitIdx>" → userIds),
    *  passed back in on re-edit so prior work is preserved exactly. */
   unitState: Record<string, string[]>;
+  /** How the tax / discount / other lines were entered, for re-edit. */
+  adjustments: Adjustments;
+  /** Signed net of those lines in dollars, against the final item prices. */
+  adjustmentTotal: number;
+  /** The reconciled receipt total (items + adjustments). */
+  total: number;
 }
 
 interface ItemAssignerProps {
+  /** The items as scanned. Stays the "Reset to scan" baseline even after
+   *  prices are edited, so reset always means the original receipt. */
   items: ScannedItem[];
   participants: Participant[];
   onConfirm: (result: AssignmentResult) => void;
+  /** Step back to the previous wizard step, keeping the draft. */
+  onBack: () => void;
+  /** Abandon the whole expense. */
   onCancel: () => void;
+  /** Restore previously edited item prices when re-opening to edit. */
+  initialEditedItems?: { nm: string; price: number; cnt?: number }[];
   /** Restore prior per-unit assignments when re-opening to edit. */
   initialUnitState?: Record<string, string[]>;
+  /** Tax/discount read off the receipt, used as the starting value and as
+   *  what "Reset to scan" restores. */
+  scannedAdjustments?: Adjustments;
+  /** Total printed on the receipt — the figure everything must reconcile to. */
+  scannedTotal?: number;
+  /** Restore previously edited tax/discount lines when re-opening to edit. */
+  initialAdjustments?: Adjustments;
+  /** Restore a previously edited total when re-opening to edit. */
+  initialTotal?: number;
 }
 
 /**
@@ -55,16 +103,55 @@ interface ItemAssignerProps {
  * prices stay editable inline.
  */
 export default function ItemAssigner({
-  items: initialItems,
+  items: scannedItems,
   participants,
   onConfirm,
+  onBack,
   onCancel,
+  initialEditedItems,
   initialUnitState,
+  scannedAdjustments = ZERO_ADJUSTMENTS,
+  scannedTotal,
+  initialAdjustments,
+  initialTotal,
 }: ItemAssignerProps) {
   // Editable items (prices stay editable at this stage)
   const [items, setItems] = useState(() =>
-    initialItems.map((it) => ({ nm: it.nm, price: it.price, cnt: it.cnt ?? 1 }))
+    (initialEditedItems ?? scannedItems).map((it) => ({
+      nm: it.nm,
+      price: it.price,
+      cnt: it.cnt ?? 1,
+    }))
   );
+
+  // Every number on this screen is entered through the calculator keypad
+  // rather than the OS keyboard: it handles "12.50+3" for a shared dish, and
+  // it doesn't cover the row you're editing on a phone.
+  const [keypadTarget, setKeypadTarget] = useState<NumericTarget | null>(null);
+
+  // This screen renders through a portal (see the return), which can't happen
+  // during SSR — there's no document to portal into.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  // Tax / discount / other, as entered. Seeded from the scan and restored
+  // verbatim when re-opening to edit.
+  const [adjustments, setAdjustments] = useState<Adjustments>(
+    () => initialAdjustments ?? scannedAdjustments
+  );
+
+  // Lines the user opened but hasn't typed into yet. A line that carries a
+  // value shows regardless — an empty row per line would spend a third of a
+  // phone's footer saying "$0.00" three times.
+  const [revealed, setRevealed] = useState<Set<AdjustmentKey>>(new Set());
+
+  // The receipt total everything has to reconcile to. Editable because scans
+  // misread totals, and being unable to correct it would strand the user.
+  const scanTotal =
+    scannedTotal ??
+    scannedItems.reduce((s, it) => s + it.price, 0) +
+      netAdjustment(scannedAdjustments, scannedItems.reduce((s, it) => s + it.price, 0));
+  const [total, setTotal] = useState<number>(() => initialTotal ?? scanTotal);
 
   // Per-unit assignments. Restored from a prior edit if provided,
   // otherwise all units start EMPTY (unassigned).
@@ -120,12 +207,27 @@ export default function ItemAssigner({
     });
   };
 
+  /**
+   * Correcting an item price or a tax line moves what the meal actually cost,
+   * so the total follows it rather than sitting there stale and forcing a
+   * reconcile. Only editing the total *itself* asserts a figure the rest of
+   * the bill has to be argued into matching.
+   */
+  const applyItems = (next: typeof items) => {
+    const nextSum = next.reduce((s, it) => s + it.price, 0);
+    setItems(next);
+    setTotal(round2(nextSum + netAdjustment(adjustments, nextSum)));
+  };
+
+  const applyAdjustments = (next: Adjustments) => {
+    setAdjustments(next);
+    setTotal(round2(itemsSum + netAdjustment(next, itemsSum)));
+  };
+
   const updateItemPrice = (itemIndex: number, price: number) => {
-    setItems((prev) => {
-      const next = [...prev];
-      next[itemIndex] = { ...next[itemIndex], price };
-      return next;
-    });
+    const next = [...items];
+    next[itemIndex] = { ...next[itemIndex], price };
+    applyItems(next);
   };
 
   const toggleExpand = (itemIndex: number) => {
@@ -146,11 +248,19 @@ export default function ItemAssigner({
     return obj;
   }, [unitAssignments]);
 
+  const itemsSum = items.reduce((s, i) => s + i.price, 0);
+  const adjustmentTotal = netAdjustment(adjustments, itemsSum);
+
   // Resolve per-item, per-user shares via the shared allocation function,
   // so the UI shows exactly what the allocation test suite verifies.
-  const { assignmentsByItem, totals: computedTotals, unassignedUnits } = useMemo(
-    () => computeAllocation(items, unitState),
-    [items, unitState]
+  const {
+    assignmentsByItem,
+    totals: computedTotals,
+    itemAdjustments,
+    unassignedUnits,
+  } = useMemo(
+    () => computeAllocation(items, unitState, adjustmentTotal),
+    [items, unitState, adjustmentTotal]
   );
 
   // Ensure every participant appears in the totals (even at $0) for display.
@@ -160,12 +270,111 @@ export default function ItemAssigner({
     return t;
   }, [participants, computedTotals]);
 
-  const totalBill = items.reduce((s, i) => s + i.price, 0);
+  const totalBill = round2(itemsSum + adjustmentTotal);
   const totalAssigned = Object.values(computedTotals).reduce((s, v) => s + v, 0);
   const unassignedCount = unassignedUnits;
 
+  // Items + tax must land on the receipt total before this can be saved —
+  // otherwise the split silently wouldn't add up to what was actually paid.
+  const offBy = round2(totalBill - total);
+  const reconciled = Math.abs(offBy) < 0.01;
+
+  /**
+   * Absorb the leftover so the bill lands on the receipt total.
+   *
+   * Tax is left alone — it's the one line the receipt actually states — and
+   * the difference goes to "Other", because a gap of unknown origin is a fee
+   * or a rounding, not tax, and labelling it tax would be a guess presented
+   * as a fact. If the bill is over the total, Other can't help (it only adds),
+   * so the excess becomes a discount instead.
+   */
+  const absorbGap = () => {
+    tapLight();
+    const requiredNet = round2(total - itemsSum);
+    const tax = lineAmount(adjustments.tax, itemsSum);
+    const discount = lineAmount(adjustments.discount, itemsSum);
+    const misc = round2(requiredNet - tax + discount);
+
+    setAdjustments(
+      misc >= 0
+        ? { ...adjustments, misc: lineFromAmount(misc) }
+        : {
+            ...adjustments,
+            misc: lineFromAmount(0),
+            discount: lineFromAmount(tax - requiredNet),
+          }
+    );
+  };
+
+  /** A line earns its space by carrying a value, or by being opened to type into. */
+  const visibleRows = ADJUSTMENT_ROWS.filter(
+    ({ key }) => revealed.has(key) || lineAmount(adjustments[key], itemsSum) !== 0
+  );
+  const hiddenRows = ADJUSTMENT_ROWS.filter((r) => !visibleRows.includes(r));
+
+  const addLine = (key: AdjustmentKey) => {
+    tapLight();
+    setRevealed((prev) => new Set(prev).add(key));
+  };
+
+  const removeLine = (key: AdjustmentKey) => {
+    applyAdjustments({ ...adjustments, [key]: lineFromAmount(0) });
+    setRevealed((prev) => {
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+  };
+
+  const resetToScan = () => {
+    tapLight();
+    setItems(scannedItems.map((it) => ({ nm: it.nm, price: it.price, cnt: it.cnt ?? 1 })));
+    setAdjustments(scannedAdjustments);
+    setRevealed(new Set());
+    setTotal(scanTotal);
+  };
+
+  // What the keypad should open showing, and where its result goes back to.
+  const keypadConfig = (() => {
+    if (!keypadTarget) return null;
+    if (keypadTarget.kind === "item") {
+      const item = items[keypadTarget.index];
+      return { value: item?.price ?? 0, title: item?.nm ?? "Item price", unit: "$" as const };
+    }
+    if (keypadTarget.kind === "total") {
+      return { value: total, title: "Receipt total", unit: "$" as const };
+    }
+    const line = adjustments[keypadTarget.key];
+    return {
+      value: line.value,
+      title: ADJUSTMENT_ROWS.find((r) => r.key === keypadTarget.key)?.label ?? "Amount",
+      unit: line.mode === "percent" ? ("%" as const) : ("$" as const),
+    };
+  })();
+
+  const commitKeypad = (value: number) => {
+    if (!keypadTarget) return;
+    if (keypadTarget.kind === "item") {
+      updateItemPrice(keypadTarget.index, value);
+    } else if (keypadTarget.kind === "total") {
+      setTotal(value);
+    } else {
+      const key = keypadTarget.key;
+      applyAdjustments({ ...adjustments, [key]: { ...adjustments[key], value } });
+    }
+    setKeypadTarget(null);
+  };
+
   const handleConfirm = () => {
-    onConfirm({ items, assignmentsByItem, totals: participantTotals, unitState });
+    onConfirm({
+      items,
+      assignmentsByItem,
+      totals: participantTotals,
+      unitState,
+      adjustments,
+      adjustmentTotal,
+      total: totalBill,
+    });
   };
 
   // Render avatars for a set of assigned user ids
@@ -181,8 +390,21 @@ export default function ItemAssigner({
     ? avatarTone(activeParticipant.name)
     : "var(--color-blueberry-600)";
 
-  return (
-    <div className="fixed inset-0 z-50 bg-canvas md:max-w-3xl md:mx-auto flex flex-col overscroll-none">
+  if (!mounted) return null;
+
+  /**
+   * Rendered through a portal to <body>.
+   *
+   * PageSlider animates its track with a CSS transform, which makes that
+   * track the containing block for any `position: fixed` descendant *and*
+   * traps their z-index inside its stacking context. Left in place, this
+   * screen could never paint above the app header (also z-50, but a sibling
+   * of the slider), so the header sat on top of the Back button. Portalling
+   * to body takes it out of that stacking context entirely; z-[55] then puts
+   * it over the header while staying under the offline banner (z-[60]).
+   */
+  return createPortal(
+    <div className="fixed inset-0 z-[55] bg-canvas md:max-w-3xl md:mx-auto flex flex-col overscroll-none">
       {/* ── Whose turn it is ─────────────────────────────────────
              The band takes the active person's own colour and cross-fades
              when you hand the phone over. Passing it should feel like handing
@@ -190,21 +412,36 @@ export default function ItemAssigner({
       <div
         className="px-4 pb-4 shrink-0 transition-colors duration-300"
         style={{
-          paddingTop: "max(1rem, env(safe-area-inset-top))",
+          // Clear the offline banner, which sits above this screen and would
+          // otherwise land on the Back button.
+          paddingTop:
+            "calc(max(1rem, env(safe-area-inset-top)) + var(--offline-banner-h))",
           background: activeTone,
         }}
       >
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-caption font-semibold uppercase tracking-wider text-white/70">
-            Assigning for
-          </span>
+        {/* This screen covers the wizard's own chrome, so it has to carry
+            both exits itself: step back to the people picker, or drop the
+            expense entirely. */}
+        <div className="flex items-center justify-between mb-2 -mx-2">
+          <button
+            onClick={onBack}
+            className="pressable text-subhead font-medium text-white/90 px-2"
+            style={{ minHeight: 44 }}
+          >
+            ← Back
+          </button>
           <button
             onClick={onCancel}
-            className="pressable text-subhead font-medium text-white/90 -m-2 p-2"
+            className="pressable text-subhead font-medium text-white/90 px-2"
+            style={{ minHeight: 44 }}
           >
             Cancel
           </button>
         </div>
+
+        <span className="block text-caption font-semibold uppercase tracking-wider text-white/70 mb-3">
+          Assigning for
+        </span>
 
         <div className="flex items-center gap-3 mb-4">
           <span className="rounded-full p-[2px] bg-white/25">
@@ -337,17 +574,29 @@ export default function ItemAssigner({
                   </div>
                 </button>
 
-                {/* Editable item price */}
-                <input
-                  type="number"
-                  value={item.price}
-                  onChange={(e) => updateItemPrice(i, parseFloat(e.target.value) || 0)}
-                  step="0.01"
-                  min="0"
-                  aria-label={`Price of ${item.nm}`}
-                  className="w-[86px] px-2 text-body text-right font-mono tabular text-ink bg-transparent rounded-[8px] focus:outline-none focus:bg-canvas focus:ring-2 focus:ring-blueberry-500 shrink-0"
+                {/* The row's real cost — price plus its slice of tax — with
+                    what's baked in shown inline. Tapping swaps to the base
+                    price, which is the figure printed on the receipt and so
+                    the only one worth typing. */}
+                <button
+                  onClick={() => {
+                    tapLight();
+                    setKeypadTarget({ kind: "item", index: i });
+                  }}
+                  aria-label={`Price of ${item.nm}, ${item.price.toFixed(2)} before tax — tap to change`}
+                  className="pressable w-[132px] px-2 flex items-baseline justify-end gap-1.5 rounded-[8px] shrink-0"
                   style={{ minHeight: 44 }}
-                />
+                >
+                  <span className="text-body font-mono tabular text-ink">
+                    ${round2(item.price + itemAdjustments[i]).toFixed(2)}
+                  </span>
+                  {adjustmentTotal !== 0 && (
+                    <span className="text-caption font-mono tabular text-ink-muted">
+                      (incl. {itemAdjustments[i] >= 0 ? "+" : "−"}
+                      {Math.abs(itemAdjustments[i]).toFixed(2)})
+                    </span>
+                  )}
+                </button>
 
                 {/* Expand toggle for multi-qty items */}
                 {isMulti && (
@@ -418,8 +667,18 @@ export default function ItemAssigner({
                             renderAvatars(assigned)
                           )}
                         </span>
-                        <span className="text-subhead font-mono tabular text-ink-muted shrink-0 w-16 text-right">
-                          ${unitPrice.toFixed(2)}
+                        {/* Same post-tax basis as the parent row, so a unit
+                            and the item it came from can be compared. */}
+                        <span className="shrink-0 text-right flex items-baseline justify-end gap-1.5">
+                          <span className="text-subhead font-mono tabular text-ink-muted">
+                            ${round2(unitPrice + itemAdjustments[i] / cnt).toFixed(2)}
+                          </span>
+                          {adjustmentTotal !== 0 && (
+                            <span className="text-caption font-mono tabular text-ink-muted">
+                              (incl. {itemAdjustments[i] >= 0 ? "+" : "−"}
+                              {Math.abs(itemAdjustments[i] / cnt).toFixed(2)})
+                            </span>
+                          )}
                         </span>
                       </button>
                     );
@@ -438,8 +697,112 @@ export default function ItemAssigner({
         className="bg-canvas px-4 pt-3 shrink-0"
         style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
       >
+        {/* Items → tax → total, so the arithmetic of the bill is visible
+            rather than implied by a single figure. */}
+        <div className="flex items-baseline mb-1">
+          <span className="text-subhead text-ink-muted">Items</span>
+          <span className="leader" aria-hidden />
+          <span className="text-subhead font-mono tabular text-ink">
+            ${itemsSum.toFixed(2)}
+          </span>
+        </div>
+
+        {visibleRows.map(({ key, label, negative }) => (
+          <AdjustmentRow
+            key={key}
+            label={label}
+            line={adjustments[key]}
+            onChange={(line) => applyAdjustments({ ...adjustments, [key]: line })}
+            itemsSum={itemsSum}
+            negative={negative}
+            onRemove={() => removeLine(key)}
+            onEdit={() => setKeypadTarget({ kind: "adjustment", key })}
+          />
+        ))}
+
+        {hiddenRows.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 py-1">
+            {hiddenRows.map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => addLine(key)}
+                className="pressable rounded-full px-2.5 text-caption font-semibold text-ink-muted"
+                style={{
+                  minHeight: 28,
+                  background: "var(--color-canvas)",
+                  border: "1px solid var(--color-hairline)",
+                }}
+              >
+                + {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="flex items-center mt-1 mb-1">
+          <span className="text-subhead text-ink-muted shrink-0">Receipt total</span>
+          <span className="leader" aria-hidden />
+          <button
+            onClick={() => {
+              tapLight();
+              setKeypadTarget({ kind: "total" });
+            }}
+            aria-label={`Receipt total ${total.toFixed(2)} — tap to change`}
+            className="pressable px-2.5 text-body text-right font-mono tabular font-semibold text-ink rounded-lg shrink-0"
+            style={{
+              minWidth: 100,
+              minHeight: 36,
+              background: "var(--color-surface-raised)",
+              border: "1px solid var(--color-hairline)",
+            }}
+          >
+            ${total.toFixed(2)}
+          </button>
+        </div>
+
+        {!reconciled && (
+          // The bill doesn't add up to the printed total. Rather than leave
+          // the user to nudge four numbers into agreement by hand, offer the
+          // one-tap fix — as a real button, since this is the thing standing
+          // between them and a finished split.
+          <button
+            onClick={absorbGap}
+            className="pressable w-full flex items-center gap-2 px-3 rounded-xl my-2"
+            style={{
+              minHeight: 46,
+              background: "var(--color-warning-tint)",
+              border: "1px solid color-mix(in srgb, var(--color-warning) 40%, transparent)",
+            }}
+          >
+            <span
+              className="shrink-0 text-body font-bold"
+              style={{ color: "var(--color-warning)" }}
+              aria-hidden
+            >
+              ⚠
+            </span>
+            <span className="flex-1 min-w-0 text-left">
+              <span
+                className="block text-subhead font-semibold"
+                style={{ color: "var(--color-warning)" }}
+              >
+                ${Math.abs(offBy).toFixed(2)} {offBy > 0 ? "over" : "under"} the total
+              </span>
+              <span className="block text-caption text-ink-muted">
+                Tap to absorb the difference
+              </span>
+            </span>
+          </button>
+        )}
+
         <div className="flex items-baseline mb-1">
           <span className="text-subhead text-ink-muted">Assigned</span>
+          <button
+            onClick={resetToScan}
+            className="pressable text-caption font-semibold text-blueberry-600 ml-2 -my-1 py-1"
+          >
+            Reset to scan
+          </button>
           <span className="leader" aria-hidden />
           <span
             className="text-body font-semibold font-mono tabular"
@@ -466,11 +829,31 @@ export default function ItemAssigner({
                 .querySelector('[data-unclaimed="true"]')
                 ?.scrollIntoView({ behavior: "smooth", block: "center" });
             }}
-            className="pressable w-full text-left text-footnote mb-2"
-            style={{ color: "var(--color-warning)", minHeight: 30 }}
+            className="pressable w-full flex items-center gap-2 px-3 rounded-xl mb-2"
+            style={{
+              minHeight: 46,
+              background: "var(--color-warning-tint)",
+              border: "1px solid color-mix(in srgb, var(--color-warning) 40%, transparent)",
+            }}
           >
-            {unassignedCount} {unassignedCount > 1 ? "items" : "item"} still
-            unclaimed — tap to find {unassignedCount > 1 ? "them" : "it"}
+            <span
+              className="shrink-0 text-body font-bold"
+              style={{ color: "var(--color-warning)" }}
+              aria-hidden
+            >
+              ⚠
+            </span>
+            <span className="flex-1 min-w-0 text-left">
+              <span
+                className="block text-subhead font-semibold"
+                style={{ color: "var(--color-warning)" }}
+              >
+                {unassignedCount} {unassignedCount > 1 ? "items" : "item"} still unclaimed
+              </span>
+              <span className="block text-caption text-ink-muted">
+                Tap to find {unassignedCount > 1 ? "them" : "it"}
+              </span>
+            </span>
           </button>
         )}
 
@@ -479,13 +862,28 @@ export default function ItemAssigner({
             tapMedium();
             handleConfirm();
           }}
-          disabled={unassignedCount > 0}
+          disabled={unassignedCount > 0 || !reconciled}
           className="pressable w-full rounded-[12px] text-body font-semibold text-white disabled:opacity-40"
           style={{ minHeight: 52, background: "var(--color-blueberry-600)" }}
         >
-          {unassignedCount > 0 ? "Assign every item first" : "Done — that's everyone"}
+          {unassignedCount > 0
+            ? "Assign every item first"
+            : !reconciled
+            ? "Make the total match first"
+            : "Done — that's everyone"}
         </button>
       </div>
-    </div>
+
+      {keypadConfig && (
+        <CalculatorKeypad
+          open
+          initialValue={keypadConfig.value}
+          title={keypadConfig.title}
+          unit={keypadConfig.unit}
+          onConfirm={commitKeypad}
+        />
+      )}
+    </div>,
+    document.body
   );
 }
