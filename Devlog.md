@@ -1,5 +1,85 @@
 # ProjectOwl — Devlog
 
+## 2026-08-12 — Add an expense on one screen
+
+Replaces the four-step wizard with a single compose screen. The two decisions
+that need room — who paid, how it's split — open as full-screen overlays and
+come straight back.
+
+```
+New expense                                    [Cancel]        [Save]
+  group · description · amount (keypad, + date)
+  Paid by [you] and [split equally]
+                                                      ( 🦥 ) ItreAI
+     │              │                    │
+  PayerSheet    SplitSheet          scan → ItemAssigner → Custom amounts
+                                                          + ItemBreakdown
+```
+
+### Done
+- `ExpenseComposer` (636) plus `compose/{PayerSheet, SplitSheet, ItemBreakdown}`
+  and `SlothMark`. Removes `AddTransactionWizard`, six step components,
+  `SplitInput` and `TypeDiagrams` — 2,016 lines out, 1,604 in.
+- **`PayerSheet` gives multiple payers a UI.** The capability shipped with
+  migration `0005` but the wizard only ever sent one payer, so it was
+  API-reachable and not user-reachable. One person / Multiple people, with a
+  running reconciliation line and Done disabled until the contributions add up.
+- The scan is a shortcut to a custom split rather than a parallel branch: scan
+  → who was there → `ItemAssigner` → back to Custom amounts with shares
+  pre-computed and a per-person "From the receipt" breakdown to check against.
+- Date lives on the amount keypad (opt-in `date`/`onDateChange`), so the keypad
+  stays purely numeric where it's reused for shares and adjustment lines.
+
+### Deliberately built ON the existing work, not over it
+The receipt-adjustments feature, the draft guard and the allocation maths were
+all written against the wizard. Rather than merge the older composer branch —
+whose diff would have reverted 3,555 lines of them — this was rebuilt on top:
+
+- **Tax / discount / other survive untouched.** They live in `ItemAssigner`,
+  `AdjustmentRow`, `lib/adjustments.ts` and `lib/allocation.ts`, none of which
+  this touches. The composer passes `scannedAdjustments` / `scannedTotal` so
+  tax still pre-fills from the receipt, and `initialAdjustments` / `initialTotal`
+  so re-opening the allocation restores what was typed.
+- **`setAmount(result.total)`, not the sum of item prices.** `totals` includes
+  tax while `assignmentsByItem` excludes it, so summing items would leave the
+  amount short by the adjustment while the shares already contained it — the
+  split could never reconcile and Save would never enable, with nothing on
+  screen saying why.
+- **The draft guard is now registered by the composer.** `PageSlider` keeps
+  `/transactions/new` mounted, so swiping to another tab abandons a draft
+  silently; the composer had that bug and no guard. It marks itself dirty once
+  there's a description, an amount, people, or a scan.
+- **Cancel exists and navigates**, routed through `guardedNavigate`.
+
+### Architecture decisions
+1. **Rebuilt rather than merged.** The older composer branch had drifted behind
+   master by ~3,500 lines of other people's work. Its value was the composer
+   itself, not its history — copying five files onto current master keeps every
+   feature built since, and makes deleting the wizard a deliberate final step
+   rather than a merge artifact.
+2. **`onUseAllocationTotal` is dropped, not lost.** It existed because the
+   wizard let the amount and the allocation drift across steps. The composer
+   reconciles them at the moment of confirmation, so there is nothing to
+   reconcile afterwards.
+3. **Overlays, not routes, for the sub-screens.** `/transactions/new` is one of
+   four pages mounted at once inside `PageSlider`; child routes would break its
+   index maths and allow swiping sideways mid-flow.
+
+### Verification
+`tsc --noEmit` clean. `test:simplify` 13/13, `test:allocation` **18/18**,
+`test:settlement` 10/10, `test:security` **35/35** — the allocation and
+security counts are the pre-existing ones, which is the check that the
+adjustments and validation work came through unreverted. Confirmed by diff that
+`ItemAssigner`, `allocation.ts`, `adjustments.ts`, `AdjustmentRow`,
+`draft-guard.ts`, `nav-direction.ts` and `DraftLeaveGuard` have zero changes.
+
+### Known / deferred
+- Not exercised on hardware. Gesture thresholds and haptics are desktop-tested
+  only; `navigator.vibrate` is a no-op on iOS Safari regardless.
+- The sloth is a stand-in drawn in `OwlMark`'s style, pending real artwork.
+- The composer's Cancel returns to `/`; the wizard used to return to its own
+  opening step. Worth a look in use.
+
 ## 2026-08-12 — Multiple payers per transaction, and three balance bugs
 
 A bill can now be settled across several cards. Deliberately scoped to the data
