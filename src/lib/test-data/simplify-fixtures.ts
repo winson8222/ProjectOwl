@@ -171,7 +171,72 @@ export const SIMPLIFY_FIXTURES: SimplifyFixture[] = [
       },
       { paidBy: E, participants: [{ userId: B, shareAmount: 14 }, { userId: C, shareAmount: 14 }] },
       { paidBy: A, participants: [{ userId: D, shareAmount: 25 }, { userId: E, shareAmount: 25 }] },
+      // NOTE: fixtures above deliberately carry no `payers` — they exercise the
+      // single-payer fallback, which is what every pre-multi-payer row does.
     ],
     // Non-trivial optimum — left to the invariant checks rather than a hand count.
+  },
+
+  // ── Multiple payers ────────────────────────────────────────────────
+  {
+    name: "two-payers-even-split",
+    description:
+      "One $100 bill settled across two cards ($60/$40), split evenly four ways \u2014 nets A +35, B +15, C -25, D -25.",
+    transactions: [
+      {
+        paidBy: A, // primary payer, retained for display only
+        payers: [
+          { userId: A, amountPaid: 60 },
+          { userId: B, amountPaid: 40 },
+        ],
+        participants: [
+          { userId: A, shareAmount: 25 },
+          { userId: B, shareAmount: 25 },
+          { userId: C, shareAmount: 25 },
+          { userId: D, shareAmount: 25 },
+        ],
+      },
+    ],
+    // Three, not two: nets are {+35, +15} against {-25, -25}, and no debtor's
+    // balance matches a creditor's, so one of them has to split their payment.
+    expectedTransfers: 3,
+  },
+  {
+    name: "payer-who-owes-nothing",
+    description:
+      "B fronts half a bill they take no share of \u2014 they end up purely a creditor.",
+    transactions: [
+      {
+        paidBy: A,
+        payers: [
+          { userId: A, amountPaid: 30 },
+          { userId: B, amountPaid: 30 },
+        ],
+        participants: [
+          { userId: C, shareAmount: 30 },
+          { userId: D, shareAmount: 30 },
+        ],
+      },
+    ],
+    expectedTransfers: 2,
+  },
+  {
+    name: "multi-payer-settles-itself",
+    description:
+      "Two people each pay exactly what they owe \u2014 no debt should be created at all.",
+    transactions: [
+      {
+        paidBy: A,
+        payers: [
+          { userId: A, amountPaid: 40 },
+          { userId: B, amountPaid: 60 },
+        ],
+        participants: [
+          { userId: A, shareAmount: 40 },
+          { userId: B, shareAmount: 60 },
+        ],
+      },
+    ],
+    expectedTransfers: 0,
   },
 ];

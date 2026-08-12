@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import Portal from "@/components/Portal";
 
 interface CalculatorKeypadProps {
   open: boolean;
@@ -112,7 +113,8 @@ export default function CalculatorKeypad({
   const displayValue = expression || "0";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={handleClose}>
+    <Portal>
+    <div className="fixed inset-0 z-[55] flex items-end justify-center bg-black/40" onClick={handleClose}>
       <div
         className="bg-surface-raised rounded-t-3xl shadow-xl w-full max-w-md overflow-hidden animate-slide-up"
         onClick={(e) => e.stopPropagation()}
@@ -300,5 +302,6 @@ export default function CalculatorKeypad({
         }
       `}</style>
     </div>
+    </Portal>
   );
 }

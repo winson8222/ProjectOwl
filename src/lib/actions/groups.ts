@@ -3,7 +3,7 @@ import { eq, and, inArray, desc, asc, getTableColumns } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 import { localTimestamp } from "@/lib/time";
 import { logActivity } from "./activities";
-import { computeNetBalances, minimizeTransfers, type SimpleTransaction, type Transfer } from "@/lib/simplify";
+import { computeNetBalances, minimizeTransfers, pairwiseFor, type SimpleTransaction, type Transfer } from "@/lib/simplify";
 import type { ServerTimer } from "@/lib/server-timing";
 import type { User } from "./users";
 
@@ -81,14 +81,25 @@ async function getGroupSimpleTransactions(groupId: string): Promise<SimpleTransa
     .where(and(eq(schema.transactions.groupId, groupId), eq(schema.transactions.isDeleted, false)));
   if (txs.length === 0) return [];
 
-  const parts = await db
-    .select({
-      transactionId: schema.participants.transactionId,
-      userId: schema.participants.userId,
-      shareAmount: schema.participants.shareAmount,
-    })
-    .from(schema.participants)
-    .where(inArray(schema.participants.transactionId, txs.map((t) => t.id)));
+  const txIds = txs.map((t) => t.id);
+  const [parts, payerRows] = await Promise.all([
+    db
+      .select({
+        transactionId: schema.participants.transactionId,
+        userId: schema.participants.userId,
+        shareAmount: schema.participants.shareAmount,
+      })
+      .from(schema.participants)
+      .where(inArray(schema.participants.transactionId, txIds)),
+    db
+      .select({
+        transactionId: schema.transactionPayers.transactionId,
+        userId: schema.transactionPayers.userId,
+        amountPaid: schema.transactionPayers.amountPaid,
+      })
+      .from(schema.transactionPayers)
+      .where(inArray(schema.transactionPayers.transactionId, txIds)),
+  ]);
 
   const byTx = new Map<string, { userId: string; shareAmount: number }[]>();
   for (const p of parts) {
@@ -96,7 +107,22 @@ async function getGroupSimpleTransactions(groupId: string): Promise<SimpleTransa
     list.push({ userId: p.userId, shareAmount: p.shareAmount });
     byTx.set(p.transactionId, list);
   }
-  return txs.map((tx) => ({ paidBy: tx.paidBy, participants: byTx.get(tx.id) ?? [] }));
+
+  const payersByTx = new Map<string, { userId: string; amountPaid: number }[]>();
+  for (const q of payerRows) {
+    const list = payersByTx.get(q.transactionId) ?? [];
+    list.push({ userId: q.userId, amountPaid: q.amountPaid });
+    payersByTx.set(q.transactionId, list);
+  }
+
+  // `payers` stays undefined for a transaction with no rows — computeNetBalances
+  // then falls back to "paidBy covered the whole total", the pre-multi-payer
+  // meaning.
+  return txs.map((tx) => ({
+    paidBy: tx.paidBy,
+    payers: payersByTx.get(tx.id),
+    participants: byTx.get(tx.id) ?? [],
+  }));
 }
 
 type PaidSettlement = typeof schema.settlements.$inferSelect;
@@ -240,17 +266,10 @@ export async function getGroupPage(groupId: string, currentUserId: string, t?: S
   const memberBalances = computeMemberNets(members, txs, settlements);
 
   // Pairwise nets vs. the current user: who owes you / you owe within the group.
-  const pairwise = new Map<string, number>();
-  for (const tx of txs) {
-    for (const p of tx.participants) {
-      if (p.userId === tx.paidBy) continue;
-      if (tx.paidBy === currentUserId && p.userId !== currentUserId) {
-        pairwise.set(p.userId, (pairwise.get(p.userId) ?? 0) + p.shareAmount);
-      } else if (p.userId === currentUserId) {
-        pairwise.set(tx.paidBy, (pairwise.get(tx.paidBy) ?? 0) - p.shareAmount);
-      }
-    }
-  }
+  // Shared with getBalance via pairwiseFor — this was a separate copy that
+  // still keyed on tx.paidBy alone, so a multi-payer bill showed a creditor
+  // as a debtor here while memberBalances (right below it) said otherwise.
+  const pairwise = pairwiseFor(txs, currentUserId);
   for (const s of settlements) {
     if (s.toUserId === currentUserId) {
       pairwise.set(s.fromUserId, (pairwise.get(s.fromUserId) ?? 0) - s.amount);
