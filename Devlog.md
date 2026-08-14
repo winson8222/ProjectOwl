@@ -1,5 +1,57 @@
 # ProjectOwl — Devlog
 
+## 2026-08-14 — Service worker disabled
+
+Turned off in every environment after a day of caching strategies that each
+fixed the previous failure and introduced another.
+
+### How you actually disable one
+Deleting the file, or just dropping the `register()` call, disables nothing: a
+worker already installed in someone's browser stays installed and keeps
+intercepting every request forever. The only thing that reaches those browsers
+is a **new version of the script**, which the browser re-fetches when checking
+an existing registration. So `public/sw.js` is now a worker whose entire job is
+to remove itself — clear Cache Storage, `registration.unregister()`, reload
+controlled tabs.
+
+`AppShell` unregisters and clears caches too, in every environment. Belt and
+braces: the worker's own kill switch needs the browser to fetch sw.js, while
+AppShell runs as soon as the app boots.
+
+`public/sw.js` must keep being served. If that request 404s, the browser keeps
+the last working registration and the old worker lives on.
+
+### Why
+Four strategies, four failures, each invisible until it hit a real browser:
+blank app after every deploy → assets orphaned by Vercel's per-deploy `?dpl`
+query → 404s from superseded builds reaching the page as fatal empty scripts →
+requests that never settled, leaving the app loading forever.
+
+The trade was bad. The worker bought offline support and, for online users,
+essentially nothing: Next serves `/_next/static/**` with
+`max-age=31536000, immutable`, so the browser's own HTTP cache already covers
+speed. Offline support is not worth a feature that can take the whole app down
+and then persist in users' browsers after the bad code is gone.
+
+### The lesson worth keeping
+**A node:vm harness cannot validate a service worker.** Every one of those
+failures passed its suite. Worse, the suite produced false passes twice from
+its own bugs: `new Response("", { status: 304 })` throws (304 is a null-body
+status), which silently routed a test down the network-error path; and a
+missing `setTimeout` in the VM context made a timeout test "pass" in 1ms
+without ever running the timeout. Both looked green.
+
+If caching comes back, it needs a real browser driving two consecutive deploys
+with a tab held open. Anything less tests our model of the browser, not the
+browser.
+
+### Verification
+- `npm run test:sw` rewritten to the four things that now matter: no fetch
+  handler, all caches deleted, self-unregistered, controlled tabs reloaded.
+  4/4.
+- Confirmed no `serviceWorker.register` call remains anywhere in `src/`.
+- `tsc --noEmit` clean; production build compiles.
+
 ## 2026-08-14 — Nothing in the worker could time out
 
 Reported after the network-first deploy: the app loads forever and shows
