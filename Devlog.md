@@ -1,5 +1,6 @@
 # ProjectOwl — Devlog
 
+
 ## 2026-08-14 — A deploy could blank the app for open tabs
 
 Reported as `TypeError: Failed to fetch at cacheFirst (/sw.js:116:26)` after a
@@ -51,6 +52,7 @@ Fixing the growth is what exposed it.
   reason — its `shell-v2` cache never rotated, so the old chunk was still a hit.
 - `tsc --noEmit` clean; production build compiles; simplify 13/13, allocation
   18/18, security 35/35.
+
 
 ## 2026-08-12 — Add an expense on one screen
 
