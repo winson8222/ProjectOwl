@@ -116,7 +116,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (url.pathname.startsWith("/_next/static/")) {
-    event.respondWith(cacheFirst(request, ASSET_CACHE));
+    event.respondWith(assetCacheFirst(request));
     return;
   }
 
@@ -158,6 +158,47 @@ async function cacheFirst(request, cacheName) {
     // app. Check every cache, not just this one, before giving up — an asset
     // from a superseded deploy can still be sitting in another version's cache.
     const stale = await caches.match(request);
+    if (stale) return stale;
+    throw err;
+  }
+}
+
+/**
+ * Cache key for a build asset: the URL with its query string removed.
+ *
+ * Vercel appends `?dpl=<deployment id>` to every /_next/static URL, and that
+ * value changes on every deploy while the bytes behind it do not — the path
+ * already carries a content hash, which is what actually identifies the file.
+ *
+ * Matching on the full URL therefore misses on every asset after a deploy even
+ * though a byte-identical copy is already cached, and re-stores it under the
+ * new query: zero reuse, and the cache fills with duplicates of the same file
+ * until pruning evicts entries that were still useful. Normalising the query
+ * away — for lookup AND for storage — is what makes this cache survive a
+ * deploy at all.
+ *
+ * Safe precisely because the path is content-hashed: two URLs that differ only
+ * in the query are the same file by construction.
+ */
+function assetKey(request) {
+  const url = new URL(request.url);
+  url.search = "";
+  return url.href;
+}
+
+async function assetCacheFirst(request) {
+  const cache = await caches.open(ASSET_CACHE);
+  const key = assetKey(request);
+
+  const cached = await cache.match(key);
+  if (cached) return cached;
+
+  try {
+    const response = await fetch(request);
+    if (response.ok) cache.put(key, response.clone());
+    return response;
+  } catch (err) {
+    const stale = await caches.match(key);
     if (stale) return stale;
     throw err;
   }
