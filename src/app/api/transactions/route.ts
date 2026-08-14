@@ -9,6 +9,10 @@ import { CODES, ERROR_MESSAGES, apiError, mapErrorMessage, type ApiErrorResponse
 import { debugEndpointsEnabled } from "@/lib/debug-guard";
 import { transactionAmountsValid, clampLimit } from "@/lib/security";
 
+// Backstop: a stalled query must surface as our error, not a 300s platform 504.
+// Normal responses are well under a second; this only ever fires on a stall.
+export const maxDuration = 20;
+
 /**
  * POST /api/transactions
  * Create a new transaction with (optional, descriptive) items and its
