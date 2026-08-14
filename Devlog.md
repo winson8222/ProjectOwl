@@ -1,5 +1,121 @@
 # ProjectOwl — Devlog
 
+## 2026-08-14 — A stale socket on the only DB connection hung every request
+
+Reported as production hanging "once in a while", then recovering on its own.
+A `/api/auth/me` invocation ran **300.3s** to the platform cap and returned
+`FUNCTION_INVOCATION_TIMEOUT`.
+
+### Reading the trace
+The Vercel log exonerated auth outright: `supabase.co/auth/v1/user` came back
+in **49ms**. `/api/auth/me` does exactly two things — that call, then Postgres
+— so the remaining ~300s was all postgres.js. The External APIs table shows no
+database row because it only traces HTTP; a raw TCP wait is invisible there.
+
+Two further observations:
+
+- **Pages were never slow.** `/`, `/groups`, `/activity`, `/transactions/new`
+  all returned 304 promptly throughout an outage; only `/api/*` hung. Pages
+  don't touch Postgres — the shell fetches its data client-side.
+- **Recovery coincided exactly with the 504s.** `/api/groups` and
+  `/api/balances` died at the same instant (17:09:27.26), having started
+  together 300s earlier. The app didn't heal, it *timed out*.
+
+### The wait is not execution — a wrong turn, and how the data corrected it
+The first read of `pg_stat_activity` showed `state = 'active'`, which was taken
+as proof the query had reached a backend, ruling out a dead socket and pointing
+instead at a client-side queue deep enough to exceed the function timeout.
+
+Both halves of that were wrong, and the measurements say so:
+
+- `select … from pg_stat_activity where state <> 'idle'` **always returns the
+  SQL editor's own session as `active`**. A single `active` row is the observer,
+  not evidence of a stuck app query.
+- A healthy request measures `db: 17ms` (`_timing`, from server-timing.ts).
+  Queue-depth arithmetic needs thousands of pending requests to reach 300s;
+  refreshing cannot produce that.
+- **No app query appears in `pg_stat_statements` at all** when sorted by mean
+  time — the top 20 is entirely Supabase internals (Studio's
+  `pg_timezone_names`, PostgREST introspection, WAL machinery, one-time
+  `CREATE TABLE`s). Every app query therefore has a mean under ~18ms, and the
+  highest `max_exec_time` anywhere in that set is 1074ms. **Nothing ever
+  executed for anything close to 300s.**
+
+So the time is spent *waiting*, not running: the socket dies while the instance
+sits idle (nothing notices — no query is in flight), the next request writes
+into it, and postgres.js — which has **no query timeout** — waits forever. At
+max:1 that one wedged socket blocked every request on the instance until the
+platform killed it. That also explains why hangs are total and instant rather
+than gradual, which a filling queue would not be.
+
+### Amplifier: the client fires four uncoordinated requests per load
+PageSlider keeps several pages mounted, and each fetches independently, so
+`/api/groups` is requested **twice** per load (`app/page.tsx` and
+`app/groups/page.tsx` both fetch it, as do both for `/api/balances`), alongside
+`/api/balances` and `/api/activities`. Not the cause — with a healthy 17ms
+database this is invisible — but it multiplies everything by ~4 when a socket
+does wedge, and each of the four pays its own `auth.getUser()` round trip.
+
+### Red herring: the auth "storm"
+Supabase's auth log fills with `/auth/v1/user` during an outage and looks like
+the cause. It isn't — every call returns 200 in ~49ms. `/groups`,
+`/transactions/new` and `/activity` appear at the *identical* millisecond
+(17:15:36.13), which is Next.js `<Link>` prefetch, not a user refreshing. Each
+prefetch runs middleware (the `Vercel Edge Functions` entries) and its
+`auth.getUser()`, then serves a 304 without touching Postgres. High volume,
+no database cost. Don't chase it.
+
+### Fixed
+- **`idle_timeout: 20` → `5`.** The main defence: don't hold a socket across an
+  idle gap at all. Costs one reconnect (tens of ms) after a quiet spell and
+  removes almost the whole window in which a stale socket can be reused.
+- **`max: 1` → `max: 5`.** Fluid compute serves concurrent requests from one
+  instance, so a single connection meant one wedged socket took down every
+  request on that instance rather than one. Safe because `DATABASE_URL` is the
+  6543 transaction pooler; `DIRECT_URL`/5432 has a far lower limit and must not
+  be pooled this way. Check the pooler's `default_pool_size` before raising it
+  further.
+- **`max_lifetime: 300`** so no socket outlives an idle instance, and
+  **`keep_alive: 10`** so a dead peer surfaces as an error sooner.
+- **`maxDuration = 20` on the 14 data routes.** A stall now returns our error
+  instead of burning 300s of Fluid capacity. Same lesson as the `budgetMs`
+  entry below: under a hard deadline, exceeding it destroys the error.
+
+### Known broken (deliberately not fixed)
+`setRequestAuth` does nothing. `set_config(..., true)` is *transaction*-local
+and both calls run in autocommit, so each setting is discarded at the end of
+its own statement — by the time a route queries, `role` and
+`request.jwt.claims` are back to their defaults. **The policies in
+`0004_enable_rls.sql` are not being enforced in production**; `src/lib/actions/*`
+is what actually scopes data access. It also costs 2 serialized round trips
+per authenticated request, which is 2/3 of the auth path's database latency.
+
+Left in place for now — the comment in `rls.ts` was rewritten to say so,
+because it previously justified its safety on `max: 1` and that is no longer
+true. **Do not "fix" this by flipping the third argument to `false`**: session
+-scoped settings would persist on a pooled connection and leak one user's auth
+context into the next request. A correct fix has to open a transaction and run
+the config and the query inside it, and survive the transaction pooler, where
+a session's connection is not stable between statements.
+
+### Architecture decisions
+- **A connection pool of one is not a safe default, it's a global lock.** The
+  `max: 1` came from single-invocation-per-instance assumptions that Fluid
+  compute broke, and `rls.ts` had grown a *correctness* argument on top of it.
+  Config that other files reason about needs to say why, or the next change
+  silently invalidates them.
+- **Client-side queueing is invisible to server-side monitoring.** `active`
+  with a low backend count during a total hang was the tell; without checking
+  the *number* of rows it reads as a healthy database.
+
+### Not verified here
+Reproduced only from production logs — the fix can't be exercised locally,
+where a single Postgres has no queue. Watch whether 504s stop after deploy.
+Server-side guards still want a one-time
+`ALTER ROLE authenticated SET statement_timeout = '15s'` (plus `lock_timeout`
+and `idle_in_transaction_session_timeout`); these are unreliable as postgres.js
+startup params through Supavisor, so they belong on the role.
+
 ## 2026-08-14 — Service worker disabled
 
 Turned off in every environment after a day of caching strategies that each
