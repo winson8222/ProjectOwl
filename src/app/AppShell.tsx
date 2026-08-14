@@ -29,28 +29,29 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       .finally(() => setReady(true));
   }, []);
 
+  // The service worker is disabled in every environment — see public/sw.js for
+  // why. Nothing registers one any more; this actively removes any that a
+  // previous build installed.
+  //
+  // Belt and braces with the self-uninstalling worker: that one only runs if
+  // the browser gets as far as fetching the new sw.js, while this runs as soon
+  // as the app boots. Between them, a browser holding a broken worker recovers
+  // on its next load either way.
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
 
-    // The service worker is cache-first for same-origin static assets and
-    // CACHE_VERSION is bumped by hand — so in dev it happily serves a previous
-    // session's JS chunks over a running dev server, which looks exactly like
-    // "my code didn't apply". Register only in production, and tear down any
-    // worker an earlier dev session already installed.
-    if (process.env.NODE_ENV !== "production") {
-      navigator.serviceWorker
-        .getRegistrations()
-        .then((regs) => regs.forEach((r) => r.unregister()))
-        .catch(() => {});
-      return;
-    }
+    navigator.serviceWorker
+      .getRegistrations()
+      .then((regs) => regs.forEach((r) => r.unregister()))
+      .catch(() => {});
 
-    // The ?v= is what makes each deploy a distinct registration. sw.js itself
-    // is byte-identical between builds, so without it the browser's
-    // script-comparison finds no change, never installs a new worker, and the
-    // previous build's cached chunks are never purged.
-    const version = process.env.NEXT_PUBLIC_SW_VERSION || "dev";
-    navigator.serviceWorker.register(`/sw.js?v=${version}`).catch(() => {});
+    // Unregistering leaves Cache Storage behind, and it can be hundreds of MB.
+    if (typeof caches !== "undefined") {
+      caches
+        .keys()
+        .then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
+        .catch(() => {});
+    }
   }, []);
 
   if (!ready) {
