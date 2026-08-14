@@ -43,7 +43,8 @@ const ASSET_CACHE_LIMIT = 300;
 const dpl = (path: string, deployment: string) => `${path}?dpl=dpl_${deployment}`;
 
 type Req = { url: string; method: string; mode?: string };
-type Net = (target: Req | string) => Promise<Response>;
+type FetchInit = { cache?: string; credentials?: string };
+type Net = (target: Req | string, init?: FetchInit) => Promise<Response>;
 
 const absolute = (target: Req | string) =>
   typeof target === "string" ? new URL(target, ORIGIN).href : target.url;
@@ -129,7 +130,7 @@ function makeNetwork(liveChunk: string, missing: "throw" | "404"): Net {
 }
 
 type FetchOutcome =
-  | { kind: "response"; status: number }
+  | { kind: "response"; status: number; body: string }
   | { kind: "passthrough" }
   | { kind: "throw"; name: string; message: string };
 
@@ -188,7 +189,11 @@ function loadWorker(opts: {
       if (!responded) return { kind: "passthrough" };
       try {
         const response = await responded;
-        return { kind: "response", status: response.status };
+        return {
+          kind: "response",
+          status: response.status,
+          body: await response.clone().text(),
+        };
       } catch (err) {
         const e = err as Error;
         return { kind: "throw", name: e.constructor.name, message: e.message };
@@ -240,8 +245,8 @@ async function deployCase(source: string, missing: "throw" | "404"): Promise<Cas
 
   const names = await storage.keys();
   checks.push({
-    name: "shell cache still rotates per deploy",
-    passed: names.includes("shell-bbbbbbbb") && !names.includes("shell-aaaaaaaa"),
+    name: "caches are not per-deploy",
+    passed: !names.some((n) => /-(aaaaaaaa|bbbbbbbb)$/.test(n)),
     detail: names.join(", "),
   });
   checks.push({
@@ -256,6 +261,69 @@ async function deployCase(source: string, missing: "throw" | "404"): Promise<Cas
       missing === "throw"
         ? "superseded chunk fails at the network level"
         : "superseded chunk returns 404",
+    checks,
+    notes,
+  };
+}
+
+/**
+ * The core rule: while the network works, the cache is never consulted.
+ *
+ * A cached copy that disagrees with the running build is exactly what used to
+ * blank the app, so being online must always mean serving what the server
+ * says — the cache exists only for the offline path.
+ */
+async function networkWinsCase(source: string): Promise<Case> {
+  const checks: Check[] = [];
+  const notes: string[] = [];
+
+  // Prime every cache from a server that answers "old".
+  const oldNet: Net = async () => new Response("old", { status: 200 });
+  const storage = new FakeCacheStorage(oldNet);
+  const sw = loadWorker({ source, version: "v1", cacheStorage: storage, net: oldNet });
+  await sw.install();
+  await sw.activate();
+  await sw.handleFetch(req(CHUNK_A));
+  await sw.handleFetch(req("/api/groups"));
+  await sw.handleFetch(req("/", { mode: "navigate" }));
+
+  // Now the server answers "new" while those stale copies are still cached.
+  const newNet: Net = async () => new Response("new", { status: 200 });
+  storage.repoint(newNet);
+  const sw2 = loadWorker({ source, version: "v1", cacheStorage: storage, net: newNet });
+
+  for (const [label, request] of [
+    ["build asset", req(CHUNK_A)],
+    ["api response", req("/api/groups")],
+    ["navigation", req("/", { mode: "navigate" })],
+  ] as [string, Req][]) {
+    const outcome = await sw2.handleFetch(request);
+    const body = outcome.kind === "response" ? outcome.body : outcome.kind;
+    notes.push(`${label} while online: served "${body}"`);
+    checks.push({
+      name: `${label}: network wins over the cached copy`,
+      passed: body === "new",
+      detail: `got "${body}"`,
+    });
+  }
+
+  // ...and the stale copy is still there for when the network dies.
+  const dead: Net = async () => {
+    throw new TypeError("Failed to fetch");
+  };
+  storage.repoint(dead);
+  const sw3 = loadWorker({ source, version: "v1", cacheStorage: storage, net: dead });
+  const offline = await sw3.handleFetch(req(CHUNK_A));
+  notes.push(`build asset once offline: ${JSON.stringify(offline)}`);
+  checks.push({
+    name: "offline still falls back to the cache",
+    passed: offline.kind === "response" && offline.status === 200,
+    detail: offline.kind === "throw" ? `${offline.name}: ${offline.message}` : offline.kind,
+  });
+
+  return {
+    name: "network-wins-while-online",
+    description: "cache is an offline fallback, never a preference",
     checks,
     notes,
   };
@@ -315,6 +383,77 @@ async function deploymentStampCase(source: string): Promise<Case> {
   };
 }
 
+/**
+ * A 304 must never reach the page.
+ *
+ * `/` and `/api/*` are max-age=0, must-revalidate, so every load after the
+ * first is a conditional request answered 304 — and a 304 has no body. The
+ * browser normally merges it with its own HTTP cache; a response returned from
+ * respondWith() skips that merge, so passing one through renders nothing.
+ */
+async function revalidationCase(source: string): Promise<Case> {
+  const checks: Check[] = [];
+  const notes: string[] = [];
+
+  // Server behaves like Vercel: 304 to a conditional request, 200 with a body
+  // when asked unconditionally (cache: "reload").
+  let unconditionalCalls = 0;
+  const revalidating: Net = async (_target, init) => {
+    if (init?.cache === "reload") {
+      unconditionalCalls++;
+      return new Response("fresh document", { status: 200 });
+    }
+    // 304 is a null-body status — constructing it with "" throws.
+    return new Response(null, { status: 304 });
+  };
+
+  const storage = new FakeCacheStorage(revalidating);
+  const sw = loadWorker({ source, version: "v1", cacheStorage: storage, net: revalidating });
+  await sw.install();
+  await sw.activate();
+
+  notes.push(`install fetched ${unconditionalCalls} URLs unconditionally`);
+  checks.push({
+    name: "install survives a 304 (worker actually activates)",
+    passed: unconditionalCalls > 0,
+    detail: `${unconditionalCalls} unconditional fetches`,
+  });
+
+  // Cold cache: a 304 with nothing to pair it against must be re-fetched.
+  const cold = await sw.handleFetch(req("/", { mode: "navigate" }));
+  notes.push(`navigation, nothing cached: ${JSON.stringify(cold)}`);
+  checks.push({
+    name: "304 with a cold cache is re-fetched, not passed through",
+    passed: cold.kind === "response" && cold.status === 200 && cold.body.length > 0,
+    detail: cold.kind === "response" ? `status ${cold.status}, body "${cold.body}"` : cold.kind,
+  });
+
+  // Warm cache: the 304 should resolve to the cached body.
+  const warm = await sw.handleFetch(req("/", { mode: "navigate" }));
+  notes.push(`navigation, warm cache: ${JSON.stringify(warm)}`);
+  checks.push({
+    name: "304 with a warm cache serves the cached body",
+    passed: warm.kind === "response" && warm.status === 200 && warm.body.length > 0,
+    detail: warm.kind === "response" ? `status ${warm.status}, body "${warm.body}"` : warm.kind,
+  });
+
+  // And an API GET, which revalidates the same way.
+  const api = await sw.handleFetch(req("/api/groups"));
+  notes.push(`api 304: ${JSON.stringify(api)}`);
+  checks.push({
+    name: "an API 304 never reaches the page either",
+    passed: api.kind === "response" && api.status !== 304,
+    detail: api.kind === "response" ? `status ${api.status}` : api.kind,
+  });
+
+  return {
+    name: "revalidation-304",
+    description: "must-revalidate means 304 is the normal answer, and it has no body",
+    checks,
+    notes,
+  };
+}
+
 async function pruneCase(source: string): Promise<Case> {
   const checks: Check[] = [];
   const notes: string[] = [];
@@ -365,6 +504,8 @@ const RESET = "\x1b[0m";
 async function main() {
   const source = readFileSync(SW_PATH, "utf8");
   const cases = [
+    await revalidationCase(source),
+    await networkWinsCase(source),
     await deployCase(source, "throw"),
     await deployCase(source, "404"),
     await deploymentStampCase(source),
