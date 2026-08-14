@@ -1,5 +1,59 @@
 # ProjectOwl — Devlog
 
+## 2026-08-14 — The cache is an offline fallback, and nothing else
+
+Third attempt at the blank page, and the first one aimed at the right thing.
+Cache-first was the wrong strategy for this app, not a strategy with bugs in
+it.
+
+### The thing every previous attempt missed
+A deploy **deletes** the previous build's chunks. `layout-<hash>.js` captured
+before a staging deploy returns 404 after it — a chunk whose content changed
+gets a new hash and the old file is gone. So a tab open across a deploy asks
+for files that no longer exist.
+
+**A 404 is a response, not an error.** It sails past a `try/catch` and reaches
+the page, and a 404'd `<script>` kills the app exactly as dead as a failed
+one. Every fix so far guarded the throwing path and left this one open. Worse,
+the first test suite asserted only "does not reject out of respondWith", which
+a 404 satisfies — so the 404 case was reported as PASS while returning a fatal
+response. Cache-first had been accidentally covering it by never reaching the
+network.
+
+### Done
+- **One strategy: network-first, everywhere.** The cache is written on every
+  success and read only when the network fails. Nothing cached can be served
+  while online, which is the entire class of "stale cache disagrees with the
+  running build" gone.
+- **Except for a 404 on a build asset**, which falls back to cache. Safe only
+  there: a content-hashed path means the cached copy is byte-identical to what
+  the server would have sent, so it cannot be stale. Elsewhere a 404 is real
+  information the app needs.
+- **Caches are no longer per-deploy** (`shell`, `data`, `assets`), each bounded
+  and pruned oldest-first. Versioned names meant every deploy started with an
+  empty cache — no offline support until the user next went online, the
+  opposite of the point. Nothing needs versioning now that nothing is served
+  cache-first. `CACHE_VERSION` survives only to keep `?v=<sha>` changing so the
+  browser installs the new worker at all.
+- `navigateHandler`/`cacheFirst`/`assetCacheFirst` collapse into one function.
+
+### Why this costs nothing
+Next serves `/_next/static/**` with `max-age=31536000, immutable`, so the
+browser's HTTP cache already holds those for a year — checked against staging,
+not assumed. A `fetch()` from the worker goes through that cache, so
+network-first on a build asset returns without touching the network anyway.
+The worker's cache-first layer was duplicating the HTTP cache while adding
+every failure mode above.
+
+### Verification
+- `npm run test:sw` 5/5, including a new `network-wins-while-online` case that
+  primes every cache with old content and asserts the network's answer wins for
+  asset, API and navigation — then that the stale copy is still there once the
+  network dies.
+- The suite scores 2/5 against the worker currently in production, so it
+  discriminates rather than just agreeing with whatever is in front of it.
+- `tsc --noEmit` clean; production build compiles.
+
 ## 2026-08-14 — Vercel's ?dpl defeated the asset cache
 
 The previous entry's asset cache didn't survive a deploy after all, and the

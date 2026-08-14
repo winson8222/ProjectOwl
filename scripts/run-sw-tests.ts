@@ -129,7 +129,7 @@ function makeNetwork(liveChunk: string, missing: "throw" | "404"): Net {
 }
 
 type FetchOutcome =
-  | { kind: "response"; status: number }
+  | { kind: "response"; status: number; body: string }
   | { kind: "passthrough" }
   | { kind: "throw"; name: string; message: string };
 
@@ -188,7 +188,11 @@ function loadWorker(opts: {
       if (!responded) return { kind: "passthrough" };
       try {
         const response = await responded;
-        return { kind: "response", status: response.status };
+        return {
+          kind: "response",
+          status: response.status,
+          body: await response.clone().text(),
+        };
       } catch (err) {
         const e = err as Error;
         return { kind: "throw", name: e.constructor.name, message: e.message };
@@ -240,8 +244,8 @@ async function deployCase(source: string, missing: "throw" | "404"): Promise<Cas
 
   const names = await storage.keys();
   checks.push({
-    name: "shell cache still rotates per deploy",
-    passed: names.includes("shell-bbbbbbbb") && !names.includes("shell-aaaaaaaa"),
+    name: "caches are not per-deploy",
+    passed: !names.some((n) => /-(aaaaaaaa|bbbbbbbb)$/.test(n)),
     detail: names.join(", "),
   });
   checks.push({
@@ -256,6 +260,69 @@ async function deployCase(source: string, missing: "throw" | "404"): Promise<Cas
       missing === "throw"
         ? "superseded chunk fails at the network level"
         : "superseded chunk returns 404",
+    checks,
+    notes,
+  };
+}
+
+/**
+ * The core rule: while the network works, the cache is never consulted.
+ *
+ * A cached copy that disagrees with the running build is exactly what used to
+ * blank the app, so being online must always mean serving what the server
+ * says — the cache exists only for the offline path.
+ */
+async function networkWinsCase(source: string): Promise<Case> {
+  const checks: Check[] = [];
+  const notes: string[] = [];
+
+  // Prime every cache from a server that answers "old".
+  const oldNet: Net = async () => new Response("old", { status: 200 });
+  const storage = new FakeCacheStorage(oldNet);
+  const sw = loadWorker({ source, version: "v1", cacheStorage: storage, net: oldNet });
+  await sw.install();
+  await sw.activate();
+  await sw.handleFetch(req(CHUNK_A));
+  await sw.handleFetch(req("/api/groups"));
+  await sw.handleFetch(req("/", { mode: "navigate" }));
+
+  // Now the server answers "new" while those stale copies are still cached.
+  const newNet: Net = async () => new Response("new", { status: 200 });
+  storage.repoint(newNet);
+  const sw2 = loadWorker({ source, version: "v1", cacheStorage: storage, net: newNet });
+
+  for (const [label, request] of [
+    ["build asset", req(CHUNK_A)],
+    ["api response", req("/api/groups")],
+    ["navigation", req("/", { mode: "navigate" })],
+  ] as [string, Req][]) {
+    const outcome = await sw2.handleFetch(request);
+    const body = outcome.kind === "response" ? outcome.body : outcome.kind;
+    notes.push(`${label} while online: served "${body}"`);
+    checks.push({
+      name: `${label}: network wins over the cached copy`,
+      passed: body === "new",
+      detail: `got "${body}"`,
+    });
+  }
+
+  // ...and the stale copy is still there for when the network dies.
+  const dead: Net = async () => {
+    throw new TypeError("Failed to fetch");
+  };
+  storage.repoint(dead);
+  const sw3 = loadWorker({ source, version: "v1", cacheStorage: storage, net: dead });
+  const offline = await sw3.handleFetch(req(CHUNK_A));
+  notes.push(`build asset once offline: ${JSON.stringify(offline)}`);
+  checks.push({
+    name: "offline still falls back to the cache",
+    passed: offline.kind === "response" && offline.status === 200,
+    detail: offline.kind === "throw" ? `${offline.name}: ${offline.message}` : offline.kind,
+  });
+
+  return {
+    name: "network-wins-while-online",
+    description: "cache is an offline fallback, never a preference",
     checks,
     notes,
   };
@@ -365,6 +432,7 @@ const RESET = "\x1b[0m";
 async function main() {
   const source = readFileSync(SW_PATH, "utf8");
   const cases = [
+    await networkWinsCase(source),
     await deployCase(source, "throw"),
     await deployCase(source, "404"),
     await deploymentStampCase(source),
