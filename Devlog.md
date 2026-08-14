@@ -1,5 +1,175 @@
 # ProjectOwl — Devlog
 
+## 2026-08-12 — Add an expense on one screen
+
+Replaces the four-step wizard with a single compose screen. The two decisions
+that need room — who paid, how it's split — open as full-screen overlays and
+come straight back.
+
+```
+New expense                                    [Cancel]        [Save]
+  group · description · amount (keypad, + date)
+  Paid by [you] and [split equally]
+                                                      ( 🦥 ) ItreAI
+     │              │                    │
+  PayerSheet    SplitSheet          scan → ItemAssigner → Custom amounts
+                                                          + ItemBreakdown
+```
+
+### Done
+- `ExpenseComposer` (636) plus `compose/{PayerSheet, SplitSheet, ItemBreakdown}`
+  and `SlothMark`. Removes `AddTransactionWizard`, six step components,
+  `SplitInput` and `TypeDiagrams` — 2,016 lines out, 1,604 in.
+- **`PayerSheet` gives multiple payers a UI.** The capability shipped with
+  migration `0005` but the wizard only ever sent one payer, so it was
+  API-reachable and not user-reachable. One person / Multiple people, with a
+  running reconciliation line and Done disabled until the contributions add up.
+- The scan is a shortcut to a custom split rather than a parallel branch: scan
+  → who was there → `ItemAssigner` → back to Custom amounts with shares
+  pre-computed and a per-person "From the receipt" breakdown to check against.
+- Date lives on the amount keypad (opt-in `date`/`onDateChange`), so the keypad
+  stays purely numeric where it's reused for shares and adjustment lines.
+
+### Deliberately built ON the existing work, not over it
+The receipt-adjustments feature, the draft guard and the allocation maths were
+all written against the wizard. Rather than merge the older composer branch —
+whose diff would have reverted 3,555 lines of them — this was rebuilt on top:
+
+- **Tax / discount / other survive untouched.** They live in `ItemAssigner`,
+  `AdjustmentRow`, `lib/adjustments.ts` and `lib/allocation.ts`, none of which
+  this touches. The composer passes `scannedAdjustments` / `scannedTotal` so
+  tax still pre-fills from the receipt, and `initialAdjustments` / `initialTotal`
+  so re-opening the allocation restores what was typed.
+- **`setAmount(result.total)`, not the sum of item prices.** `totals` includes
+  tax while `assignmentsByItem` excludes it, so summing items would leave the
+  amount short by the adjustment while the shares already contained it — the
+  split could never reconcile and Save would never enable, with nothing on
+  screen saying why.
+- **The draft guard is now registered by the composer.** `PageSlider` keeps
+  `/transactions/new` mounted, so swiping to another tab abandons a draft
+  silently; the composer had that bug and no guard. It marks itself dirty once
+  there's a description, an amount, people, or a scan.
+- **Cancel exists and navigates**, routed through `guardedNavigate`.
+
+### Architecture decisions
+1. **Rebuilt rather than merged.** The older composer branch had drifted behind
+   master by ~3,500 lines of other people's work. Its value was the composer
+   itself, not its history — copying five files onto current master keeps every
+   feature built since, and makes deleting the wizard a deliberate final step
+   rather than a merge artifact.
+2. **`onUseAllocationTotal` is dropped, not lost.** It existed because the
+   wizard let the amount and the allocation drift across steps. The composer
+   reconciles them at the moment of confirmation, so there is nothing to
+   reconcile afterwards.
+3. **Overlays, not routes, for the sub-screens.** `/transactions/new` is one of
+   four pages mounted at once inside `PageSlider`; child routes would break its
+   index maths and allow swiping sideways mid-flow.
+
+### Verification
+`tsc --noEmit` clean. `test:simplify` 13/13, `test:allocation` **18/18**,
+`test:settlement` 10/10, `test:security` **35/35** — the allocation and
+security counts are the pre-existing ones, which is the check that the
+adjustments and validation work came through unreverted. Confirmed by diff that
+`ItemAssigner`, `allocation.ts`, `adjustments.ts`, `AdjustmentRow`,
+`draft-guard.ts`, `nav-direction.ts` and `DraftLeaveGuard` have zero changes.
+
+### Known / deferred
+- Not exercised on hardware. Gesture thresholds and haptics are desktop-tested
+  only; `navigator.vibrate` is a no-op on iOS Safari regardless.
+- The sloth is a stand-in drawn in `OwlMark`'s style, pending real artwork.
+- The composer's Cancel returns to `/`; the wizard used to return to its own
+  opening step. Worth a look in use.
+
+## 2026-08-12 — Multiple payers per transaction, and three balance bugs
+
+A bill can now be settled across several cards. Deliberately scoped to the data
+model, the balance math and the affected non-wizard components — the
+add-expense UI is untouched, so this lands independently of any decision about
+that flow.
+
+### Done
+New `transaction_payers` table (migration `0005`), mirroring `participants`:
+that one says who **owes**, this one says who **put money in**.
+`transactions.paid_by_user_id` is kept as a denormalised primary payer for
+display, and every existing transaction is backfilled as a single full-amount
+row, so balances are unchanged by the migration itself.
+
+`POST /api/transactions` accepts an optional `payers[]`; omitting it means the
+primary payer covered everything, exactly as before. Payments stay
+single-payer — splitting "I paid you back" across contributors is meaningless.
+
+### Fixed — money bugs found by an adversarial audit of the balance math
+All three had shipped green because nothing exercised `getBalance` with more
+than one payer; the settlement fixtures never inserted payer rows.
+
+1. **`getGroupPage.yourPairwise` showed creditors as debtors.** A third copy of
+   the pairwise logic, keyed on `tx.paidBy` alone. On a $100 bill (Alice $60 /
+   Ben $40, split 3 ways) Ben read "You owe Alice $33.33" when he was in fact
+   owed $6.67 — sign flipped, 5× off, contradicting the settle-up plan on the
+   same page. 9,388 violations across 4,000 randomised scenarios.
+2. **A cent that could never be settled.** The API tolerated ±0.01 on
+   shares-vs-total and ±0.01 on payers-vs-total independently. Net is
+   `paid − owed`, so a 2¢ gap left someone pinned at +$0.01 forever with
+   `isSettled` (`|net| < 0.005`) never firing. A follow-up pass found
+   fractional-cent amounts reopening the same hole through the API — 300,000
+   crafted payloads, all accepted, 83,915 with non-conserving nets.
+3. **"Pay X back" could move real money to the wrong person.** On that same
+   bill Ben was offered "Pay Alice back $33.33" against an actual $6.67 debt.
+
+### Also
+- **`Portal`** — `BottomSheet`, `ScanLoader`, `SettledOverlay`,
+  `LoadingOverlay` and `CalculatorKeypad` were all still trapped beneath the
+  app header by `PageSlider`'s animated transform (the same bug `ItemAssigner`
+  fixed inline). Generalised that fix and adopted its layering: `z-[55]`, above
+  the header, below the offline banner at `z-[60]`.
+- **`npm run db:migrate` works again locally.** `0004_enable_rls.sql` calls
+  `auth.uid()`, which Supabase provides and a local `createdb` does not, so
+  local dev was stuck at `0003`. `scripts/db-migrate.ts` now creates a stub
+  *only when absent* — no-op on Supabase, never replaces the real function.
+
+### Architecture decisions
+1. **One pairwise implementation, not three.** Bug 1 was fixed by extracting
+   `pairwiseFor()` into `simplify.ts` and deleting the private loops in
+   `getBalance` and `getGroupPage`. Patching the third copy would have left the
+   same failure mode open to a fourth.
+2. **Net = paid − owed.** Replaces "credit the payer with each non-payer's
+   share, skip the payer's own row". Arithmetically identical for one payer —
+   both give `total − ownShare`, verified over 8,000 scenarios — but it
+   generalises and needs no self-reference special case.
+3. **Shares are owed to payers in proportion to contribution.** A $25 share of
+   a bill where Alex paid $60 and Ben $40 is $15 to Alex and $10 to Ben. An
+   edge between two payers therefore nets *two* flows in opposite directions.
+4. **Money means whole cents.** `isNonNegativeMoney` now rejects fractional
+   cents. That is what makes the half-cent reconciliation check airtight: a gap
+   that must be under half a cent and is a whole number of cents can only be
+   zero. Verified this does not reject adjusted receipts — `lineAmount` and
+   `netAdjustment` already round to cents, so an 8.75% tax on a $45.83 subtotal
+   resolves cleanly and the shares reconcile exactly.
+5. **Suppress the pay-back shortcut under multi-payer rather than recompute
+   it.** A fourth place computing debt is how bug 1 happened; settle-up already
+   works off net balances and gets it right.
+
+### Verification
+`tsc --noEmit` clean. `test:simplify` 13/13 (3 new multi-payer fixtures),
+`test:allocation` 18/18, `test:settlement` 10/10 (2 new multi-payer fixtures —
+this is the only suite that runs `getBalance` against a database, and its lack
+of payer rows is exactly why bug 1 shipped), `test:security` 35/35.
+
+Two fixture expectations written during this work were wrong and the suites
+caught both: a 2-vs-3 transfer count, and expecting +$10 on an edge that nets
+to +$5. The implementation was right each time.
+
+### Known / deferred
+- `getBalance`'s group-scoped path can't be exercised in-memory:
+  `getGroupMemberIds` uses the global `getDb()` rather than the injected `_db`.
+  Pre-existing.
+- If shares don't sum exactly to the total, the transaction detail page shows
+  `totalAmount` while the ledger credits the share sum — a 1¢ display
+  disagreement, feeding no math.
+- The wizard only ever sends one payer, so multi-payer is reachable through the
+  API but has no UI on this branch. `PayerSheet` (One person / Multiple people)
+  exists on `feature/flow-changes`.
+
 ## 2026-08-10 — Add is the expense path; payments move to settle-up
 
 The Add tab opened on "What are you adding? Expense / Payment" — a fork the

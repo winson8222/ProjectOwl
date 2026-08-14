@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useSpring, animated } from "@react-spring/web";
+import Portal from "@/components/Portal";
 
 const DISMISS_DISTANCE = 90;
 const DISMISS_VELOCITY = 0.5;
@@ -107,7 +108,8 @@ export default function BottomSheet({
   if (!present) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center">
+    <Portal>
+    <div className="fixed inset-0 z-[55] flex items-end justify-center">
       <animated.button
         aria-label="Close"
         tabIndex={-1}
@@ -149,5 +151,6 @@ export default function BottomSheet({
         <div className="px-5 pt-3">{children}</div>
       </animated.div>
     </div>
+    </Portal>
   );
 }

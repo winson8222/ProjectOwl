@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import OwlMark, { type OwlPhase } from "./OwlMark";
+import Portal from "@/components/Portal";
 
 /**
  * Full-screen takeover while ItreAI reads a receipt.
@@ -42,8 +43,9 @@ export default function ScanLoader({ done = false }: { done?: boolean }) {
   }, [stage, done]);
 
   return (
+    <Portal>
     <div
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-8 px-8"
+      className="fixed inset-0 z-[55] flex flex-col items-center justify-center gap-8 px-8"
       style={{
         background:
           "linear-gradient(160deg, var(--color-blueberry-600) 0%, var(--color-blueberry-900) 100%)",
@@ -80,5 +82,6 @@ export default function ScanLoader({ done = false }: { done?: boolean }) {
         </p>
       </div>
     </div>
+    </Portal>
   );
 }
