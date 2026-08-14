@@ -36,6 +36,44 @@ const SHELL_CACHE = "shell";
 const DATA_CACHE = "data";
 const ASSET_CACHE = "assets";
 
+/**
+ * Ceiling on how long we'll wait for the network before falling back to cache.
+ *
+ * Without this there is no timeout anywhere in the path: respondWith() is
+ * handed a promise that can stay pending forever, the page's fetch() never
+ * settles, and anything awaiting it is stuck. AppShell gates the whole app on
+ * one such fetch and flips `ready` in a `.finally()` — which never runs — so a
+ * single hung request leaves an empty page loading indefinitely, with no error
+ * anywhere to explain it.
+ *
+ * Falling back to a cached copy, or even failing outright, both beat hanging:
+ * the app can render something either way.
+ *
+ * The `self` override exists so the tests can use a short timeout; nothing sets
+ * it in a real worker.
+ */
+const NETWORK_TIMEOUT_MS = self.SW_NETWORK_TIMEOUT_MS || 10000;
+
+/**
+ * Races a fetch against the clock.
+ *
+ * Deliberately a race rather than an AbortSignal: passing init to
+ * `fetch(request, ...)` reconstructs the Request, which throws for
+ * navigation-mode requests. The losing fetch is left to finish on its own —
+ * we just stop waiting on it.
+ */
+function timedFetch(input, init) {
+  return Promise.race([
+    init ? fetch(input, init) : fetch(input),
+    new Promise((_, reject) =>
+      setTimeout(
+        () => reject(new Error("sw: network timeout after " + NETWORK_TIMEOUT_MS + "ms")),
+        NETWORK_TIMEOUT_MS
+      )
+    ),
+  ]);
+}
+
 // Bounds on each cache, pruned oldest-first on activate. Cache Storage
 // preserves insertion order, so cache.keys() comes back oldest-first.
 const CACHE_LIMITS = {
@@ -102,7 +140,7 @@ self.addEventListener("install", (event) => {
       await Promise.all(
         SHELL_URLS.map(async (url) => {
           try {
-            const response = await fetch(url, {
+            const response = await timedFetch(url, {
               cache: "reload",
               credentials: "same-origin",
             });
@@ -186,7 +224,7 @@ async function networkFirst(request, cacheName, options = {}) {
   const cache = await caches.open(cacheName);
 
   try {
-    let response = await fetch(request);
+    let response = await timedFetch(request);
 
     // A 304 carries NO BODY. Normally the browser never shows one to the page:
     // it merges the 304 with its own HTTP cache entry and synthesises a 200.
@@ -204,14 +242,29 @@ async function networkFirst(request, cacheName, options = {}) {
       // 304 with nothing cached to pair it against — the browser revalidated
       // off its own HTTP cache, which we can't read. Ask again unconditionally
       // so there's a body to return.
-      response = await fetch(request.url, {
+      response = await timedFetch(request.url, {
         cache: "reload",
         credentials: "same-origin",
       });
     }
 
     if (response.ok) {
-      cache.put(key, response.clone());
+      // clone() tees the body: one branch to the page, one to the cache. A tee
+      // whose branches are consumed at wildly different rates applies
+      // backpressure, and a branch that is never consumed at all — a cache.put
+      // that rejects on quota, say — can stall the branch the page is reading.
+      // The symptom is the worst kind: headers arrive, the body never
+      // finishes, and the page sits there loading forever with no error.
+      //
+      // So drain the copy fully before handing the response over, and swallow
+      // whatever the cache write does. Cache writes are cheap; a stalled
+      // document is not.
+      const copy = response.clone();
+      try {
+        await cache.put(key, copy);
+      } catch {
+        /* quota, disabled storage, whatever — never worth failing the page */
+      }
       return response;
     }
 
