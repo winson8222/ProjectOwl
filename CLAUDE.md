@@ -70,6 +70,9 @@ npm run test:allocation  # receipt item-allocation logic (9 fixtures, in-memory)
 Both are pure, in-memory, and touch nothing in the database. The settlement
 suite (`npm run test:settlement`) runs against an in-memory PGlite
 (Postgres-in-WASM) instance — also self-contained, no local Postgres needed.
+`npm run test:sw` replays deploy scenarios against the real `public/sw.js` in a
+`node:vm` sandbox (no browser, no server); it's Node-only, so it has no `/debug`
+equivalent.
 Same suites are also runnable from the browser at `/debug` ("Run tests" under
 each section), backed by `GET /api/debug/simplify-tests` and
 `GET /api/debug/allocation-tests`.
