@@ -1,6 +1,5 @@
 # ProjectOwl — Devlog
 
-
 ## 2026-08-14 — A deploy could blank the app for open tabs
 
 Reported as `TypeError: Failed to fetch at cacheFirst (/sw.js:116:26)` after a
