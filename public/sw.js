@@ -86,7 +86,33 @@ if (IS_LOCAL) {
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(SHELL_CACHE).then((cache) => cache.addAll(SHELL_URLS))
+    (async () => {
+      const cache = await caches.open(SHELL_CACHE);
+
+      // Deliberately not cache.addAll(). addAll() rejects the whole batch if
+      // any single response is non-ok, and a rejected install means the new
+      // worker never activates — the old one keeps serving, and a deployed fix
+      // silently does nothing. `/` and `/manifest.json` are
+      // max-age=0, must-revalidate, so a conditional request answers 304, which
+      // is non-ok and would take the install down with it.
+      //
+      // `cache: "reload"` skips the HTTP cache on the way out, so these come
+      // back 200 with a body rather than 304 with none. Precaching is
+      // best-effort: one missing icon must not cost us the whole worker.
+      await Promise.all(
+        SHELL_URLS.map(async (url) => {
+          try {
+            const response = await fetch(url, {
+              cache: "reload",
+              credentials: "same-origin",
+            });
+            if (response.ok) await cache.put(url, response);
+          } catch {
+            /* best effort */
+          }
+        })
+      );
+    })()
   );
   self.skipWaiting();
 });
@@ -160,7 +186,30 @@ async function networkFirst(request, cacheName, options = {}) {
   const cache = await caches.open(cacheName);
 
   try {
-    const response = await fetch(request);
+    let response = await fetch(request);
+
+    // A 304 carries NO BODY. Normally the browser never shows one to the page:
+    // it merges the 304 with its own HTTP cache entry and synthesises a 200.
+    // A response handed back from respondWith() skips that merge entirely, so
+    // returning a 304 delivers an empty document or an empty script — a blank
+    // page, with nothing in the console to explain it.
+    //
+    // This is the normal answer, not an edge case: `/` and `/api/*` are served
+    // max-age=0, must-revalidate, so every load after the first sends a
+    // conditional request and gets 304 back.
+    if (response.status === 304) {
+      const cached = await cache.match(key);
+      if (cached) return cached;
+
+      // 304 with nothing cached to pair it against — the browser revalidated
+      // off its own HTTP cache, which we can't read. Ask again unconditionally
+      // so there's a body to return.
+      response = await fetch(request.url, {
+        cache: "reload",
+        credentials: "same-origin",
+      });
+    }
+
     if (response.ok) {
       cache.put(key, response.clone());
       return response;

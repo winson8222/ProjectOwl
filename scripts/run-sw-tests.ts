@@ -43,7 +43,8 @@ const ASSET_CACHE_LIMIT = 300;
 const dpl = (path: string, deployment: string) => `${path}?dpl=dpl_${deployment}`;
 
 type Req = { url: string; method: string; mode?: string };
-type Net = (target: Req | string) => Promise<Response>;
+type FetchInit = { cache?: string; credentials?: string };
+type Net = (target: Req | string, init?: FetchInit) => Promise<Response>;
 
 const absolute = (target: Req | string) =>
   typeof target === "string" ? new URL(target, ORIGIN).href : target.url;
@@ -382,6 +383,77 @@ async function deploymentStampCase(source: string): Promise<Case> {
   };
 }
 
+/**
+ * A 304 must never reach the page.
+ *
+ * `/` and `/api/*` are max-age=0, must-revalidate, so every load after the
+ * first is a conditional request answered 304 — and a 304 has no body. The
+ * browser normally merges it with its own HTTP cache; a response returned from
+ * respondWith() skips that merge, so passing one through renders nothing.
+ */
+async function revalidationCase(source: string): Promise<Case> {
+  const checks: Check[] = [];
+  const notes: string[] = [];
+
+  // Server behaves like Vercel: 304 to a conditional request, 200 with a body
+  // when asked unconditionally (cache: "reload").
+  let unconditionalCalls = 0;
+  const revalidating: Net = async (_target, init) => {
+    if (init?.cache === "reload") {
+      unconditionalCalls++;
+      return new Response("fresh document", { status: 200 });
+    }
+    // 304 is a null-body status — constructing it with "" throws.
+    return new Response(null, { status: 304 });
+  };
+
+  const storage = new FakeCacheStorage(revalidating);
+  const sw = loadWorker({ source, version: "v1", cacheStorage: storage, net: revalidating });
+  await sw.install();
+  await sw.activate();
+
+  notes.push(`install fetched ${unconditionalCalls} URLs unconditionally`);
+  checks.push({
+    name: "install survives a 304 (worker actually activates)",
+    passed: unconditionalCalls > 0,
+    detail: `${unconditionalCalls} unconditional fetches`,
+  });
+
+  // Cold cache: a 304 with nothing to pair it against must be re-fetched.
+  const cold = await sw.handleFetch(req("/", { mode: "navigate" }));
+  notes.push(`navigation, nothing cached: ${JSON.stringify(cold)}`);
+  checks.push({
+    name: "304 with a cold cache is re-fetched, not passed through",
+    passed: cold.kind === "response" && cold.status === 200 && cold.body.length > 0,
+    detail: cold.kind === "response" ? `status ${cold.status}, body "${cold.body}"` : cold.kind,
+  });
+
+  // Warm cache: the 304 should resolve to the cached body.
+  const warm = await sw.handleFetch(req("/", { mode: "navigate" }));
+  notes.push(`navigation, warm cache: ${JSON.stringify(warm)}`);
+  checks.push({
+    name: "304 with a warm cache serves the cached body",
+    passed: warm.kind === "response" && warm.status === 200 && warm.body.length > 0,
+    detail: warm.kind === "response" ? `status ${warm.status}, body "${warm.body}"` : warm.kind,
+  });
+
+  // And an API GET, which revalidates the same way.
+  const api = await sw.handleFetch(req("/api/groups"));
+  notes.push(`api 304: ${JSON.stringify(api)}`);
+  checks.push({
+    name: "an API 304 never reaches the page either",
+    passed: api.kind === "response" && api.status !== 304,
+    detail: api.kind === "response" ? `status ${api.status}` : api.kind,
+  });
+
+  return {
+    name: "revalidation-304",
+    description: "must-revalidate means 304 is the normal answer, and it has no body",
+    checks,
+    notes,
+  };
+}
+
 async function pruneCase(source: string): Promise<Case> {
   const checks: Check[] = [];
   const notes: string[] = [];
@@ -432,6 +504,7 @@ const RESET = "\x1b[0m";
 async function main() {
   const source = readFileSync(SW_PATH, "utf8");
   const cases = [
+    await revalidationCase(source),
     await networkWinsCase(source),
     await deployCase(source, "throw"),
     await deployCase(source, "404"),

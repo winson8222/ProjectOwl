@@ -45,8 +45,29 @@ network-first on a build asset returns without touching the network anyway.
 The worker's cache-first layer was duplicating the HTTP cache while adding
 every failure mode above.
 
+### 304 — reported as "when I get the blank page I see 304"
+Two separate problems, both fixed here:
+
+1. **A 304 has no body.** The browser normally never shows one to a page: it
+   merges the 304 with its own HTTP cache entry and synthesises a 200. A
+   response returned from `respondWith()` skips that merge, so passing a 304
+   through delivers an empty document or empty script — a blank page with
+   nothing in the console. `networkFirst` now resolves a 304 against the cache,
+   and re-fetches with `cache: "reload"` when there's nothing cached to pair it
+   with.
+2. **`cache.addAll()` rejects the whole batch on any non-ok response**, and a
+   rejected `install` means the new worker never activates — so a deployed fix
+   silently does nothing and the old worker keeps serving. Demonstrated: the
+   previous worker crashes the suite with `addAll: bad response for /` as soon
+   as `/` answers 304. Precaching is now per-URL, best-effort, and
+   unconditional. One missing icon can no longer cost us the whole worker.
+
+This is the most likely explanation for why earlier fixes appeared not to take
+effect at all, including the `cacheFirst (/sw.js:116:26)` stack from the *old*
+worker after a new one had been deployed.
+
 ### Verification
-- `npm run test:sw` 5/5, including a new `network-wins-while-online` case that
+- `npm run test:sw` 6/6, including a new `network-wins-while-online` case that
   primes every cache with old content and asserts the network's answer wins for
   asset, API and navigation — then that the stale copy is still there once the
   network dies.
