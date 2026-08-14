@@ -104,7 +104,8 @@ async function createTestDb() {
 async function truncateAll(db: TestDb) {
   await db.execute(sql`
     TRUNCATE TABLE
-      activities, item_assignments, participants, transaction_items,
+      activities, item_assignments, participants, transaction_payers,
+      transaction_items,
       transactions, settlements, group_members, groups, friendships, users
     CASCADE
   `);
@@ -142,6 +143,21 @@ async function loadFixture(fixture: SettlementFixture, db: TestDb) {
         transactionId: tx.id,
         userId: p.userId,
         shareAmount: p.shareAmount,
+      });
+    }
+
+    // Payer rows. A fixture without `payers` gets a single full-amount row,
+    // matching what createTransaction writes and what migration 0005
+    // backfilled for every pre-multi-payer transaction.
+    const payers = tx.payers ?? [
+      { userId: tx.paidByUserId, amountPaid: tx.totalAmount },
+    ];
+    for (const q of payers) {
+      await db.insert(schema.transactionPayers).values({
+        id: `tp-${tx.id}-${q.userId}`,
+        transactionId: tx.id,
+        userId: q.userId,
+        amountPaid: q.amountPaid,
       });
     }
   }

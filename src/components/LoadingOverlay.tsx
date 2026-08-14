@@ -1,3 +1,7 @@
+"use client";
+
+import Portal from "@/components/Portal";
+
 /**
  * Generic blocking overlay for an in-flight action (saving, submitting).
  *
@@ -12,8 +16,9 @@ export default function LoadingOverlay({
   message?: string;
 }) {
   return (
+    <Portal>
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 backdrop-blur-sm px-6"
+      className="fixed inset-0 z-[55] flex items-center justify-center bg-black/25 backdrop-blur-sm px-6"
       role="status"
       aria-live="polite"
     >
@@ -35,5 +40,6 @@ export default function LoadingOverlay({
         <p className="text-callout font-medium text-ink">{message}</p>
       </div>
     </div>
+    </Portal>
   );
 }

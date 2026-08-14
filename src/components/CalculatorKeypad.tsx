@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import Portal from "@/components/Portal";
 
 interface CalculatorKeypadProps {
   open: boolean;
@@ -9,6 +10,14 @@ interface CalculatorKeypadProps {
   title?: string;
   /** What's being entered. Percentages read as "12%", money as "$12". */
   unit?: "$" | "%";
+  /**
+   * When both are supplied, a date row appears above the keys — for the
+   * transaction total, where "when did this happen" belongs alongside "how
+   * much". Deliberately opt-in: this keypad is also used for per-person
+   * shares and for tax/discount lines, where a date means nothing.
+   */
+  date?: string;
+  onDateChange?: (date: string) => void;
 }
 
 /**
@@ -22,6 +31,8 @@ export default function CalculatorKeypad({
   onConfirm,
   title = "Enter amount",
   unit = "$",
+  date,
+  onDateChange,
 }: CalculatorKeypadProps) {
   const [expression, setExpression] = useState<string>("");
 
@@ -112,7 +123,8 @@ export default function CalculatorKeypad({
   const displayValue = expression || "0";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={handleClose}>
+    <Portal>
+    <div className="fixed inset-0 z-[55] flex items-end justify-center bg-black/40" onClick={handleClose}>
       <div
         className="bg-surface-raised rounded-t-3xl shadow-xl w-full max-w-md overflow-hidden animate-slide-up"
         onClick={(e) => e.stopPropagation()}
@@ -156,6 +168,37 @@ export default function CalculatorKeypad({
             )}
           </div>
         </div>
+
+        {/* Date — only when the caller opted in (the transaction total). */}
+        {date !== undefined && onDateChange && (
+          <label
+            className="flex items-center gap-3 px-5 py-3 cursor-pointer"
+            style={{ borderTop: "1px solid var(--color-hairline)" }}
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="var(--color-blueberry-600)"
+              strokeWidth="1.75"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <rect x="3.5" y="5" width="17" height="15.5" rx="2.5" />
+              <path d="M3.5 9.5h17M8 3.5V6M16 3.5V6" />
+            </svg>
+            <span className="text-callout text-ink-muted flex-1">Date</span>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => onDateChange(e.target.value)}
+              className="text-callout font-medium text-ink bg-transparent text-right focus:outline-none"
+              style={{ minHeight: 44 }}
+            />
+          </label>
+        )}
 
         {/* Keypad */}
         <div
@@ -300,5 +343,6 @@ export default function CalculatorKeypad({
         }
       `}</style>
     </div>
+    </Portal>
   );
 }
