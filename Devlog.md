@@ -1,5 +1,50 @@
 # ProjectOwl — Devlog
 
+## 2026-08-14 — Nothing in the worker could time out
+
+Reported after the network-first deploy: the app loads forever and shows
+nothing, on every page. Ruled out first, against live staging: all 16 assets
+the served HTML referenced returned 200, the deployment id matched the current
+deploy, and the deployed worker was the new one. So not staleness, not a
+missing chunk, not an old worker.
+
+That leaves a request that never settles. `AppShell` gates the whole app on one
+fetch and flips `ready` in a `.finally()`, so a promise that stays pending
+leaves `<div className="min-h-dvh" />` on screen indefinitely — no error, no
+console output, just loading.
+
+### Fixed
+- **A network timeout in the worker.** `respondWith()` takes a promise and
+  nothing bounded it. `timedFetch` races the fetch against 10s and falls back
+  to cache. Implemented as a race rather than an `AbortSignal` because passing
+  init to `fetch(request, ...)` reconstructs the Request, which throws for
+  navigation-mode requests.
+- **Drain the `clone()` before returning.** `cache.put(key, response.clone())`
+  was fire-and-forget. `clone()` tees the body; a branch nobody consumes — a
+  `put` that rejects on quota, say — can stall the branch the page is reading.
+  Headers arrive, the body never completes, the page loads forever. The copy is
+  now fully written before the response is handed over, with the cache error
+  swallowed. Moving to network-first multiplied the number of clone+put pairs,
+  since cache-first previously served most assets without touching either.
+
+### Two false passes caught while writing the tests
+Worth recording, because both would have shipped a green suite over a broken
+worker:
+
+1. The VM context had no `setTimeout`. The worker's timeout threw
+   `ReferenceError`, the race rejected instantly, and `hung-network` "passed"
+   in 1ms without ever exercising the timeout. Real timers make it 151ms.
+2. Earlier, `new Response("", { status: 304 })` throws — 304 is a null-body
+   status — which routed the 304 test down the network-error path instead.
+
+### Verification
+- `npm run test:sw` 7/7, including `hung-network`: a network that accepts the
+  request and never answers must still settle, and must fall back to cache.
+- `tsc --noEmit` clean; production build compiles.
+- **Not verified in a browser.** Three previous fixes in this sequence passed
+  their tests and failed in the real app; this one targets the reported symptom
+  but carries the same caveat.
+
 ## 2026-08-14 — The cache is an offline fallback, and nothing else
 
 Third attempt at the blank page, and the first one aimed at the right thing.
