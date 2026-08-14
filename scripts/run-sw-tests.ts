@@ -34,6 +34,14 @@ const CHUNK_A = "/_next/static/chunks/app-AAAA.js";
 const CHUNK_B = "/_next/static/chunks/app-BBBB.js";
 const ASSET_CACHE_LIMIT = 300;
 
+/**
+ * Vercel stamps every /_next/static URL with the deployment id, so the same
+ * file is requested under a different query on every deploy. Scenarios below
+ * append it the way production does — without it these tests pass against a
+ * worker that has no cross-deploy reuse at all.
+ */
+const dpl = (path: string, deployment: string) => `${path}?dpl=dpl_${deployment}`;
+
 type Req = { url: string; method: string; mode?: string };
 type Net = (target: Req | string) => Promise<Response>;
 
@@ -105,7 +113,11 @@ class FakeCacheStorage {
   }
 }
 
-/** A server serving exactly one build: `liveChunk` exists, older ones don't. */
+/**
+ * A server serving exactly one build: `liveChunk` exists, older ones don't.
+ * Matches on pathname only — the ?dpl query is ignored by the real CDN too
+ * (verified: any dpl value, including a bogus one, returns the same bytes).
+ */
 function makeNetwork(liveChunk: string, missing: "throw" | "404"): Net {
   return async (target) => {
     const { pathname } = new URL(absolute(target));
@@ -199,7 +211,7 @@ async function deployCase(source: string, missing: "throw" | "404"): Promise<Cas
   const swA = loadWorker({ source, version: "aaaaaaaa", cacheStorage: storage, net: netA });
   await swA.install();
   await swA.activate();
-  await swA.handleFetch(req(CHUNK_A));
+  await swA.handleFetch(req(dpl(CHUNK_A, "aaaaaaaa")));
   notes.push(`caches after deploy A: ${(await storage.keys()).join(", ")}`);
 
   // Deploy B lands and takes over the still-open tab.
@@ -210,9 +222,10 @@ async function deployCase(source: string, missing: "throw" | "404"): Promise<Cas
   await swB.activate();
   notes.push(`caches after deploy B: ${(await storage.keys()).join(", ")}`);
 
-  // The old tab asks for the chunk its HTML references.
-  const outcome = await swB.handleFetch(req(CHUNK_A));
-  notes.push(`old tab requesting ${CHUNK_A}: ${JSON.stringify(outcome)}`);
+  // The old tab asks for the chunk its HTML references — same path, but
+  // stamped with deploy A's id, which is now stale.
+  const outcome = await swB.handleFetch(req(dpl(CHUNK_A, "aaaaaaaa")));
+  notes.push(`old tab requesting ${CHUNK_A}?dpl=A: ${JSON.stringify(outcome)}`);
 
   checks.push({
     name: "asset request does not reject out of respondWith",
@@ -243,6 +256,60 @@ async function deployCase(source: string, missing: "throw" | "404"): Promise<Cas
       missing === "throw"
         ? "superseded chunk fails at the network level"
         : "superseded chunk returns 404",
+    checks,
+    notes,
+  };
+}
+
+/**
+ * The deployment stamp must not defeat the cache. Same file, same content
+ * hash, new ?dpl — it has to come from cache, not the network.
+ */
+async function deploymentStampCase(source: string): Promise<Case> {
+  const checks: Check[] = [];
+  const notes: string[] = [];
+
+  // Deploy A caches the chunk under deploy A's stamp.
+  const netA = makeNetwork(CHUNK_A, "throw");
+  const storage = new FakeCacheStorage(netA);
+  const swA = loadWorker({ source, version: "aaaaaaaa", cacheStorage: storage, net: netA });
+  await swA.install();
+  await swA.activate();
+  await swA.handleFetch(req(dpl(CHUNK_A, "aaaaaaaa")));
+
+  const assets = await storage.open("assets");
+  notes.push(`asset keys after deploy A: ${(await assets.keys()).map((k) => k.url).join(", ")}`);
+
+  // Deploy B ships the identical file — same content hash, new stamp. Take the
+  // network away entirely, so only a cache hit can succeed.
+  const dead: Net = async () => {
+    throw new TypeError("Failed to fetch");
+  };
+  storage.repoint(dead);
+  const swB = loadWorker({ source, version: "bbbbbbbb", cacheStorage: storage, net: dead });
+  await swB.install().catch(() => {});
+  await swB.activate();
+
+  const outcome = await swB.handleFetch(req(dpl(CHUNK_A, "bbbbbbbb")));
+  notes.push(`same file under deploy B's stamp: ${JSON.stringify(outcome)}`);
+
+  checks.push({
+    name: "a new ?dpl still hits the cached copy",
+    passed: outcome.kind === "response" && outcome.status === 200,
+    detail: outcome.kind === "throw" ? `${outcome.name}: ${outcome.message}` : outcome.kind,
+  });
+
+  // And it must not have stored a second copy of the same file.
+  const keys = (await assets.keys()).map((k) => k.url);
+  checks.push({
+    name: "the stamp is not duplicated into a second cache entry",
+    passed: keys.length === 1 && !keys[0].includes("?"),
+    detail: keys.join(", ") || "(empty)",
+  });
+
+  return {
+    name: "deployment-stamp",
+    description: "Vercel's ?dpl changes every deploy; the bytes do not",
     checks,
     notes,
   };
@@ -300,6 +367,7 @@ async function main() {
   const cases = [
     await deployCase(source, "throw"),
     await deployCase(source, "404"),
+    await deploymentStampCase(source),
     await pruneCase(source),
   ];
 

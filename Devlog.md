@@ -1,5 +1,39 @@
 # ProjectOwl — Devlog
 
+## 2026-08-14 — Vercel's ?dpl defeated the asset cache
+
+The previous entry's asset cache didn't survive a deploy after all, and the
+blank page came back.
+
+### Fixed
+- **Build assets are cached under their URL with the query stripped.** Vercel
+  appends `?dpl=<deployment id>` to every `/_next/static/**` URL. That value
+  changes on every deploy while the bytes behind it don't — the path already
+  carries a content hash. Matching on the full URL meant every asset missed
+  after a deploy despite a byte-identical copy sitting in the cache, then got
+  re-stored under the new query.
+
+### Why the earlier fix looked right and wasn't
+Both halves of it were keyed on the full URL, so `?dpl` defeated both at once:
+the cache lookup missed, *and* the `caches.match(request)` fallback that was
+supposed to catch the failure missed too. The net effect after each deploy was
+worse than no cache — every asset fetched from the network, a safety net that
+could never fire, and the cache filling with duplicates of identical files
+until pruning evicted entries that were still live.
+
+Verified against production rather than assumed this time: staging serves the
+same bytes for `?dpl=<real>`, `?dpl=garbage`, and no query at all, confirming
+the parameter is a pure cache-buster and safe to normalise away.
+
+### Architecture decisions
+- **Cache keys must be derived, not inherited from the request.** A request URL
+  carries whatever the platform decided to staple on. What identifies a build
+  asset here is the content-hashed path, so that's what the key is.
+- **The test suite has to model the deployed URL shape.** The previous suite
+  passed because its fixtures used bare chunk paths, which production never
+  serves. The new `deployment-stamp` case appends `?dpl` the way Vercel does
+  and fails (`TypeError: Failed to fetch`) against the previous worker.
+
 ## 2026-08-14 — A deploy could blank the app for open tabs
 
 Reported as `TypeError: Failed to fetch at cacheFirst (/sw.js:116:26)` after a
