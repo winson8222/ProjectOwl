@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import UserAvatar from "@/components/UserAvatar";
 import ErrorDialog from "@/components/ErrorDialog";
 import SettledOverlay from "@/components/SettledOverlay";
-import { PaymentDiagram } from "@/components/wizard/TypeDiagrams";
+import { PaymentDiagram } from "@/components/PaymentDiagram";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { getSessionUser } from "@/lib/session";
 import { ERROR_MESSAGES, mapErrorMessage } from "@/lib/constants";

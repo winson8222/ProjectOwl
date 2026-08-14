@@ -273,13 +273,26 @@ export function apiError(message: string, code: string): ApiErrorResponse {
 }
 
 /**
- * True when `n` is a real, finite, non-negative number.
+ * True when `n` is a real, finite, non-negative amount of money — meaning a
+ * whole number of cents.
  *
  * Guards money fields (totals, shares, prices, settlement amounts) coming off
  * untrusted JSON: rejects negatives, `NaN`, and `Infinity` — any of which would
  * otherwise be written straight into the ledger and corrupt computed balances
  * (e.g. a negative-share transaction that still passes the split-sum check).
+ *
+ * The cent requirement closes a subtler hole. Reconciliation between what
+ * people paid and what they owe is enforced to within half a cent, which is
+ * airtight only while every amount is a multiple of $0.01 — a gap that must be
+ * under half a cent and is a whole number of cents can only be zero.
+ * Fractional-cent values slide under that tolerance while still summing wrong,
+ * and the residue accumulates across transactions into balances that can never
+ * settle. The UI only ever emits cent values; this stops a hand-crafted request
+ * from doing otherwise.
  */
 export function isNonNegativeMoney(n: unknown): n is number {
-  return typeof n === "number" && Number.isFinite(n) && n >= 0;
+  if (typeof n !== "number" || !Number.isFinite(n) || n < 0) return false;
+  // Tolerant of float representation noise (0.1 + 0.2), strict about anything
+  // genuinely finer than a cent.
+  return Math.abs(n * 100 - Math.round(n * 100)) < 1e-6;
 }

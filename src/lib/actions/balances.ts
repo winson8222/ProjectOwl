@@ -1,6 +1,7 @@
 import { getDb, schema, type Db } from "@/lib/db";
 import { eq, and, inArray } from "drizzle-orm";
 import { getGroupMemberIds } from "./groups";
+import { pairwiseFor } from "@/lib/simplify";
 
 export interface BalanceSummary {
   netBalance: number;
@@ -48,28 +49,55 @@ export async function getBalance(
       )
     );
 
-  // Participants for all transactions in one IN query — this scan is
-  // unscoped (every group) for the overall balance, so a per-transaction
+  // Participants and payers for all transactions in two IN queries — this scan
+  // is unscoped (every group) for the overall balance, so a per-transaction
   // loop here was the single most expensive path in the app.
   if (txs.length > 0) {
-    const parts = await db
-      .select({
-        transactionId: schema.participants.transactionId,
-        userId: schema.participants.userId,
-        shareAmount: schema.participants.shareAmount,
-      })
-      .from(schema.participants)
-      .where(inArray(schema.participants.transactionId, txs.map((t) => t.id)));
+    const txIds = txs.map((t) => t.id);
+    const [parts, payerRows] = await Promise.all([
+      db
+        .select({
+          transactionId: schema.participants.transactionId,
+          userId: schema.participants.userId,
+          shareAmount: schema.participants.shareAmount,
+        })
+        .from(schema.participants)
+        .where(inArray(schema.participants.transactionId, txIds)),
+      db
+        .select({
+          transactionId: schema.transactionPayers.transactionId,
+          userId: schema.transactionPayers.userId,
+          amountPaid: schema.transactionPayers.amountPaid,
+        })
+        .from(schema.transactionPayers)
+        .where(inArray(schema.transactionPayers.transactionId, txIds)),
+    ]);
 
-    const paidByTx = new Map(txs.map((t) => [t.id, t.paidBy]));
+    const payersByTx = new Map<string, { userId: string; amountPaid: number }[]>();
+    for (const row of payerRows) {
+      const list = payersByTx.get(row.transactionId) ?? [];
+      list.push({ userId: row.userId, amountPaid: row.amountPaid });
+      payersByTx.set(row.transactionId, list);
+    }
+
+    const partsByTx = new Map<string, { userId: string; shareAmount: number }[]>();
     for (const p of parts) {
-      const paidBy = paidByTx.get(p.transactionId)!;
-      if (p.userId === paidBy) continue; // can't owe yourself
-      if (paidBy === userId && p.userId !== userId) {
-        bump(p.userId, p.shareAmount); // they owe the user
-      } else if (p.userId === userId) {
-        bump(paidBy, -p.shareAmount); // the user owes the payer
-      }
+      const list = partsByTx.get(p.transactionId) ?? [];
+      list.push({ userId: p.userId, shareAmount: p.shareAmount });
+      partsByTx.set(p.transactionId, list);
+    }
+
+    // Attribution lives in simplify.ts so this and getGroupPage can't drift —
+    // they were separate copies, and only one of them ever learned about
+    // multiple payers.
+    const simple = txs.map((tx) => ({
+      paidBy: tx.paidBy,
+      payers: payersByTx.get(tx.id),
+      participants: partsByTx.get(tx.id) ?? [],
+    }));
+
+    for (const [otherId, amount] of pairwiseFor(simple, userId)) {
+      bump(otherId, amount);
     }
   }
 

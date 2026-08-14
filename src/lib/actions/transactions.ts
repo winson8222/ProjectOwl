@@ -14,6 +14,10 @@ export interface TransactionWithDetails extends Transaction {
   itemAssignments: (typeof schema.itemAssignments.$inferSelect & { userName: string })[];
   userShare: number; // current user's share
   groupName: string | null;
+  /** Everyone who contributed. Length > 1 means the bill went across several
+   *  cards, and the single-payer "pay them back" shortcut no longer applies —
+   *  the debt is owed to each payer in proportion to what they put in. */
+  payers: { user: typeof schema.users.$inferSelect | undefined; amountPaid: number }[];
 }
 
 export interface CreateTransactionInput {
@@ -22,7 +26,13 @@ export interface CreateTransactionInput {
    *  "payment" = direct user→user payment; the sole participant is the recipient. */
   type?: "expense" | "payment";
   totalAmount: number;
+  /** Primary payer. Kept for display (ledger card, activity feed) and used as
+   *  the sole payer when `payers` is omitted. */
   paidByUserId: string;
+  /** Everyone who contributed, when one bill was settled across several cards.
+   *  Must sum to `totalAmount`. Omit for the ordinary single-payer case — a
+   *  row is then written from `paidByUserId` for the full amount. */
+  payers?: { userId: string; amountPaid: number }[];
   /** The group this transaction happens in — every transaction lives in a group. */
   groupId: string;
   transactionDate: string;
@@ -61,6 +71,30 @@ export async function createTransaction(input: CreateTransactionInput): Promise<
       receiptImage: input.receiptImage ?? null,
       createdAt: localTimestamp(),
     });
+
+    // Insert payer rows. Always written, even for a single payer, so the
+    // balance math has one shape to read rather than branching on whether a
+    // transaction predates multi-payer.
+    // A single payer is recorded as having covered the SHARE SUM, not
+    // totalAmount. The two are normally identical, but the API tolerates a cent
+    // of drift on each independently — and net balance is
+    // sum(paid) - sum(share), so any gap between them is money that never
+    // settles. Deriving from shares keeps the ledger conserving by
+    // construction, and matches what payersOf() does for pre-multi-payer rows.
+    const shareSum = input.participants.reduce((s, p) => s + p.shareAmount, 0);
+    const payers =
+      input.payers && input.payers.length > 0
+        ? input.payers
+        : [{ userId: input.paidByUserId, amountPaid: Math.round(shareSum * 100) / 100 }];
+
+    for (const payer of payers) {
+      await tx.insert(schema.transactionPayers).values({
+        id: `tp-${uuid().slice(0, 12)}`,
+        transactionId: txId,
+        userId: payer.userId,
+        amountPaid: payer.amountPaid,
+      });
+    }
 
     // Insert items — descriptive line items only, no split data attached
     const insertedItemIds: string[] = [];
@@ -178,6 +212,22 @@ export async function getTransaction(id: string, currentUserId?: string): Promis
     ? (participantRows.find((p) => p.userId === currentUserId)?.shareAmount ?? 0)
     : 0;
 
+  const payerRows = await db
+    .select()
+    .from(schema.transactionPayers)
+    .where(eq(schema.transactionPayers.transactionId, id));
+  const payerUsers = payerRows.length
+    ? await db
+        .select()
+        .from(schema.users)
+        .where(inArray(schema.users.id, payerRows.map((r) => r.userId)))
+    : [];
+  const payerById = new Map(payerUsers.map((u) => [u.id, u]));
+  const payers = payerRows.length
+    ? payerRows.map((r) => ({ user: payerById.get(r.userId), amountPaid: r.amountPaid }))
+    // Pre-multi-payer rows: the primary payer covered the whole thing.
+    : [{ user: paidByUser, amountPaid: tx.totalAmount }];
+
   return {
     ...tx,
     items,
@@ -185,6 +235,7 @@ export async function getTransaction(id: string, currentUserId?: string): Promis
     participants: userShares,
     itemAssignments,
     userShare,
+    payers,
     groupName: await groupNameFor(tx.groupId),
   };
 }
@@ -248,7 +299,7 @@ export async function getTransactions(params: {
   // assignment user, group name) — ~180 round trips for a 20-tx ledger.
   // Now it's three stages of IN queries regardless of list size.
   const listIds = txs.map((t) => t.id);
-  const [allItems, allParticipants, allAssignments] = await Promise.all([
+  const [allItems, allParticipants, allAssignments, allPayers] = await Promise.all([
     db.select().from(schema.transactionItems)
       .where(inArray(schema.transactionItems.transactionId, listIds)),
     db.select().from(schema.participants)
@@ -260,12 +311,15 @@ export async function getTransactions(params: {
       .from(schema.itemAssignments)
       .innerJoin(schema.transactionItems, eq(schema.itemAssignments.itemId, schema.transactionItems.id))
       .where(inArray(schema.transactionItems.transactionId, listIds)),
+    db.select().from(schema.transactionPayers)
+      .where(inArray(schema.transactionPayers.transactionId, listIds)),
   ]);
 
   const userIds = [...new Set([
     ...txs.map((t) => t.paidByUserId),
     ...allParticipants.map((p) => p.userId),
     ...allAssignments.map((a) => a.userId),
+    ...allPayers.map((p) => p.userId),
   ])];
   const groupIds = [...new Set(txs.map((t) => t.groupId).filter((g): g is string => g !== null))];
   const [userRows, groupRows] = await Promise.all([
@@ -289,6 +343,7 @@ export async function getTransactions(params: {
   const itemsByTx = groupByTx(allItems);
   const participantsByTx = groupByTx(allParticipants);
   const assignmentsByTx = groupByTx(allAssignments);
+  const payersByTx = groupByTx(allPayers);
 
   return txs.map((tx) => {
     const participantRows = participantsByTx.get(tx.id) ?? [];
@@ -296,6 +351,13 @@ export async function getTransactions(params: {
       ...tx,
       items: itemsByTx.get(tx.id) ?? [],
       paidByUser: usersById.get(tx.paidByUserId),
+      payers: (payersByTx.get(tx.id) ?? []).length
+        ? payersByTx.get(tx.id)!.map((r) => ({
+            user: usersById.get(r.userId),
+            amountPaid: r.amountPaid,
+          }))
+        // Pre-multi-payer rows: the primary payer covered the whole thing.
+        : [{ user: usersById.get(tx.paidByUserId), amountPaid: tx.totalAmount }],
       participants: participantRows.map((p) => ({
         user: usersById.get(p.userId)!,
         shareAmount: p.shareAmount,

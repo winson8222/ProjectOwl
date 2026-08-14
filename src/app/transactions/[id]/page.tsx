@@ -92,10 +92,24 @@ export default function TransactionDetailPage() {
     );
   }
 
-  const isPayer = user?.id === tx.paidByUserId;
+  const payers: { user?: { id: string; name: string }; amountPaid: number }[] =
+    tx.payers ?? [];
+  const splitAcrossPayers = payers.length > 1;
+  // Both sides guarded: an unresolved payer row leaves p.user undefined, and
+  // user is null until the session loads — `undefined === undefined` would
+  // otherwise report you as a payer and hide both call-to-actions.
+  const isPayer = splitAcrossPayers
+    ? payers.some((p) => !!p.user?.id && !!user?.id && p.user.id === user.id)
+    : !!user?.id && user.id === tx.paidByUserId;
   const isPayment = tx.type === "payment";
   // "Pay back" shortcut: you owe a share of this expense to whoever paid it.
-  const youOwe = !isPayer && !isPayment && tx.userShare > 0;
+  // Offered only when ONE person paid. With several contributors the share is
+  // owed to each of them in proportion to what they put in, so prefilling a
+  // single payment for the whole share would send far too much to one of them.
+  // Settle-up works off net balances and gets it right, so point there.
+  const youOwe = !isPayer && !isPayment && tx.userShare > 0 && !splitAcrossPayers;
+  const owesAcrossPayers =
+    !isPayer && !isPayment && tx.userShare > 0 && splitAcrossPayers;
 
   return (
     <main className="min-h-dvh px-4 pt-6 max-w-lg mx-auto animate-slide-in-right content-with-floating-nav">
@@ -237,6 +251,26 @@ export default function TransactionDetailPage() {
             }}
           >
             💸 Pay {tx.paidByUser?.name ?? "them"} back ${tx.userShare.toFixed(2)}
+          </a>
+        )}
+
+        {/* Several people paid, so this share is owed to more than one of them. */}
+        {owesAcrossPayers && tx.groupId && (
+          <a
+            href={`/groups/${tx.groupId}/settle-up`}
+            className="block w-full px-4 py-3 text-center rounded-xl pressable"
+            style={{
+              background: "var(--color-surface)",
+              border: "1px solid var(--color-hairline)",
+            }}
+          >
+            <span className="block text-callout font-semibold text-ink">
+              Settle up
+            </span>
+            <span className="block text-footnote text-ink-muted mt-0.5">
+              {payers.length} people paid for this — settle up works out who you
+              owe and how much
+            </span>
           </a>
         )}
         <button

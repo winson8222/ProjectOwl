@@ -6,7 +6,7 @@ import { useParams } from "next/navigation";
 import UserAvatar from "@/components/UserAvatar";
 import ErrorDialog from "@/components/ErrorDialog";
 import SettledOverlay from "@/components/SettledOverlay";
-import { PaymentDiagram } from "@/components/wizard/TypeDiagrams";
+import { PaymentDiagram } from "@/components/PaymentDiagram";
 import { getSessionUser } from "@/lib/session";
 import { tapLight } from "@/lib/haptics";
 

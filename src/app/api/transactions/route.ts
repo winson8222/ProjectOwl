@@ -37,6 +37,44 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // A payment is a direct user→user transfer, so it has exactly one payer by
+    // definition — splitting "I paid you back" across contributors is meaningless.
+    if (body.type === "payment" && body.payers && body.payers.length > 1) {
+      return NextResponse.json<ApiErrorResponse>(
+        apiError("A payment can only have one payer.", CODES.INVALID_PAYMENT),
+        { status: 400 }
+      );
+    }
+
+    // Contributions must add up to the bill, the same way shares must — and
+    // critically, must reconcile with the shares themselves. Net balance is
+    // sum(paid) - sum(share), so any gap between those two sums is money that
+    // can never settle: the creditor sits permanently a cent up and the group
+    // never reads as square. Checking each against totalAmount independently
+    // permitted a 2c gap.
+    if (body.payers && body.payers.length > 0) {
+      const contributed = body.payers.reduce((sum, p) => sum + p.amountPaid, 0);
+      const shareSum = body.participants.reduce((sum, p) => sum + p.shareAmount, 0);
+      if (Math.abs(contributed - body.totalAmount) > 0.01) {
+        return NextResponse.json<ApiErrorResponse>(
+          apiError(
+            `Payers add up to $${contributed.toFixed(2)} but the total is $${body.totalAmount.toFixed(2)}.`,
+            CODES.SPLIT_MISMATCH
+          ),
+          { status: 400 }
+        );
+      }
+      if (Math.abs(contributed - shareSum) > 0.005) {
+        return NextResponse.json<ApiErrorResponse>(
+          apiError(
+            `What people paid ($${contributed.toFixed(2)}) must match what they owe ($${shareSum.toFixed(2)}).`,
+            CODES.SPLIT_MISMATCH
+          ),
+          { status: 400 }
+        );
+      }
+    }
+
     // A payment is a direct user→user transfer: exactly one recipient, not the payer.
     if (body.type === "payment") {
       if (body.participants.length !== 1) {
@@ -64,7 +102,14 @@ export async function POST(request: NextRequest) {
     // …and everyone involved (payer + participants + the signed-in creator)
     // must be a group member. Identity is server-verified, so this check is a
     // real boundary now, not a spoofable one.
-    const involved = [...new Set([me.id, body.paidByUserId, ...body.participants.map((p) => p.userId)])];
+    const involved = [
+      ...new Set([
+        me.id,
+        body.paidByUserId,
+        ...(body.payers ?? []).map((p) => p.userId),
+        ...body.participants.map((p) => p.userId),
+      ]),
+    ];
     if (!(await areGroupMembers(body.groupId, involved))) {
       return NextResponse.json<ApiErrorResponse>(
         apiError(ERROR_MESSAGES.NOT_GROUP_MEMBER, CODES.NOT_GROUP_MEMBER),
