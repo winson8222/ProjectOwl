@@ -25,6 +25,26 @@ export class LLMError extends AppError {
 }
 
 /**
+ * RateLimitError — the provider's per-minute rate limit is exhausted and our
+ * retry budget ran out waiting for it to clear.
+ *
+ * Distinct from LLMError so the client can tell "wait a minute and it will
+ * work" apart from "your connection is broken" — telling someone to check
+ * their network when the real problem is our quota sends them to fix the
+ * wrong thing. 429 rather than 502 for the same reason: the status alone is
+ * enough for the caller to branch on.
+ *
+ * The message must not match the rate-limit/quota patterns in MAPPED_ERRORS,
+ * or mapErrorMessage() will rewrite it back into the generic wording.
+ */
+export class RateLimitError extends AppError {
+  constructor(message: string) {
+    super(message, "LLM_RATE_LIMITED", 429, false);
+    this.name = "RateLimitError";
+  }
+}
+
+/**
  * ValidationError — the LLM response did not match the expected schema.
  */
 export class ValidationError extends AppError {

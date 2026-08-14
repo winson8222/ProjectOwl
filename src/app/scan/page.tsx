@@ -5,10 +5,8 @@ import ReceiptUploader from "@/components/ReceiptUploader";
 import ScanLoader from "@/components/ScanLoader";
 import ReceiptResult from "@/components/ReceiptResult";
 import ErrorAlert from "@/components/ErrorAlert";
-import type {
-  ReceiptExtractionResult,
-  ExtractApiResponse,
-} from "@/lib/schemas/receipt";
+import { scanReceipt } from "@/lib/scan-receipt";
+import type { ReceiptExtractionResult } from "@/lib/schemas/receipt";
 
 type PageStatus = "idle" | "uploading" | "success" | "error";
 
@@ -28,33 +26,16 @@ export default function ScanPage() {
     setError(null);
     setResult(null);
 
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
+    const outcome = await scanReceipt(file);
 
-      const response = await fetch("/api/receipts/extract", {
-        method: "POST",
-        body: formData,
-      });
-
-      const json: ExtractApiResponse = await response.json();
-
-      if (!json.success) {
-        setError(json.error || "Unknown error");
-        setStatus("error");
-        return;
-      }
-
-      setResult(json.data);
-      setStatus("success");
-    } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Failed to connect to the server. Is the server running?";
-      setError(message);
+    if (!outcome.ok) {
+      setError(`${outcome.failure.title} — ${outcome.failure.message}`);
       setStatus("error");
+      return;
     }
+
+    setResult(outcome.data);
+    setStatus("success");
   }, []);
 
   const handleRetry = useCallback(() => {

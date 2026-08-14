@@ -4,6 +4,10 @@ import { getCurrentUser } from "@/lib/auth";
 import { unauthorized } from "@/lib/auth/guard";
 import { CODES, apiError, mapErrorMessage, type ApiErrorResponse } from "@/lib/constants";
 
+// Backstop: a stalled query must surface as our error, not a 300s platform 504.
+// Normal responses are well under a second; this only ever fires on a stall.
+export const maxDuration = 20;
+
 /**
  * PUT /api/groups/reorder
  * Reorder the signed-in user's groups. Body: { groupIds: string[] } in the

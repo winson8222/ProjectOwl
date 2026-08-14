@@ -3,6 +3,10 @@ import { getCurrentUser } from "@/lib/auth";
 import { createTimer } from "@/lib/server-timing";
 import { CODES, apiError, mapErrorMessage, type ApiErrorResponse } from "@/lib/constants";
 
+// Backstop: a stalled query must surface as our error, not a 300s platform 504.
+// Normal responses are well under a second; this only ever fires on a stall.
+export const maxDuration = 20;
+
 /**
  * GET /api/auth/me
  * The server-verified current user, or data: null when signed out.
