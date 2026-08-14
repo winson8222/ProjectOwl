@@ -144,6 +144,8 @@ function loadWorker(opts: {
   const pending: Promise<unknown>[] = [];
 
   const self = {
+    // Short network timeout so the hang case doesn't cost the suite 10s.
+    SW_NETWORK_TIMEOUT_MS: 150,
     location: {
       href: `${ORIGIN}/sw.js?v=${opts.version}`,
       search: `?v=${opts.version}`,
@@ -169,6 +171,10 @@ function loadWorker(opts: {
     Promise,
     Error,
     TypeError,
+    // Without these the worker's timeout throws ReferenceError, the race
+    // rejects instantly, and the timeout path silently never runs.
+    setTimeout,
+    clearTimeout,
   });
   vm.runInContext(opts.source, ctx, { filename: "sw.js" });
 
@@ -454,6 +460,61 @@ async function revalidationCase(source: string): Promise<Case> {
   };
 }
 
+/**
+ * A network that never answers must not hang the page.
+ *
+ * respondWith() takes a promise, and nothing bounds it. AppShell gates the
+ * entire app on one fetch and flips `ready` in a `.finally()` — which never
+ * runs if the promise stays pending — so a single hung request leaves an empty
+ * page loading forever with nothing in the console.
+ */
+async function hangCase(source: string): Promise<Case> {
+  const checks: Check[] = [];
+  const notes: string[] = [];
+
+  // Prime the caches from a working server.
+  const alive: Net = async () => new Response("cached copy", { status: 200 });
+  const storage = new FakeCacheStorage(alive);
+  const warm = loadWorker({ source, version: "v1", cacheStorage: storage, net: alive });
+  await warm.install();
+  await warm.activate();
+  await warm.handleFetch(req("/api/auth/me"));
+
+  // Now the network accepts the request and simply never answers.
+  const blackHole: Net = () => new Promise<Response>(() => {});
+  storage.repoint(blackHole);
+  const sw = loadWorker({ source, version: "v1", cacheStorage: storage, net: blackHole });
+
+  const started = Date.now();
+  const settled = await Promise.race([
+    sw.handleFetch(req("/api/auth/me")).then((o) => o as FetchOutcome | "pending"),
+    new Promise<"pending">((r) => setTimeout(() => r("pending"), 3000)),
+  ]);
+  const elapsed = Date.now() - started;
+
+  notes.push(`hung request settled in ${elapsed}ms: ${JSON.stringify(settled)}`);
+  checks.push({
+    name: "a request the network never answers still settles",
+    passed: settled !== "pending",
+    detail: settled === "pending" ? "still pending after 3s" : `${elapsed}ms`,
+  });
+  checks.push({
+    name: "and it falls back to the cached copy",
+    passed:
+      settled !== "pending" &&
+      settled.kind === "response" &&
+      settled.body === "cached copy",
+    detail: settled === "pending" ? "n/a" : JSON.stringify(settled),
+  });
+
+  return {
+    name: "hung-network",
+    description: "nothing may leave respondWith() pending forever",
+    checks,
+    notes,
+  };
+}
+
 async function pruneCase(source: string): Promise<Case> {
   const checks: Check[] = [];
   const notes: string[] = [];
@@ -504,6 +565,7 @@ const RESET = "\x1b[0m";
 async function main() {
   const source = readFileSync(SW_PATH, "utf8");
   const cases = [
+    await hangCase(source),
     await revalidationCase(source),
     await networkWinsCase(source),
     await deployCase(source, "throw"),
