@@ -6,7 +6,26 @@ import { AppError } from "@/lib/errors";
 import { CODES, ERROR_MESSAGES, apiError, mapErrorMessage, type ApiErrorResponse } from "@/lib/constants";
 import type { ExtractApiResponse } from "@/lib/schemas/receipt";
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+/**
+ * Vercel's ceiling for a Node.js function on Hobby; Pro allows more. The
+ * Gemini retry budget in gemini-client.ts is sized to fit inside this, so
+ * raise them together or not at all.
+ */
+export const maxDuration = 60;
+
+/**
+ * 4.5 MB, not 10 MB — that's the request body limit for a serverless function,
+ * enforced by the platform before this handler ever runs. The old 10 MB check
+ * was unreachable above 4.5 MB and turned an explainable error into an opaque
+ * platform 413.
+ *
+ * `bodySizeLimit: "10mb"` in next.config.ts does not raise this: it applies to
+ * Server Actions, and this is a Route Handler.
+ *
+ * In practice uploads land far below either number — the client downscales
+ * before posting (see lib/image.ts).
+ */
+const MAX_FILE_SIZE = 4.5 * 1024 * 1024;
 const ALLOWED_MIME_TYPES = new Set([
   "image/jpeg",
   "image/png",

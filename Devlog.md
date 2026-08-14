@@ -205,7 +205,66 @@ the parameter is a pure cache-buster and safe to normalise away.
   passed because its fixtures used bare chunk paths, which production never
   serves. The new `deployment-stamp` case appends `?dpl` the way Vercel does
   and fails (`TypeError: Failed to fetch`) against the previous worker.
+## 2026-08-14 — The receipt scan could hang forever
 
+Reported as scans being very slow or unresponsive after a new build. Not
+caching — `/api/receipts/extract` is a POST, and the service worker returns on
+`request.method !== "GET"` before touching it.
+
+### Fixed
+- **The retry policy could not finish inside the function that ran it.**
+  `extractReceipt` retried a rate-limited Gemini call 3 times at ~13–15s each,
+  ~46s of sleeping, inside a route with no `maxDuration` — so the platform
+  killed it first and the caller got a 504 with an HTML body instead of the
+  real error. `withRetry` now takes a `budgetMs` and refuses to start a sleep
+  it can't finish; the extract path sets 40s inside `maxDuration = 60`, with
+  `maxRetries` cut 3 → 2.
+- **Nothing in the path had a timeout.** Neither the client fetch nor the
+  Gemini call passed an `AbortSignal`, and `setScanning(false)` lives in a
+  `finally` — so an unanswered request left `ScanLoader` up indefinitely.
+  Client-side deadline is now 120s, well clear of the server's 60s so a
+  working scan is never cut short; it exists to end the spinner when nothing
+  is coming back at all.
+- **Rate limiting is no longer reported as a network failure.** A new
+  `RateLimitError` (429, `LLM_RATE_LIMITED`) is distinct from `LLMError` (502),
+  so the UI can say "wait about a minute" instead of "check your connection" —
+  which sent people to fix something that wasn't broken.
+- **Uploads are downscaled before sending.** `lib/image.ts` re-encodes to
+  2000px on the long edge at q0.85, typically several MB → a few hundred KB.
+  There was no resizing anywhere before this (the old wizard had none either),
+  so full-resolution camera photos were being posted.
+- **`MAX_FILE_SIZE` 10 MB → 4.5 MB.** 4.5 MB is the serverless request-body
+  limit, enforced before the handler runs, so the 10 MB check was unreachable
+  above it and produced an opaque platform 413 instead of our own message.
+  `bodySizeLimit: "10mb"` in next.config.ts does not raise it — that applies
+  to Server Actions, and this is a Route Handler.
+
+### Architecture decisions
+- **A retry policy needs a deadline, not just a count.** Under a hard
+  deadline, sleeping past it doesn't merely waste time — it destroys the
+  error, because the function is killed before it can return. `budgetMs` and
+  `maxDuration` are commented as coupled; raising one without the other
+  reintroduces the bug.
+- **`lib/scan-receipt.ts` owns the whole client-side scan.** Downscale,
+  request, deadline, and failure classification live in one place, returning a
+  `ScanOutcome` rather than throwing. `ExpenseComposer` and `/scan` had
+  independently written error handling that had already drifted; now neither
+  can regress alone.
+- **Every downscale failure returns the original file.** A scan that works on
+  a large upload beats one that fails because we couldn't re-encode it — most
+  browsers can't decode HEIC via `createImageBitmap` even though the API
+  accepts it. `scanReceipt` catches the leftover case where the fallback is
+  still over the limit and explains it, rather than letting the platform 413.
+
+### Verification
+- Retry budget checked directly: unbounded runs 6 attempts / 4.5s; with a 3s
+  budget, 5 attempts / 2.5s; with 500ms calls eating the budget, 4 attempts /
+  3.3s — i.e. never sleeps past the budget, and call time counts against it.
+- `tsc --noEmit` clean; production build compiles; security 35/35, allocation
+  18/18, simplify 13/13, sw 3/3.
+- Not verified here: the downscale itself needs a real browser (canvas +
+  `createImageBitmap`), and EXIF rotation needs a phone photo. Worth one pass
+  on a real device before trusting it.
 ## 2026-08-14 — A deploy could blank the app for open tabs
 
 Reported as `TypeError: Failed to fetch at cacheFirst (/sw.js:116:26)` after a

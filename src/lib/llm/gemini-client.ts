@@ -3,9 +3,20 @@ import {
   ReceiptExtractionResultSchema,
   type ReceiptExtractionResult,
 } from "@/lib/schemas/receipt";
-import { withRetry } from "@/lib/retry";
-import { LLMError, ValidationError } from "@/lib/errors";
+import { isRateLimitError, withRetry } from "@/lib/retry";
+import { LLMError, RateLimitError, ValidationError } from "@/lib/errors";
+import { ERROR_MESSAGES } from "@/lib/constants";
 import { z } from "zod";
+
+/**
+ * Wall-clock ceiling for the retry sequence.
+ *
+ * Sized to fit inside the extract route's `maxDuration = 60`, leaving headroom
+ * for reading the upload, base64-encoding it, and the final Gemini call. The
+ * two numbers are coupled: raising one without the other reintroduces the
+ * mismatch where the function is killed mid-retry and the real error is lost.
+ */
+const RETRY_BUDGET_MS = 40_000;
 
 /**
  * Prompt copied from the Python notebook's RECEIPT_PROMPT.
@@ -108,50 +119,70 @@ export class GeminiClient implements LLMClient {
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
 
-    const raw = await withRetry(async () => {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      if (!res.ok) {
-        const errorText = await res.text().catch(() => "unknown");
-        const isRetryable =
-          res.status === 429 ||
-          res.status === 503 ||
-          errorText.includes("RESOURCE_EXHAUSTED") ||
-          errorText.includes("UNAVAILABLE");
-
-        throw new LLMError(
-          `Gemini API returned ${res.status}: ${errorText.slice(0, 300)}`,
-          isRetryable
-        );
-      }
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const json: any = await res.json();
-
-      // Extract the text content from Gemini's response structure
-      const text =
-        json?.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
-
-      if (!text) {
-        // Check for blocked content (safety filters)
-        const blockReason =
-          json?.candidates?.[0]?.finishReason ??
-          json?.promptFeedback?.blockReason ??
-          "unknown";
-        throw new LLMError(
-          `Gemini returned no text content (finishReason: ${blockReason})`,
-          false
-        );
-      }
-
-      return text;
-    }, { maxRetries: 3, baseDelayMs: 1000 });
+    const raw = await this.callWithRetry(url, body);
 
     return this.parseResponse(raw);
+  }
+
+  /**
+   * The network call plus its retry policy.
+   *
+   * Exhausting the budget on a rate limit is reported as RateLimitError rather
+   * than LLMError: it's the one failure here that clears on its own, and the
+   * caller can only say so if it can tell it apart.
+   */
+  private async callWithRetry(url: string, body: unknown): Promise<string> {
+    try {
+      return await withRetry(
+        () => this.callOnce(url, body),
+        { maxRetries: 2, baseDelayMs: 1000, budgetMs: RETRY_BUDGET_MS }
+      );
+    } catch (err) {
+      if (isRateLimitError(err)) throw new RateLimitError(ERROR_MESSAGES.LLM_BUSY);
+      throw err;
+    }
+  }
+
+  private async callOnce(url: string, body: unknown): Promise<string> {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => "unknown");
+      const isRetryable =
+        res.status === 429 ||
+        res.status === 503 ||
+        errorText.includes("RESOURCE_EXHAUSTED") ||
+        errorText.includes("UNAVAILABLE");
+
+      throw new LLMError(
+        `Gemini API returned ${res.status}: ${errorText.slice(0, 300)}`,
+        isRetryable
+      );
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const json: any = await res.json();
+
+    // Extract the text content from Gemini's response structure
+    const text = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
+
+    if (!text) {
+      // Check for blocked content (safety filters)
+      const blockReason =
+        json?.candidates?.[0]?.finishReason ??
+        json?.promptFeedback?.blockReason ??
+        "unknown";
+      throw new LLMError(
+        `Gemini returned no text content (finishReason: ${blockReason})`,
+        false
+      );
+    }
+
+    return text;
   }
 
   /**
