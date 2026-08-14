@@ -1,0 +1,333 @@
+/**
+ * CLI runner for the service-worker caching test suite.
+ *
+ *   npm run test:sw
+ *
+ * Loads the real `public/sw.js` into a VM with a fake Cache Storage and a
+ * scripted network, then replays deploy scenarios against it. No browser, no
+ * dev server, no database — same spirit as the simplify/allocation suites,
+ * but it can't run in the browser at /debug because it needs node:vm to
+ * instantiate the worker.
+ *
+ * The scenario that matters: a new deploy lands while a tab is still running
+ * the previous build. That tab's HTML references the previous build's
+ * content-hashed chunks, and those URLs are gone from the server. If the
+ * worker can't produce them from cache, `respondWith` rejects, the browser
+ * turns that into a network error for the <script>, and the app never boots.
+ */
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import vm from "node:vm";
+
+const ORIGIN = "https://projectowl.app";
+const SW_PATH = path.join(process.cwd(), "public", "sw.js");
+
+const SHELL_URLS = [
+  "/",
+  "/manifest.json",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+  "/icons/apple-touch-icon.png",
+];
+
+const CHUNK_A = "/_next/static/chunks/app-AAAA.js";
+const CHUNK_B = "/_next/static/chunks/app-BBBB.js";
+const ASSET_CACHE_LIMIT = 300;
+
+type Req = { url: string; method: string; mode?: string };
+type Net = (target: Req | string) => Promise<Response>;
+
+const absolute = (target: Req | string) =>
+  typeof target === "string" ? new URL(target, ORIGIN).href : target.url;
+
+const req = (url: string, extra: Partial<Req> = {}): Req => ({
+  url: new URL(url, ORIGIN).href,
+  method: "GET",
+  ...extra,
+});
+
+// ── fake Cache Storage ────────────────────────────────────────────────
+// Map preserves insertion order, which is also what the Cache Storage spec
+// guarantees for keys() — the oldest-first pruning in sw.js relies on it.
+class FakeCache {
+  map = new Map<string, Response>();
+  constructor(public net: Net) {}
+  async match(target: Req | string) {
+    return this.map.get(absolute(target));
+  }
+  async put(target: Req | string, res: Response) {
+    this.map.set(absolute(target), res);
+  }
+  async keys() {
+    return [...this.map.keys()].map((url) => ({ url }));
+  }
+  async delete(target: Req | string) {
+    return this.map.delete(absolute(target));
+  }
+  async addAll(urls: string[]) {
+    for (const u of urls) {
+      const res = await this.net(absolute(u));
+      if (!res.ok) throw new TypeError("addAll: bad response for " + u);
+      this.map.set(absolute(u), res);
+    }
+  }
+}
+
+class FakeCacheStorage {
+  store = new Map<string, FakeCache>();
+  constructor(public net: Net) {}
+  async open(name: string) {
+    let cache = this.store.get(name);
+    if (!cache) {
+      cache = new FakeCache(this.net);
+      this.store.set(name, cache);
+    }
+    return cache;
+  }
+  async keys() {
+    return [...this.store.keys()];
+  }
+  async delete(name: string) {
+    return this.store.delete(name);
+  }
+  /** CacheStorage.match() searches every cache, in order. */
+  async match(target: Req | string) {
+    for (const cache of this.store.values()) {
+      const hit = await cache.match(target);
+      if (hit) return hit;
+    }
+    return undefined;
+  }
+  /** Point every cache at a new network (i.e. a deploy landed). */
+  repoint(net: Net) {
+    this.net = net;
+    for (const cache of this.store.values()) cache.net = net;
+  }
+}
+
+/** A server serving exactly one build: `liveChunk` exists, older ones don't. */
+function makeNetwork(liveChunk: string, missing: "throw" | "404"): Net {
+  return async (target) => {
+    const { pathname } = new URL(absolute(target));
+    if (SHELL_URLS.includes(pathname)) return new Response("shell", { status: 200 });
+    if (pathname === liveChunk) return new Response("chunk", { status: 200 });
+    if (missing === "throw") throw new TypeError("Failed to fetch");
+    return new Response("Not Found", { status: 404 });
+  };
+}
+
+type FetchOutcome =
+  | { kind: "response"; status: number }
+  | { kind: "passthrough" }
+  | { kind: "throw"; name: string; message: string };
+
+function loadWorker(opts: {
+  source: string;
+  version: string;
+  cacheStorage: FakeCacheStorage;
+  net: Net;
+}) {
+  const listeners: Record<string, ((event: unknown) => void)[]> = {};
+  const pending: Promise<unknown>[] = [];
+
+  const self = {
+    location: {
+      href: `${ORIGIN}/sw.js?v=${opts.version}`,
+      search: `?v=${opts.version}`,
+      hostname: "projectowl.app",
+      origin: ORIGIN,
+    },
+    addEventListener: (type: string, fn: (event: unknown) => void) => {
+      (listeners[type] ||= []).push(fn);
+    },
+    skipWaiting: () => {},
+    clients: { claim: async () => {}, matchAll: async () => [] },
+    registration: { unregister: async () => {} },
+  };
+
+  const ctx = vm.createContext({
+    self,
+    caches: opts.cacheStorage,
+    fetch: opts.net,
+    console,
+    URL,
+    URLSearchParams,
+    Response,
+    Promise,
+    Error,
+    TypeError,
+  });
+  vm.runInContext(opts.source, ctx, { filename: "sw.js" });
+
+  const dispatch = async (type: string, event: unknown) => {
+    for (const fn of listeners[type] || []) fn(event);
+    await Promise.all(pending.splice(0));
+  };
+
+  return {
+    install: () => dispatch("install", { waitUntil: (p: Promise<unknown>) => pending.push(p) }),
+    activate: () => dispatch("activate", { waitUntil: (p: Promise<unknown>) => pending.push(p) }),
+    /** Mirrors the browser: whatever respondWith() gets is what the page sees. */
+    async handleFetch(request: Req): Promise<FetchOutcome> {
+      let responded: Promise<Response> | undefined;
+      for (const fn of listeners.fetch || []) {
+        fn({ request, respondWith: (p: Promise<Response>) => { responded = p; } });
+      }
+      if (!responded) return { kind: "passthrough" };
+      try {
+        const response = await responded;
+        return { kind: "response", status: response.status };
+      } catch (err) {
+        const e = err as Error;
+        return { kind: "throw", name: e.constructor.name, message: e.message };
+      }
+    },
+  };
+}
+
+// ── cases ─────────────────────────────────────────────────────────────
+type Check = { name: string; passed: boolean; detail?: string };
+type Case = { name: string; description: string; checks: Check[]; notes: string[] };
+
+async function deployCase(source: string, missing: "throw" | "404"): Promise<Case> {
+  const checks: Check[] = [];
+  const notes: string[] = [];
+
+  // Deploy A: worker installs, a tab loads and caches build A's chunk.
+  const netA = makeNetwork(CHUNK_A, missing);
+  const storage = new FakeCacheStorage(netA);
+  const swA = loadWorker({ source, version: "aaaaaaaa", cacheStorage: storage, net: netA });
+  await swA.install();
+  await swA.activate();
+  await swA.handleFetch(req(CHUNK_A));
+  notes.push(`caches after deploy A: ${(await storage.keys()).join(", ")}`);
+
+  // Deploy B lands and takes over the still-open tab.
+  const netB = makeNetwork(CHUNK_B, missing);
+  storage.repoint(netB);
+  const swB = loadWorker({ source, version: "bbbbbbbb", cacheStorage: storage, net: netB });
+  await swB.install();
+  await swB.activate();
+  notes.push(`caches after deploy B: ${(await storage.keys()).join(", ")}`);
+
+  // The old tab asks for the chunk its HTML references.
+  const outcome = await swB.handleFetch(req(CHUNK_A));
+  notes.push(`old tab requesting ${CHUNK_A}: ${JSON.stringify(outcome)}`);
+
+  checks.push({
+    name: "asset request does not reject out of respondWith",
+    passed: outcome.kind !== "throw",
+    detail: outcome.kind === "throw" ? `${outcome.name}: ${outcome.message}` : undefined,
+  });
+  checks.push({
+    name: "old tab still gets a usable 200 for its chunk",
+    passed: outcome.kind === "response" && outcome.status === 200,
+    detail: outcome.kind === "response" ? `status ${outcome.status}` : outcome.kind,
+  });
+
+  const names = await storage.keys();
+  checks.push({
+    name: "shell cache still rotates per deploy",
+    passed: names.includes("shell-bbbbbbbb") && !names.includes("shell-aaaaaaaa"),
+    detail: names.join(", "),
+  });
+  checks.push({
+    name: "shared asset cache survives the deploy",
+    passed: names.includes("assets"),
+    detail: names.join(", "),
+  });
+
+  return {
+    name: `deploy-while-tab-open (${missing === "throw" ? "network error" : "404"})`,
+    description:
+      missing === "throw"
+        ? "superseded chunk fails at the network level"
+        : "superseded chunk returns 404",
+    checks,
+    notes,
+  };
+}
+
+async function pruneCase(source: string): Promise<Case> {
+  const checks: Check[] = [];
+  const notes: string[] = [];
+
+  const net = makeNetwork(CHUNK_A, "404");
+  const storage = new FakeCacheStorage(net);
+  const sw = loadWorker({ source, version: "v1", cacheStorage: storage, net });
+  await sw.install();
+
+  const assets = await storage.open("assets");
+  const total = ASSET_CACHE_LIMIT + 200;
+  for (let i = 0; i < total; i++) {
+    await assets.put(req(`/_next/static/chunks/c-${i}.js`), new Response("x", { status: 200 }));
+  }
+
+  await sw.activate();
+  const survivors = (await assets.keys()).map((k) => k.url);
+  notes.push(`asset cache entries: ${total} -> ${survivors.length}`);
+
+  checks.push({
+    name: "asset cache pruned to the cap",
+    passed: survivors.length === ASSET_CACHE_LIMIT,
+    detail: `got ${survivors.length}`,
+  });
+  checks.push({
+    name: "pruning drops oldest entries, keeps newest",
+    passed:
+      survivors.at(-1)!.endsWith(`c-${total - 1}.js`) &&
+      survivors[0].endsWith(`c-${total - ASSET_CACHE_LIMIT}.js`),
+    detail: `${survivors[0]} .. ${survivors.at(-1)}`,
+  });
+
+  return {
+    name: "asset-cache-bounded",
+    description: "shared asset cache stays bounded across many deploys",
+    checks,
+    notes,
+  };
+}
+
+// ── report ────────────────────────────────────────────────────────────
+const GREEN = "\x1b[32m";
+const RED = "\x1b[31m";
+const DIM = "\x1b[2m";
+const BOLD = "\x1b[1m";
+const RESET = "\x1b[0m";
+
+async function main() {
+  const source = readFileSync(SW_PATH, "utf8");
+  const cases = [
+    await deployCase(source, "throw"),
+    await deployCase(source, "404"),
+    await pruneCase(source),
+  ];
+
+  console.log(`\n${BOLD}Service-worker cache tests${RESET} ${DIM}(${cases.length} cases)${RESET}\n`);
+
+  let failed = 0;
+  for (const c of cases) {
+    const ok = c.checks.every((check) => check.passed);
+    if (!ok) failed++;
+    console.log(`${ok ? `${GREEN}PASS${RESET}` : `${RED}FAIL${RESET}`}  ${BOLD}${c.name}${RESET} ${DIM}— ${c.description}${RESET}`);
+    for (const note of c.notes) console.log(`      ${DIM}${note}${RESET}`);
+    for (const check of c.checks) {
+      if (!check.passed) {
+        console.log(`      ${RED}✗ ${check.name}${RESET}${check.detail ? ` — ${check.detail}` : ""}`);
+      }
+    }
+    console.log();
+  }
+
+  const passed = cases.length - failed;
+  const color = failed === 0 ? GREEN : RED;
+  console.log(
+    `${color}${BOLD}${passed}/${cases.length} passed${RESET}` +
+      (failed > 0 ? `  ${RED}(${failed} failed)${RESET}` : "") +
+      "\n"
+  );
+
+  process.exit(failed === 0 ? 0 : 1);
+}
+
+main();

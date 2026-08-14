@@ -25,6 +25,19 @@ const CACHE_VERSION =
 const SHELL_CACHE = `shell-${CACHE_VERSION}`;
 const DATA_CACHE = `data-${CACHE_VERSION}`;
 
+// Build output (/_next/static/**) is deliberately NOT versioned with the two
+// above. Those URLs are content-hashed, so an entry can never be stale — a
+// changed file is a different URL. Rotating them per deploy is not just
+// pointless, it breaks tabs that are still running the previous build: the
+// cache name changes, every chunk that build cached is orphaned, and the
+// request falls through to a network that no longer serves those URLs.
+//
+// Instead this cache is shared across deploys and bounded by entry count,
+// pruned oldest-first on activate. Cache Storage preserves insertion order,
+// so cache.keys() comes back oldest-first.
+const ASSET_CACHE = "assets";
+const ASSET_CACHE_LIMIT = 300;
+
 const SHELL_URLS = [
   "/",
   "/manifest.json",
@@ -74,13 +87,18 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(
         keys
-          .filter((key) => key !== SHELL_CACHE && key !== DATA_CACHE)
+          .filter(
+            (key) =>
+              key !== SHELL_CACHE && key !== DATA_CACHE && key !== ASSET_CACHE
+          )
           .map((key) => caches.delete(key))
-      )
-    )
+      );
+      await pruneAssetCache();
+    })()
   );
   self.clients.claim();
 });
@@ -94,6 +112,11 @@ self.addEventListener("fetch", (event) => {
 
   if (url.pathname.startsWith("/api/")) {
     event.respondWith(networkFirst(request, DATA_CACHE));
+    return;
+  }
+
+  if (url.pathname.startsWith("/_next/static/")) {
+    event.respondWith(cacheFirst(request, ASSET_CACHE));
     return;
   }
 
@@ -124,9 +147,28 @@ async function cacheFirst(request, cacheName) {
   const cache = await caches.open(cacheName);
   const cached = await cache.match(request);
   if (cached) return cached;
-  const response = await fetch(request);
-  if (response.ok) cache.put(request, response.clone());
-  return response;
+
+  try {
+    const response = await fetch(request);
+    if (response.ok) cache.put(request, response.clone());
+    return response;
+  } catch (err) {
+    // Rejecting here is not a soft failure: a rejected respondWith() becomes a
+    // network error for the request, so one unreachable chunk blanks a running
+    // app. Check every cache, not just this one, before giving up — an asset
+    // from a superseded deploy can still be sitting in another version's cache.
+    const stale = await caches.match(request);
+    if (stale) return stale;
+    throw err;
+  }
+}
+
+async function pruneAssetCache() {
+  const cache = await caches.open(ASSET_CACHE);
+  const keys = await cache.keys();
+  const excess = keys.length - ASSET_CACHE_LIMIT;
+  if (excess <= 0) return;
+  await Promise.all(keys.slice(0, excess).map((key) => cache.delete(key)));
 }
 
 async function navigateHandler(request) {

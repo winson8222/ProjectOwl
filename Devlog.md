@@ -1,5 +1,59 @@
 # ProjectOwl — Devlog
 
+
+## 2026-08-14 — A deploy could blank the app for open tabs
+
+Reported as `TypeError: Failed to fetch at cacheFirst (/sw.js:116:26)` after a
+new build, followed by the app not loading at all.
+
+### Fixed
+- **`/_next/static/**` moved out of the per-deploy versioned cache into a
+  shared `assets` cache**, bounded at 300 entries and pruned oldest-first on
+  `activate`. Those URLs are content-hashed, so a cached entry can never be
+  stale — a changed file is a different URL — and rotating them per deploy was
+  pure downside.
+- **`cacheFirst` no longer rejects out of `respondWith`.** It now catches the
+  network failure and falls back to `caches.match(request)` across *every*
+  cache before rethrowing. `networkFirst` and `navigateHandler` both already
+  had a fallback; `cacheFirst` was the only one of the three with no `try`.
+
+### The mechanism
+`cacheFirst` opens only the *current* version's cache. Versioning the cache
+name per deploy (previous entry's `?v=<sha>` change) therefore orphaned every
+asset the previous build had cached — the rename alone did it, before the
+`activate` cleanup even ran. So after a deploy, a tab still running the old
+build missed on all of its hashed chunks, went to the network, and got nothing
+back: Vercel stops serving the superseded deploy's assets. A rejected
+`respondWith` becomes a network error for that `<script>`, React never boots,
+blank page.
+
+The defect in `cacheFirst` was always there. `CACHE_VERSION = "v2"` was frozen
+for so long that the cache never rotated, so it was never reached — the same
+staleness that made Cache Storage grow without bound was also masking this.
+Fixing the growth is what exposed it.
+
+### Architecture decisions
+- **Cache lifetime should follow the URL's own semantics, not the deploy.**
+  Content-hashed assets are immutable and belong in a long-lived cache pruned
+  by size; only unhashed shell entries (`/`, manifest, icons) need to rotate
+  per deploy, and those stay in `shell-${CACHE_VERSION}`.
+- **A cache-first handler must never let a fetch rejection escape.** One
+  unreachable subresource taking down the whole app is a failure mode with no
+  upside; serving a superseded-but-valid hashed asset is strictly better.
+
+### Verification
+- New suite `npm run test:sw` (`scripts/run-sw-tests.ts`) — 3 cases. Loads the
+  real `public/sw.js` into a `node:vm` with a fake Cache Storage and a scripted
+  network, then replays "deploy lands while a tab is open" for both failure
+  shapes (network error and 404), plus the prune cap. Node-only, so unlike the
+  simplify/allocation suites it isn't mirrored at `/debug`.
+- Confirmed red-capable: the suite goes 0/3 against the pre-fix `sw.js` and 3/3
+  after. The pre-`bfb813f` worker passes the *serving* check for the wrong
+  reason — its `shell-v2` cache never rotated, so the old chunk was still a hit.
+- `tsc --noEmit` clean; production build compiles; simplify 13/13, allocation
+  18/18, security 35/35.
+
+
 ## 2026-08-12 — Add an expense on one screen
 
 Replaces the four-step wizard with a single compose screen. The two decisions
