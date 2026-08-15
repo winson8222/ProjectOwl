@@ -137,7 +137,7 @@ export default function BottomNav() {
               }}
               onClick={(e) => handleNavClick(e, tab.href)}
               aria-current={isActive ? "page" : undefined}
-              className="pressable relative z-10 flex flex-col items-center justify-center gap-0.5 rounded-[20px] transition-colors"
+              className="pressable-sm relative z-10 flex flex-col items-center justify-center gap-0.5 rounded-[20px] transition-colors"
               style={{
                 minWidth: 64,
                 minHeight: 52,

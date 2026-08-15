@@ -31,7 +31,7 @@ export default function ErrorDialog({
       <p className="text-body text-ink-muted mt-2 mb-5">{message}</p>
       <button
         onClick={onDismiss}
-        className="pressable w-full rounded-[12px] text-body font-semibold text-white"
+        className="pressable-cta w-full rounded-[12px] text-body font-semibold text-white"
         style={{
           minHeight: 50,
           background: "var(--color-blueberry-600)",

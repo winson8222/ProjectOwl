@@ -12,8 +12,10 @@
  *   "assemble" — face, tufts, eyes and beak arrive in sequence
  *   "reading"  — pupils sweep left/right with occasional blinks
  *   "done"     — eyes curve into a contented crescent
+ *   "still"    — no animation at all; for the header lockup, where a blinking
+ *                logo would be a distraction rather than a delight
  */
-export type OwlPhase = "assemble" | "reading" | "done";
+export type OwlPhase = "still" | "assemble" | "reading" | "done";
 
 export default function OwlMark({
   phase = "reading",

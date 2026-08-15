@@ -1,6 +1,7 @@
 "use client";
 
 import BottomNav from "@/components/BottomNav";
+import SlothMark from "@/components/SlothMark";
 import DebugMenu from "@/components/DebugMenu";
 import DraftLeaveGuard from "@/components/DraftLeaveGuard";
 import LoginScreen from "@/components/LoginScreen";
@@ -37,6 +38,20 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // the browser gets as far as fetching the new sw.js, while this runs as soon
   // as the app boots. Between them, a browser holding a broken worker recovers
   // on its next load either way.
+  /**
+   * Make :active fire on iOS Safari.
+   *
+   * WebKit only applies :active to non-anchor elements when the document has
+   * a touch listener — otherwise every press state in the app is dead on
+   * iPhone, which is exactly where they matter. An empty listener is the
+   * documented workaround. Passive, so it costs nothing on scroll.
+   */
+  useEffect(() => {
+    const noop = () => {};
+    document.addEventListener("touchstart", noop, { passive: true });
+    return () => document.removeEventListener("touchstart", noop);
+  }, []);
+
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
 
@@ -75,11 +90,44 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     <>
       <OfflineBanner />
 
-      {/* App header */}
-      <header className="fixed left-0 right-0 border-b border-[var(--border)] z-50 backdrop-blur-sm"
-              style={{ background: 'rgba(255,255,255,0.4)', top: 'var(--offline-banner-h)' }}>
+      {/* App header. Opaque and on the card tone, so it belongs to the same
+          family of surfaces as everything below it — content scrolling
+          underneath disappears cleanly instead of ghosting through at 40%.
+          The blur went with the transparency: nothing left to see through. */}
+      <header className="fixed left-0 right-0 border-b border-[var(--border)] z-50"
+              style={{ background: 'var(--color-surface)', top: 'var(--offline-banner-h)' }}>
         <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
-          <h1 className="text-xl font-bold text-[var(--primary)]">ItreSplit</h1>
+          {/* Lockup: the sloth in a Blueberry tile, then the wordmark. The
+              sloth is the mascot — it already fronts ItreAI — so the header
+              and the scan button now point at the same character instead of
+              an owl and a sloth competing.
+
+              Colour lives in the tile, so the wordmark stays ink: a coloured
+              wordmark next to a coloured mark muddies both. "Split" carries
+              the weight because it's the verb — the thing the app does. */}
+          <div className="flex items-center gap-2">
+            <span
+              className="grid place-items-center shrink-0 text-white"
+              style={{
+                width: 30,
+                height: 30,
+                borderRadius: 9,
+                background:
+                  "linear-gradient(150deg, var(--color-blueberry-600) 0%, var(--color-blueberry-700) 100%)",
+                boxShadow:
+                  "0 1px 2px color-mix(in srgb, var(--color-blueberry-900) 30%, transparent), inset 0 1px 0 rgba(255,255,255,0.22)",
+              }}
+            >
+              <SlothMark size={26} />
+            </span>
+            <h1
+              className="text-callout text-ink"
+              style={{ letterSpacing: "-0.3px" }}
+            >
+              <span style={{ fontWeight: 500 }}>Itre</span>
+              <span style={{ fontWeight: 800 }}>Split</span>
+            </h1>
+          </div>
           <button
             onClick={handleSignOut}
             className="text-xs font-medium text-ink-muted hover:text-ink-muted transition-colors"

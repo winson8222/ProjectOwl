@@ -2,12 +2,11 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
+import UserAvatar from "@/components/UserAvatar";
 import UserPicker from "@/components/UserPicker";
 import ErrorDialog from "@/components/ErrorDialog";
 import PullToRefresh from "@/components/PullToRefresh";
-import PaidStamp from "@/components/PaidStamp";
 import { getSessionUser } from "@/lib/session";
-import { isSettled } from "@/lib/settled";
 
 /**
  * Drag-to-reorder hook with iOS-style physics
@@ -276,73 +275,46 @@ export default function GroupsPage() {
   return (
     <PullToRefresh onRefresh={() => loadData(user)}>
     <main className="min-h-dvh px-4 pt-6 pb-24 max-w-lg mx-auto">
-      {/* Overall balance */}
-      {balance && (
-        <div className="mb-6">
-          {/* Hero number card with animated background */}
-          <div
-            className={`rounded-2xl p-6 text-center mb-4 relative overflow-hidden border ${
-              balance.netBalance >= 0 ? 'border-hairline' : 'border-negative-soft'
-            }`}
-            style={{
-              background: balance.netBalance >= 0
-                ? 'var(--color-surface)'
-                : 'linear-gradient(135deg, rgba(254,226,226,0.4) 0%, rgba(253,242,242,0.3) 100%)',
-              boxShadow: '0 1px 2px color-mix(in srgb, var(--color-blueberry-900) 5%, transparent)'
-            }}
-          >
-            {/* Ambient state — see the note on the home card. Settled gets
-                the PAID watermark rather than nothing at all. */}
-            {isSettled(balance) ? (
-              <PaidStamp />
-            ) : balance.netBalance > 0 ? (
-              <div className="absolute inset-0 pointer-events-none">
-                <div className="raining-cash">
-                  {Array.from({ length: Math.min(Math.max(Math.floor(balance.netBalance / 2), 6), 30) }).map((_, i) => (
-                    <span key={i}>💵</span>
-                  ))}
-                </div>
-              </div>
-            ) : balance.netBalance < 0 ? (
-              <div className="absolute inset-0 pointer-events-none">
-                <div className="falling-gandhi">
-                  {Array.from({ length: Math.min(Math.max(Math.floor(Math.abs(balance.netBalance) / 2), 6), 30) }).map((_, i) => (
-                    <img key={i} src="/gandhi.png" alt="Gandhi" className="gandhi-icon" />
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            <p className="text-sm text-ink-muted uppercase tracking-wider mb-2 relative z-10">
-              {isSettled(balance)
-                ? "ALL SQUARE"
-                : balance.netBalance >= 0
-                ? "UP GOOD"
-                : "DOWN BAD"}
+      {/* The full balance card lives on Home; repeating it here pushed the
+          groups themselves below the fold. One line carries the same net. */}
+      <div className="flex items-start justify-between gap-3 mb-6">
+        <div className="min-w-0">
+          <h1 className="text-title1 font-bold text-ink">Your groups</h1>
+          {balance && (
+            <p className="text-subhead text-ink-muted mt-0.5">
+              Net across all groups{" "}
+              <span
+                className="font-bold tabular"
+                style={{
+                  color:
+                    Math.abs(balance.netBalance) < 0.005
+                      ? "var(--color-ink-muted)"
+                      : balance.netBalance > 0
+                      ? "var(--color-positive)"
+                      : "var(--color-negative)",
+                }}
+              >
+                {balance.netBalance >= 0 ? "+" : "\u2212"}$
+                {Math.abs(balance.netBalance).toFixed(2)}
+              </span>
             </p>
-            <p className={`text-4xl font-bold ${balance.netBalance >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]"} relative z-10`}>
-              {balance.netBalance >= 0 ? "+" : "-"}${Math.abs(balance.netBalance).toFixed(2)}
-            </p>
-
-            {/* Breakdown sentence */}
-            <div className="text-center text-sm relative z-10">
-              You are owed <span className="text-[var(--success)] font-bold">
-                ${balance.totalOwed.toFixed(2)}
-              </span>, and you owe <span className="text-[var(--danger)] font-bold">
-                ${balance.totalOwe.toFixed(2)}
-              </span>.
-            </div>
-          </div>
+          )}
         </div>
-      )}
-
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-bold text-ink">Your Groups</h1>
         <button
           onClick={() => setShowCreate(!showCreate)}
-          className="text-sm font-semibold text-[var(--primary)] px-3 py-1.5 border border-[var(--primary)] rounded-lg hover:bg-blueberry-100"
+          className="pressable shrink-0 flex items-center gap-1.5 px-4 rounded-full text-callout font-semibold text-white"
+          style={{ minHeight: 44, background: "var(--color-blueberry-600)" }}
         >
-          {showCreate ? "Cancel" : "+ New group"}
+          {showCreate ? (
+            "Cancel"
+          ) : (
+            <>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden>
+                <path d="M12 5.5v13M5.5 12h13" />
+              </svg>
+              New group
+            </>
+          )}
         </button>
       </div>
 
@@ -404,41 +376,77 @@ export default function GroupsPage() {
         </p>
       ) : (
         <>
-          <div className="space-y-2" style={{ position: 'relative' }}>
-            {activeGroups.map((g, index) => (
-              <GroupRow
-                key={g.id}
-                group={g}
-                index={index}
-                isDragging={draggingIndex === index}
-                dragOffset={draggingIndex === index ? dragOffset : 0}
-                onTouchStart={(e) => handleTouchStart(e, index)}
-                onTouchMove={handleTouchMove}
-                onTouchEnd={handleTouchEnd}
-                onMouseDown={(e) => handleMouseDown(e, index)}
-                onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp}
-              />
-            ))}
-            {activeGroups.length === 0 && (
-              <p className="text-sm text-ink-muted text-center py-4">All your groups are settled 🎉</p>
-            )}
+          {/* Rows share one card with hairline dividers rather than sitting
+              as separate cards — a list of three identical cards reads as
+              three unrelated things. Container keeps overflow visible so a
+              dragged row can float above its neighbours. */}
+          <div className="flex items-center justify-between mb-2.5 px-0.5">
+            <h2 className="text-callout font-bold text-ink">
+              Active <span className="text-ink-muted">&middot; {activeGroups.length}</span>
+            </h2>
           </div>
 
-          {/* Settled groups toggle */}
+          {activeGroups.length === 0 ? (
+            <div className="card-lift px-5 py-8 text-center">
+              <p className="text-subhead text-ink-muted">
+                Every group is settled. Nothing to chase.
+              </p>
+            </div>
+          ) : (
+            <div className="card-lift" style={{ position: "relative" }}>
+              {activeGroups.map((g, index) => (
+                <GroupRow
+                  key={g.id}
+                  group={g}
+                  index={index}
+                  first={index === 0}
+                  isDragging={draggingIndex === index}
+                  dragOffset={draggingIndex === index ? dragOffset : 0}
+                  onTouchStart={(e) => handleTouchStart(e, index)}
+                  onTouchMove={handleTouchMove}
+                  onTouchEnd={handleTouchEnd}
+                  onMouseDown={(e) => handleMouseDown(e, index)}
+                  onMouseMove={handleMouseMove}
+                  onMouseUp={handleMouseUp}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Settled groups: a closed drawer rather than a toggle button, so
+              the count is visible without opening it. */}
           {settledGroups.length > 0 && (
-            <div className="mt-4">
+            <div className="card-lift mt-4" style={{ overflow: "hidden" }}>
               <button
                 onClick={() => setShowSettled(!showSettled)}
-                className="w-full px-4 py-2.5 text-sm font-medium text-ink-muted bg-canvas rounded-xl hover:bg-canvas transition-colors"
+                aria-expanded={showSettled}
+                className="pressable w-full flex items-center gap-2 px-5 text-left"
+                style={{ minHeight: 60 }}
               >
-                {showSettled ? "Hide" : "Show"} settled groups ({settledGroups.length})
+                <span className="text-callout font-semibold text-ink">
+                  Settled groups
+                </span>
+                <span className="text-callout text-ink-muted tabular">
+                  {settledGroups.length}
+                </span>
+                <span className="flex-1" />
+                <svg
+                  width="18" height="18" viewBox="0 0 24 24" fill="none"
+                  stroke="var(--color-ink-muted)" strokeWidth="2"
+                  strokeLinecap="round" strokeLinejoin="round"
+                  style={{
+                    transform: showSettled ? "rotate(180deg)" : "none",
+                    transition: "transform 180ms ease-out",
+                  }}
+                  aria-hidden
+                >
+                  <path d="M6 9l6 6 6-6" />
+                </svg>
               </button>
-              {showSettled && (
-                <div className="space-y-2 mt-2">
-                  {settledGroups.map((g) => <GroupRow key={g.id} group={g} />)}
-                </div>
-              )}
+              {showSettled &&
+                settledGroups.map((g, i) => (
+                  <GroupRow key={g.id} group={g} first={false} />
+                ))}
             </div>
           )}
         </>
@@ -456,9 +464,31 @@ export default function GroupsPage() {
 }
 
 /** One tappable group row: colored circle, name, your net position. */
+/** Rounded-square tile with the group's initial — distinct from the circular
+ *  member avatars beside it, so a group never reads as a person. */
+function GroupTile({ group, size = 52 }: { group: any; size?: number }) {
+  return (
+    <span
+      className="shrink-0 grid place-items-center text-white font-bold"
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size * 0.3,
+        fontSize: size * 0.42,
+        background: group.color || "var(--color-blueberry-600)",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.28)",
+      }}
+      aria-hidden
+    >
+      {group.name.charAt(0).toUpperCase()}
+    </span>
+  );
+}
+
 function GroupRow({
   group,
   index,
+  first = false,
   isDragging = false,
   dragOffset = 0,
   onTouchStart,
@@ -470,6 +500,7 @@ function GroupRow({
 }: {
   group: any;
   index?: number;
+  first?: boolean;
   isDragging?: boolean;
   dragOffset?: number;
   onTouchStart?: (e: React.TouchEvent) => void;
@@ -480,18 +511,80 @@ function GroupRow({
   onMouseUp?: (e: React.MouseEvent) => void;
 }) {
   const net = group.yourNet ?? 0;
+  const settled = Math.abs(net) < 0.005;
+  const members: any[] = group.members ?? [];
 
-  // If dragging, render as a div instead of Link to prevent navigation
+  const inner = (
+    <>
+      <GroupTile group={group} />
+      <span className="flex-1 min-w-0">
+        <span className="block text-callout font-bold text-ink truncate">
+          {group.name}
+        </span>
+        <span className="flex items-center gap-2 mt-1">
+          {/* Overlapping stack: who's in the group, readable before the name
+              of a single member matters. */}
+          <span className="flex -space-x-2">
+            {members.slice(0, 4).map((m: any) => (
+              <span
+                key={m.id}
+                className="rounded-full"
+                style={{ boxShadow: "0 0 0 2px var(--color-surface)" }}
+              >
+                <UserAvatar name={m.name} size="sm" />
+              </span>
+            ))}
+          </span>
+          <span className="text-footnote text-ink-muted">
+            {members.length} member{members.length === 1 ? "" : "s"}
+          </span>
+        </span>
+      </span>
+
+      <span className="text-right shrink-0">
+        {settled ? (
+          <span className="block text-subhead text-ink-muted">Settled</span>
+        ) : (
+          <>
+            <span
+              className="block text-callout font-bold tabular"
+              style={{
+                color: net > 0 ? "var(--color-positive)" : "var(--color-negative)",
+              }}
+            >
+              {net > 0 ? "+" : "\u2212"}${Math.abs(net).toFixed(2)}
+            </span>
+            <span className="block text-footnote text-ink-muted">
+              {net > 0 ? "you get back" : "you owe"}
+            </span>
+          </>
+        )}
+      </span>
+
+      <svg
+        width="18" height="18" viewBox="0 0 24 24" fill="none"
+        stroke="var(--color-ink-muted)" strokeWidth="2"
+        strokeLinecap="round" strokeLinejoin="round"
+        className="shrink-0 -ml-1" aria-hidden
+      >
+        <path d="M9 6l6 6-6 6" />
+      </svg>
+    </>
+  );
+
+  // Mid-drag it can't be a Link — a tap-and-hold that moved would navigate on
+  // release. It also floats above its neighbours, so it carries its own
+  // surface and shadow instead of inheriting the list card's.
   if (isDragging) {
     return (
       <div
-        className="flex items-center gap-3 px-4 py-3 rounded-xl border border-hairline backdrop-blur-sm relative z-50 cursor-grabbing"
+        className="flex items-center gap-3 px-4 py-3.5 rounded-[18px] relative z-50 cursor-grabbing"
         style={{
-          background: 'var(--color-surface)',
-          boxShadow: '0 8px 16px rgba(0,0,0,0.15), 0 2px 4px rgba(0,0,0,0.1)',
-          transform: `translateY(${dragOffset}px) scale(1.05)`,
-          opacity: 0.9,
-          transition: 'transform 0.1s ease-out, opacity 0.2s ease',
+          background: "var(--color-surface)",
+          border: "1px solid var(--color-hairline)",
+          boxShadow: "0 10px 24px rgba(22,37,92,0.18)",
+          transform: `translateY(${dragOffset}px) scale(1.03)`,
+          transition: "transform 0.1s ease-out",
         }}
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
@@ -500,43 +593,7 @@ function GroupRow({
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
       >
-        <div className="absolute left-2 top-1/2 -translate-y-1/2 text-ink-muted">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-            <circle cx="9" cy="5" r="1.5"/>
-            <circle cx="15" cy="5" r="1.5"/>
-            <circle cx="9" cy="12" r="1.5"/>
-            <circle cx="15" cy="12" r="1.5"/>
-            <circle cx="9" cy="19" r="1.5"/>
-            <circle cx="15" cy="19" r="1.5"/>
-          </svg>
-        </div>
-        <div
-          className="w-10 h-10 rounded-full shrink-0 ml-4"
-          style={{
-            background: `linear-gradient(135deg, ${group.color || "#9ca3af"} 0%, ${group.color || "#9ca3af"}dd 100%)`,
-            boxShadow: '0 2px 4px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)'
-          }}
-        />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-ink truncate">{group.name}</p>
-          <p className="text-xs text-ink-muted">
-            {group.members.length} member{group.members.length === 1 ? "" : "s"}
-          </p>
-        </div>
-        <div className="text-right">
-          {Math.abs(net) < 0.005 ? (
-            <p className="text-xs text-ink-muted">Settled</p>
-          ) : (
-            <>
-              <p className={`text-sm font-semibold ${net > 0 ? "text-[var(--success)]" : "text-[var(--danger)]"}`}>
-                {net > 0 ? "+" : "-"}${Math.abs(net).toFixed(2)}
-              </p>
-              <p className="text-[10px] text-ink-muted">
-                {net > 0 ? "you get back" : "you owe"}
-              </p>
-            </>
-          )}
-        </div>
+        {inner}
       </div>
     );
   }
@@ -544,12 +601,10 @@ function GroupRow({
   return (
     <Link
       href={`/groups/${group.id}`}
-      className="flex items-center gap-3 px-4 py-3 rounded-xl pressable border border-hairline hover:border-hairline backdrop-blur-sm"
-      style={{
-        background: 'var(--color-surface)',
-        boxShadow: '0 1px 2px color-mix(in srgb, var(--color-blueberry-900) 5%, transparent)',
-        transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease',
-      }}
+      className="pressable flex items-center gap-3 px-4 py-3.5"
+      style={
+        first ? undefined : { borderTop: "1px solid var(--color-hairline)" }
+      }
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
@@ -557,33 +612,7 @@ function GroupRow({
       onMouseMove={onMouseMove}
       onMouseUp={onMouseUp}
     >
-      <div
-        className="w-10 h-10 rounded-full shrink-0"
-        style={{
-          background: `linear-gradient(135deg, ${group.color || "#9ca3af"} 0%, ${group.color || "#9ca3af"}dd 100%)`,
-          boxShadow: '0 2px 4px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)'
-        }}
-      />
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-ink truncate">{group.name}</p>
-        <p className="text-xs text-ink-muted">
-          {group.members.length} member{group.members.length === 1 ? "" : "s"}
-        </p>
-      </div>
-      <div className="text-right">
-        {Math.abs(net) < 0.005 ? (
-          <p className="text-xs text-ink-muted">Settled</p>
-        ) : (
-          <>
-            <p className={`text-sm font-semibold ${net > 0 ? "text-[var(--success)]" : "text-[var(--danger)]"}`}>
-              {net > 0 ? "+" : "-"}${Math.abs(net).toFixed(2)}
-            </p>
-            <p className="text-[10px] text-ink-muted">
-              {net > 0 ? "you get back" : "you owe"}
-            </p>
-          </>
-        )}
-      </div>
+      {inner}
     </Link>
   );
 }

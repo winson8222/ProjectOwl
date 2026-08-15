@@ -1,5 +1,108 @@
 # ProjectOwl — Devlog
 
+## 2026-08-15 — UI pass: surfaces inverted, swipe paging fixed, one mascot
+
+A round of visual and interaction work off the back of reference screens the
+team liked. No API, schema or flow changes.
+
+### Fixed — three real bugs, none of them cosmetic
+- **Swiping mid-screen didn't change pages.** Three faults at once:
+  `react-swipeable`'s `deltaX` is `start − current`, so the track followed the
+  thumb *backwards*; there was no axis locking or `preventDefault`, so each
+  page's own `overflow-y: auto` claimed the touch before the 10px threshold
+  resolved (worst in the middle of a long page, which is exactly where it was
+  reported); and on release it pushed the route *and* snapped home to the old
+  index, so one gesture produced two movements. Replaced with native
+  non-passive listeners: 8px slop decides scroll vs. swipe, the loser is
+  released entirely, commit is 22% of width or a 0.35px/ms flick, and the track
+  animates straight to the destination with the route pushed underneath.
+- **The group picker couldn't be scrolled at all.** Every touch handler lived
+  on the *collapsed* card, which unmounts the moment it expands — so once open
+  nothing was listening, and `handleDragEnd` was never wired to anything.
+  Replaced with a bottom sheet (305 lines → 149). Rebuilding the gesture wasn't
+  worth it now that PageSlider claims horizontal drags across the whole screen.
+- **Press states were dead on iPhone.** WebKit only applies `:active` to
+  non-anchor elements when the document has a touch listener; combined with the
+  `-webkit-tap-highlight-color: transparent` we set deliberately, there was no
+  press feedback at all on the platform where it matters. Empty passive
+  `touchstart` on `document` in AppShell.
+
+### Done — surfaces
+Cream Sode moved from the cards to the **ground**, and cards became a warm
+near-white (`#FFFAEB`) on top of it. The two had been close enough in value
+that a card read as part of the surface behind it whichever way the shadow
+fell; swapping them lightens the ground and whitens the cards in one move.
+This inverts the original brief — Cream Sode was specified as the surface that
+replaces plain white, and is now the thing white sits on — but it ends up more
+visible, since the background is the largest area on screen.
+
+New `.card-lift` declares the card treatment once (radius 22, Blueberry-tinted
+shadow rather than black, which on a warm ground reads as grey dirt).
+
+### Done — screens
+- **Home**: eyebrow, big semantic-coloured figure, then a proportional bar of
+  owed-vs-owe and two arrowed labels. The bar earns its place — a `$0` net
+  looks identical whether nothing is outstanding or $500 is owed each way.
+- **Groups**: rows share one card with dividers rather than three separate
+  cards; rounded-square group tiles (deliberately not circles — circles are
+  people here), overlapping member avatars, settled groups as a drawer. The
+  duplicate balance card was dropped for a one-line net in the header.
+- **Add expense**: amount leads in its own card, description and Group/Date
+  labelled below, Paid-by/Split kept as a sentence. Date moved off the keypad
+  into its own field, so the keypad is purely numeric again.
+- **Activity**: line-art glyphs in canvas-filled discs — the disc is the page
+  ground, so it reads as a well pressed into the card. Emoji retired: they
+  render at a different weight and colour on every platform, so a column of
+  them never lines up.
+- **Members / Balances**: the solid Blueberry header bar — the only band of
+  saturated colour in the app — became canvas with a text Done. Creator is a
+  chip beside the person rather than grey caps at the edge, and the mock-mode
+  quick-add is now visibly a dev tool rather than styled like a real control.
+
+### Done — one mascot
+The header was bold blue text with no relationship to anything. It's now the
+sloth in a Blueberry tile beside the wordmark. The scan loader's owl became the
+sloth working a calculator — paws tapping in alternation, eyes down, display
+scrambling. The owl marked the app while the sloth marked ItreAI, which is two
+mascots; `OwlMark` is now unused by the UI (`public/icons/` are still the owl).
+
+The scrambling digits are deliberately meaningless — Gemini reports nothing
+until it returns, and a figure that looked like a running total would be
+inventing one. Same reasoning as having no progress bar.
+
+### Architecture decisions
+1. **Native listeners for paging, not a gesture library.** Axis locking needs
+   `preventDefault` on a non-passive listener, which is the one thing a
+   passive-by-default library can't give you — and it's the whole fix.
+2. **One `GroupList`, three framings.** The list appeared in the home picker,
+   the compose field and the scan confirmation. Extracted when the third
+   appeared; the sheet, heading and dismissal stay with each caller.
+3. **Changing group after a scan asks first.** It clears participants, scanned
+   items and the assignment — correct, but minutes of work after a
+   pass-the-phone session. Guarded on both entry points, with a
+   non-dismissible destructive confirm.
+4. **Three press variants.** `.pressable` (scale 0.96), `.pressable-sm`
+   (chips, 0.92 — 0.96 barely moves at that size), `.pressable-cta` (wide
+   buttons press *down*; scaling a full-width button looks like squashing).
+   All snap in over 90ms and ease back over 260ms with slight overshoot —
+   equal durations read as a CSS transition, asymmetric reads as a button.
+5. **The sloth is drawn, not the illustration.** `public/sloth-mascot.png` is
+   in place for anywhere with room, but the header mark is a simplified SVG:
+   the visor, the wide face and the two eye patches are what survive 26px.
+
+### Verification
+`tsc --noEmit` clean; simplify 13/13, allocation 18/18, settlement 10/10,
+security 35/35 throughout.
+
+### Known / deferred
+- `public/sloth-mascot.png` is 620 KB and unoptimised, and isn't wired into any
+  screen yet.
+- `public/icons/*.png` are still the old blue owl.
+- Activity rows show the transaction total but not the viewer's share —
+  `getActivitiesForUser` doesn't return it, so "you lent $X" would need a
+  backend change.
+- Not exercised on hardware beyond the reports that prompted these fixes.
+
 ## 2026-08-14 — Service worker disabled
 
 Turned off in every environment after a day of caching strategies that each
