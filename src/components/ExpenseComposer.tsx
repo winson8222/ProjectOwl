@@ -7,6 +7,7 @@ import { deriveScannedAdjustments, ZERO_ADJUSTMENTS } from "@/lib/adjustments";
 import { setDraftDirty, guardedNavigate } from "@/lib/draft-guard";
 import { MOCK_SCAN_ENABLED } from "@/lib/debug-config";
 import { MOCK_RECEIPTS } from "@/lib/test-data/allocation-fixtures";
+import { scanReceipt } from "@/lib/scan-receipt";
 import CalculatorKeypad from "@/components/CalculatorKeypad";
 import ErrorDialog from "@/components/ErrorDialog";
 import BottomSheet from "@/components/BottomSheet";
@@ -270,31 +271,20 @@ export default function ExpenseComposer() {
   const handleScan = async (file: File) => {
     setScanning(true);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch("/api/receipts/extract", {
-        method: "POST",
-        body: formData,
-      });
-      const json = await res.json();
-      if (json.success) {
-        applyScan(json.data);
+      const outcome = await scanReceipt(file);
+      if (outcome.ok) {
+        applyScan(outcome.data);
       } else {
         tapError();
         setDialogError({
-          title: "Couldn't read that receipt",
-          message:
-            json.error ||
-            "Try a straighter photo with the whole receipt in frame.",
+          title: outcome.failure.title,
+          message: outcome.failure.message,
         });
       }
-    } catch {
-      tapError();
-      setDialogError({
-        title: "Couldn't reach the server",
-        message: "Check your connection and try again.",
-      });
     } finally {
+      // scanReceipt() reports failures rather than throwing, but keep this in
+      // `finally` regardless: anything that escapes must still clear the
+      // loader, or the user is stuck on a spinner with no way back.
       setScanning(false);
     }
   };

@@ -4,6 +4,18 @@ export interface RetryOptions {
   maxRetries: number;
   /** Base delay in ms — each retry doubles it + jitter. */
   baseDelayMs: number;
+  /**
+   * Wall-clock ceiling for the whole retry sequence, measured from the first
+   * attempt. A retry whose delay wouldn't fit is not attempted — we give up
+   * and surface the last error instead.
+   *
+   * Without this, the retry policy and the serverless function timeout
+   * disagree: a rate-limited scan would sleep ~13s per attempt inside a
+   * function the platform kills long before the sequence finishes, so the
+   * caller gets a 504 with an HTML body instead of the real error. Sleeping
+   * past the deadline can only ever turn a useful error into a useless one.
+   */
+  budgetMs?: number;
 }
 
 /**
@@ -39,7 +51,7 @@ function isTransientError(err: unknown): boolean {
   return TRANSIENT_ERRORS.some((pattern) => msg.includes(pattern));
 }
 
-function isRateLimitError(err: unknown): boolean {
+export function isRateLimitError(err: unknown): boolean {
   const msg = String(err);
   return RATE_LIMIT_ERRORS.some((pattern) => msg.includes(pattern));
 }
@@ -86,12 +98,18 @@ function shouldRetry(err: unknown): boolean {
  *   exponential backoff.
  * - **Network errors**: retried with short backoff.
  * - All other errors propagate immediately.
+ *
+ * Pass `budgetMs` whenever the caller runs under a hard deadline (any
+ * serverless route). Retrying past that deadline doesn't just waste time — it
+ * loses the error, because the platform kills the function before it can be
+ * returned.
  */
 export async function withRetry<T>(
   fn: () => Promise<T>,
-  options: RetryOptions = { maxRetries: 5, baseDelayMs: 1000 }
+  options: RetryOptions = { maxRetries: 2, baseDelayMs: 1000 }
 ): Promise<T> {
   let lastError: unknown;
+  const startedAt = Date.now();
 
   for (let attempt = 0; attempt <= options.maxRetries; attempt++) {
     try {
@@ -118,7 +136,17 @@ export async function withRetry<T>(
         }
 
         const jitter = Math.random() * 500;
-        await new Promise((resolve) => setTimeout(resolve, delay + jitter));
+        const wait = delay + jitter;
+
+        // Don't start a sleep we can't finish inside the caller's budget.
+        if (
+          options.budgetMs !== undefined &&
+          Date.now() - startedAt + wait > options.budgetMs
+        ) {
+          throw lastError;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, wait));
       }
     }
   }

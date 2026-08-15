@@ -5,6 +5,10 @@ import { getCurrentUser } from "@/lib/auth";
 import { unauthorized, forbidden } from "@/lib/auth/guard";
 import { CODES, apiError, mapErrorMessage, type ApiErrorResponse } from "@/lib/constants";
 
+// Backstop: a stalled query must surface as our error, not a 300s platform 504.
+// Normal responses are well under a second; this only ever fires on a stall.
+export const maxDuration = 20;
+
 /**
  * GET /api/settlements/optimize[?groupId=xxx]
  * Minimum-transaction settlement plan (fewest payments that settle everyone).

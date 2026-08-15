@@ -54,6 +54,7 @@ export const CODES = {
   // LLM
   LLM_FAILED: "LLM_FAILED",
   LLM_INVALID_RESPONSE: "LLM_INVALID_RESPONSE",
+  LLM_RATE_LIMITED: "LLM_RATE_LIMITED",
   VALIDATION_FAILED: "VALIDATION_FAILED",
 } as const;
 
@@ -79,7 +80,7 @@ export const ERROR_MESSAGES = {
   INVALID_IMAGE_TYPE: (type: string) =>
     `Unsupported file type: ${type}. Accepted: JPEG, PNG, WebP, HEIC`,
   FILE_TOO_LARGE: (size: string) =>
-    `File too large (${size}). Max: 10 MB`,
+    `File too large (${size}). Max: 4.5 MB`,
   EMPTY_FILE_UPLOAD: "Uploaded file is empty",
 
   // Transactions
@@ -110,6 +111,13 @@ export const ERROR_MESSAGES = {
     `Gemini API returned ${status}: ${detail}`,
   // User-facing: says nothing about which provider or whose billing.
   LLM_QUOTA: "Receipt scanning is unavailable right now. Please try again later.",
+  /**
+   * Per-minute rate limit, which genuinely does clear on its own — so unlike
+   * LLM_QUOTA this gives a concrete thing to do and a time to do it at.
+   * Deliberately avoids the words "rate limit" and "quota": MAPPED_ERRORS
+   * matches those and would rewrite this back to the generic wording.
+   */
+  LLM_BUSY: "Too many scans in the last minute. Wait about a minute, then try again.",
   LLM_NO_CONTENT: (reason: string) =>
     `Gemini returned no content (${reason}). The image may have been blocked by safety filters.`,
   LLM_INVALID_JSON: (preview: string) =>
