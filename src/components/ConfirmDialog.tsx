@@ -53,7 +53,7 @@ export default function ConfirmDialog({
             tapLight();
             onConfirm();
           }}
-          className="pressable w-full rounded-[12px] text-body font-semibold text-white"
+          className="pressable-cta w-full rounded-[12px] text-body font-semibold text-white"
           style={{
             minHeight: 50,
             background: danger
@@ -65,7 +65,7 @@ export default function ConfirmDialog({
         </button>
         <button
           onClick={onCancel}
-          className="pressable w-full rounded-[12px] text-body font-medium text-ink"
+          className="pressable-cta w-full rounded-[12px] text-body font-medium text-ink"
           style={{
             minHeight: 50,
             background: "var(--color-surface)",

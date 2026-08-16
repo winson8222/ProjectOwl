@@ -863,7 +863,7 @@ export default function ItemAssigner({
             handleConfirm();
           }}
           disabled={unassignedCount > 0 || !reconciled}
-          className="pressable w-full rounded-[12px] text-body font-semibold text-white disabled:opacity-40"
+          className="pressable-cta w-full rounded-[12px] text-body font-semibold text-white disabled:opacity-40"
           style={{ minHeight: 52, background: "var(--color-blueberry-600)" }}
         >
           {unassignedCount > 0
