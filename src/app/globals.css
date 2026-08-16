@@ -7,12 +7,17 @@
    a dark theme could be added as a [data-theme] block later.
    ───────────────────────────────────────────────────────────── */
 @theme {
-  /* Surfaces. Cream Sode is the CARD tone, not the canvas — if both
-     were #FFF0C9 cards would vanish. The canvas sits one step deeper
-     so cards read as lit from above. */
-  --color-canvas: #f6e7c0;
-  --color-surface: #fff0c9;
-  --color-surface-raised: #fff8e3;
+  /* Cream Sode is the GROUND; cards are a warm near-white on top of it.
+     It began the other way round — Cream Sode as the card, on a deeper cream
+     canvas — but the two sat close enough in value that a card read as part
+     of the surface behind it, whichever way the shadow fell. Swapping them
+     lightens the ground and whitens the cards in one move, and the separation
+     now comes from the gap between the two rather than from a heavier shadow.
+     Cream Sode is also more visible this way: the background is the largest
+     area on screen. */
+  --color-canvas: #fff0c9;
+  --color-surface: #fffaeb;
+  --color-surface-raised: #ffffff;
 
   /* Blueberry ramp. 8.85:1 against Cream Sode at 600, which is why
      this carries both text and fills and needs no second accent. */
@@ -27,7 +32,10 @@
      Hairline is cream's own shadow, not a gray. */
   --color-ink: #1a1a22; /* 15.3:1 on Cream Sode */
   --color-ink-muted: #6b6656; /*  5.1:1 on Cream Sode */
-  --color-hairline: #e0cfa4;
+  /* Lifted a shade now that it separates a near-white card from a Cream Sode
+     ground rather than two creams — the old #e0cfa4 read as a hard outline
+     against white. */
+  --color-hairline: #e6d5ad;
 
   /* Semantics, desaturated — the old #3aa542/#c5423a were too bright
      against cream. */
@@ -143,12 +151,55 @@ input[type="submit"] {
 
 /* Fingers don't hover. Anything tappable depresses on touch instead of
    growing on hover — the hover:scale-[1.02] pattern this replaces was
-   the single clearest "this is a webpage" tell in the app. */
+   the single clearest "this is a webpage" tell in the app.
+
+   Asymmetric timing is what makes it feel physical: it snaps down in 90ms
+   and eases back over 260ms with a touch of overshoot. Equal durations in
+   both directions read as a CSS transition; this reads as a button. */
 .pressable {
-  transition: transform 120ms ease-out, opacity 120ms ease-out;
+  transition:
+    transform 260ms cubic-bezier(0.18, 0.9, 0.28, 1.22),
+    filter 260ms ease-out,
+    color 180ms ease-out,
+    background-color 180ms ease-out;
+  -webkit-tap-highlight-color: transparent;
 }
 .pressable:active {
-  transform: scale(0.97);
+  transform: scale(0.96);
+  /* Darkens whatever it is — a filled button, a cream card, a coloured chip —
+     without needing a per-variant :active colour for each. */
+  filter: brightness(0.95);
+  transition-duration: 90ms;
+}
+
+/* Small controls: a chip scaled to 0.96 barely moves, so it leans on the
+   tint instead. */
+.pressable-sm {
+  transition:
+    transform 260ms cubic-bezier(0.18, 0.9, 0.28, 1.22),
+    filter 260ms ease-out,
+    color 180ms ease-out,
+    background-color 180ms ease-out;
+}
+.pressable-sm:active {
+  transform: scale(0.92);
+  filter: brightness(0.93);
+  transition-duration: 90ms;
+}
+
+/* Full-width primary actions: scaling a wide button looks like it's being
+   squashed, so it presses *down* instead. */
+.pressable-cta {
+  transition:
+    transform 260ms cubic-bezier(0.18, 0.9, 0.28, 1.22),
+    filter 260ms ease-out,
+    box-shadow 260ms ease-out,
+    background-color 180ms ease-out;
+}
+.pressable-cta:active {
+  transform: translateY(1.5px) scale(0.985);
+  filter: brightness(0.93);
+  transition-duration: 90ms;
 }
 
 /* Enforces the 44pt floor without disturbing an element's visual box. */
@@ -181,6 +232,18 @@ body {
   line-height: var(--text-body--line-height);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Card surface: near-white on the Cream Sode ground, with a Blueberry-tinted
+   shadow rather than a black one — a neutral shadow on a warm ground reads as
+   grey dirt. Two layers: a tight one for the edge, a wide soft one for lift. */
+.card-lift {
+  background: var(--color-surface);
+  border: 1px solid var(--color-hairline);
+  border-radius: 22px;
+  box-shadow:
+    0 1px 2px color-mix(in srgb, var(--color-blueberry-900) 5%, transparent),
+    0 6px 18px color-mix(in srgb, var(--color-blueberry-900) 9%, transparent);
 }
 
 /* Money should never jitter as it animates or updates. */
@@ -363,16 +426,66 @@ body {
   }
 }
 
-/* Sloth mark (ItreAI button). Body is currentColor so it re-tints with its
-   container; these are the fixed features that sit on top of it. */
+/* Sloth mark. Body is currentColor so it re-tints with its container; these
+   are the fixed features that sit on top of it. Kept monochrome-ish on
+   purpose — the illustrated icon's brown and green would be two hues the
+   palette doesn't own, sitting on a Blueberry tile. */
+.sloth-face {
+  fill: color-mix(in srgb, var(--color-surface-raised) 82%, transparent);
+}
 .sloth-patch {
-  fill: color-mix(in srgb, var(--color-blueberry-900) 55%, transparent);
+  fill: color-mix(in srgb, var(--color-blueberry-900) 62%, transparent);
 }
 .sloth-eye {
   fill: var(--color-surface-raised);
 }
+.sloth-nose {
+  fill: color-mix(in srgb, var(--color-blueberry-900) 72%, transparent);
+}
 .sloth-smile {
-  stroke: var(--color-surface-raised);
+  stroke: color-mix(in srgb, var(--color-blueberry-900) 55%, transparent);
+}
+/* The visor is the one place a second colour earns its keep — it's what makes
+   the silhouette read as this sloth rather than any animal. */
+.sloth-visor {
+  fill: #4f8f63;
+}
+.sloth-visor-seam {
+  stroke: color-mix(in srgb, #2f5f40 70%, transparent);
+}
+
+
+/* Calculator the sloth is working, in the scan loader. */
+.calc-body {
+  fill: color-mix(in srgb, var(--color-blueberry-900) 34%, transparent);
+  stroke: color-mix(in srgb, #ffffff 22%, transparent);
+  stroke-width: 1.5;
+}
+.calc-screen {
+  fill: #cfe0c4;
+}
+.calc-key {
+  fill: color-mix(in srgb, #ffffff 42%, transparent);
+}
+
+/* Paws tap in alternation — offset by half the cycle so it reads as keying
+   rather than two hands slapping in unison. */
+.paw {
+  transform-origin: center;
+  animation: pawTap 0.62s ease-in-out infinite;
+}
+.paw-r {
+  animation-delay: 0.31s;
+}
+
+@keyframes pawTap {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  45% {
+    transform: translateY(3.5px);
+  }
 }
 
 /* ── Settled: the PAID stamp ──────────────────────────────────────────
@@ -507,23 +620,6 @@ body {
   }
 }
 
-/* The ghosted receipt behind the owl in the scan loader — breathes slowly so
-   the screen has a pulse even before the status line changes. */
-.scan-page {
-  animation: scanPage 2.8s ease-in-out infinite;
-}
-
-@keyframes scanPage {
-  0%,
-  100% {
-    opacity: 0.5;
-    transform: scaleY(1);
-  }
-  50% {
-    opacity: 1;
-    transform: scaleY(1.04);
-  }
-}
 
 
 /* Gradient pan animation for ItreAI button */

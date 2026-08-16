@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import OwlMark, { type OwlPhase } from "./OwlMark";
+import SlothCalculating from "./SlothCalculating";
 import Portal from "@/components/Portal";
 
 /**
  * Full-screen takeover while ItreAI reads a receipt.
  *
- * Replaces a 64px circle containing ⏳ and the word "Processing…".
+ * The sloth works a calculator while it waits — same character as the button
+ * that started the scan, which the owl that used to be here wasn't.
  *
  * The status line steps through what is genuinely happening rather than
  * showing a progress bar: Gemini doesn't stream, so there is no real
@@ -23,18 +24,10 @@ const STAGES = [
 
 export default function ScanLoader({ done = false }: { done?: boolean }) {
   const [stage, setStage] = useState(0);
-  const [phase, setPhase] = useState<OwlPhase>("assemble");
+
 
   useEffect(() => {
-    const t = setTimeout(() => setPhase("reading"), 800);
-    return () => clearTimeout(t);
-  }, []);
-
-  useEffect(() => {
-    if (done) {
-      setPhase("done");
-      return;
-    }
+    if (done) return;
     // Park on the final stage rather than looping — cycling forever would
     // suggest the work restarted.
     if (stage >= STAGES.length - 1) return;
@@ -55,18 +48,10 @@ export default function ScanLoader({ done = false }: { done?: boolean }) {
       role="status"
       aria-live="polite"
     >
-      {/* Ghosted receipt behind the owl, with a beam running down it. */}
-      <div className="relative flex items-center justify-center">
-        <div
-          aria-hidden
-          className="absolute rounded-[10px] scan-page"
-          style={{
-            width: 108,
-            height: 148,
-            background: "rgba(255,255,255,0.09)",
-          }}
-        />
-        <OwlMark phase={phase} size={168} className="relative text-white" />
+      {/* The sloth carries the whole illustration now — the ghosted receipt
+          that used to sit behind the owl collided with the calculator. */}
+      <div className="text-white">
+        <SlothCalculating size={196} />
       </div>
 
       <div className="text-center">
