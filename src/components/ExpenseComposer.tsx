@@ -10,12 +10,16 @@ import { MOCK_RECEIPTS } from "@/lib/test-data/allocation-fixtures";
 import { scanReceipt } from "@/lib/scan-receipt";
 import CalculatorKeypad from "@/components/CalculatorKeypad";
 import ErrorDialog from "@/components/ErrorDialog";
+import BottomSheet from "@/components/BottomSheet";
+import GroupList, { GroupTile } from "@/components/GroupList";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import ItemAssigner, { type AssignmentResult } from "@/components/ItemAssigner";
 import ScanLoader from "@/components/ScanLoader";
 import SlothMark from "@/components/SlothMark";
 import UserAvatar from "@/components/UserAvatar";
 import PayerSheet, { type PayerMode } from "@/components/compose/PayerSheet";
 import SplitSheet, { type SplitMode } from "@/components/compose/SplitSheet";
+import ScanConfirmSheet from "@/components/compose/ScanConfirmSheet";
 import { tapLight, tapMedium, tapError } from "@/lib/haptics";
 
 type Overlay = null | "payer" | "split" | "assign";
@@ -73,6 +77,11 @@ export default function ExpenseComposer() {
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [keypad, setKeypad] = useState<null | { target: "total" | string }>(null);
   const [saving, setSaving] = useState(false);
+  // Confirm which group the receipt belongs to before opening the camera.
+  const [confirmingScan, setConfirmingScan] = useState(false);
+  // A group change that would destroy scanned work, held for confirmation.
+  const [pendingGroupId, setPendingGroupId] = useState<string | null>(null);
+  const [pickingGroup, setPickingGroup] = useState(false);
   const [dialogError, setDialogError] = useState<{ title: string; message: string } | null>(null);
 
   useEffect(() => {
@@ -107,6 +116,25 @@ export default function ExpenseComposer() {
     setScanItems([]);
     setSplitMode("equal");
   }, [groupId]);
+
+  /**
+   * Change group, asking first when it would throw work away.
+   *
+   * Changing groupId resets participants, the scan and the item assignment —
+   * people chosen from one group aren't members of another, so the split can't
+   * survive the move. That's correct but destructive, and after a
+   * pass-the-phone session it's minutes of work. Silent is the wrong shape for
+   * it; the reset itself stays exactly as it was.
+   */
+  const requestGroupChange = (nextId: string) => {
+    if (nextId === groupId) return;
+    const hasWork = scanItems.length > 0 || assignment !== null;
+    if (hasWork) {
+      setPendingGroupId(nextId);
+      return;
+    }
+    setGroupId(nextId);
+  };
 
   // A lone payer always covers the whole bill, so their contribution tracks the
   // total automatically. With several payers the amounts are set by hand and
@@ -471,108 +499,172 @@ export default function ExpenseComposer() {
   // ── Compose ───────────────────────────────────────────────────────
   return (
     <main className="min-h-dvh px-4 max-w-lg mx-auto content-with-floating-nav">
-      {/* Header */}
-      <div className="flex items-center justify-between py-3">
+      {/* Header. Title centred between two actions of unequal weight —
+          Cancel is plain text, Save is the filled pill. */}
+      <div
+        className="flex items-center gap-2 py-3 mb-5"
+        style={{ borderBottom: "1px solid var(--color-hairline)" }}
+      >
         <button
           onClick={handleCancel}
-          className="pressable text-subhead font-medium -ml-2 px-2"
-          style={{ color: "var(--color-blueberry-600)", minHeight: 44 }}
+          className="pressable text-callout font-medium -ml-2 px-2"
+          style={{ color: "var(--color-ink-muted)", minHeight: 44, minWidth: 76 }}
         >
           Cancel
         </button>
-        <h1 className="text-title2 font-bold text-ink">New expense</h1>
+        <h1 className="flex-1 text-center text-callout font-bold text-ink">
+          New expense
+        </h1>
         <button
           onClick={handleSave}
           disabled={!canSave || saving}
-          className="pressable px-4 rounded-[12px] text-callout font-semibold text-white disabled:opacity-40"
-          style={{ minHeight: 44, background: "var(--color-blueberry-600)" }}
+          className="pressable px-5 rounded-full text-callout font-semibold text-white disabled:opacity-35"
+          style={{ minHeight: 42, minWidth: 76, background: "var(--color-blueberry-600)" }}
         >
           {saving ? "Saving…" : "Save"}
         </button>
       </div>
 
-      {/* Group */}
-      <label className="block mb-2.5">
-        <span className="sr-only">Group</span>
-        <div
-          className="flex items-center gap-3 px-3.5 rounded-[14px]"
-          style={{
-            minHeight: 56,
-            background: "var(--color-surface)",
-            border: "1px solid var(--color-hairline)",
-          }}
-        >
-          <span
-            className="w-8 h-8 rounded-full shrink-0"
-            style={{ background: group?.color || "var(--color-blueberry-300)" }}
-            aria-hidden
-          />
-          <select
-            value={groupId}
-            onChange={(e) => setGroupId(e.target.value)}
-            className="flex-1 bg-transparent text-callout font-medium text-ink focus:outline-none"
-            style={{ minHeight: 44 }}
-          >
-            {groups.length === 0 && <option value="">No groups yet</option>}
-            {groups.map((g: any) => (
-              <option key={g.id} value={g.id}>
-                {g.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      </label>
-
-      {/* Description */}
-      <input
-        type="text"
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
-        placeholder="What was it for?"
-        aria-label="Description"
-        className="w-full px-3.5 mb-2.5 rounded-[14px] text-callout text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-blueberry-500"
-        style={{
-          minHeight: 56,
-          background: "var(--color-surface)",
-          border: "1px solid var(--color-hairline)",
-        }}
-      />
-
-      {/* Amount — opens the keypad, which also carries the date. */}
+      {/* Amount leads: it's the one field you always fill, and the only one
+          worth a whole card. */}
       <button
         onClick={() => {
           tapLight();
           setKeypad({ target: "total" });
         }}
-        className="pressable w-full flex items-center gap-2 px-3.5 rounded-[14px] text-left"
-        style={{
-          minHeight: 68,
-          background: "var(--color-surface)",
-          border: "1px solid var(--color-hairline)",
-        }}
+        className="card-lift pressable w-full px-5 py-6 text-center mb-6"
+        aria-label="Set the amount"
       >
-        <span
-          className="text-title1 font-semibold"
-          style={{ color: "var(--color-blueberry-600)" }}
-        >
-          $
+        <span className="block text-footnote font-bold text-ink-muted uppercase tracking-widest">
+          Amount
         </span>
-        <span
-          className={`text-title1 font-bold tabular flex-1 ${
-            amount > 0 ? "text-ink" : "text-ink-muted"
-          }`}
-        >
-          {amount > 0 ? amount.toFixed(2) : "0.00"}
+        <span className="flex items-baseline justify-center gap-1.5 mt-2">
+          <span
+            className="text-title1 font-bold"
+            style={{ color: amount > 0 ? "var(--color-ink-muted)" : "var(--color-blueberry-300)" }}
+          >
+            $
+          </span>
+          <span
+            className="font-bold tabular"
+            style={{
+              fontSize: "3rem",
+              lineHeight: 1,
+              letterSpacing: "-1.5px",
+              color: amount > 0 ? "var(--color-ink)" : "var(--color-blueberry-300)",
+            }}
+          >
+            {amount > 0 ? amount.toFixed(2) : "0.00"}
+          </span>
         </span>
-        <span className="text-footnote text-ink-muted">
-          {new Date(date).toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-          })}
+        <span className="block text-subhead text-ink-muted mt-2.5">
+          {participants.length === 0
+            ? "Tap to enter the total"
+            : `Split between ${participants.length} ${
+                participants.length === 1 ? "person" : "people"
+              }`}
         </span>
       </button>
 
-      {/* Paid by · split */}
+      {/* Description */}
+      <label className="block mb-4">
+        <span className="block text-subhead font-bold text-ink mb-1.5">
+          What was it for?
+        </span>
+        <input
+          type="text"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Ramen in Shinjuku"
+          className="w-full px-4 rounded-[14px] text-callout text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-blueberry-500"
+          style={{
+            minHeight: 54,
+            background: "var(--color-surface)",
+            border: "1px solid var(--color-hairline)",
+          }}
+        />
+      </label>
+
+      {/* Group and date share a row — both are short, and neither deserves a
+          full line of its own. Date moved off the keypad to sit here, where
+          it's visible without opening anything. */}
+      <div className="grid grid-cols-2 gap-3 mb-6">
+        <div className="block min-w-0">
+          <span className="block text-subhead font-bold text-ink mb-1.5">Group</span>
+          {/* A sheet rather than a native select, matching the picker on Home
+              — the OS wheel can't show each group's colour, and on a
+              half-width field it truncates the name to almost nothing. */}
+          <button
+            type="button"
+            onClick={() => {
+              tapLight();
+              setPickingGroup(true);
+            }}
+            aria-haspopup="dialog"
+            aria-expanded={pickingGroup}
+            className="pressable w-full flex items-center gap-2 px-3 rounded-[14px] text-left"
+            style={{
+              minHeight: 54,
+              background: "var(--color-surface)",
+              border: "1px solid var(--color-hairline)",
+            }}
+          >
+            {group ? (
+              <GroupTile group={group} size={26} />
+            ) : (
+              <span
+                className="w-6 h-6 shrink-0"
+                style={{ borderRadius: 8, background: "var(--color-blueberry-300)" }}
+                aria-hidden
+              />
+            )}
+            <span className="flex-1 min-w-0 text-callout font-medium text-ink truncate">
+              {group?.name ?? "No groups yet"}
+            </span>
+            <svg
+              width="16" height="16" viewBox="0 0 24 24" fill="none"
+              stroke="var(--color-ink-muted)" strokeWidth="2"
+              strokeLinecap="round" strokeLinejoin="round"
+              className="shrink-0" aria-hidden
+            >
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </button>
+        </div>
+
+        <label className="block min-w-0">
+          <span className="block text-subhead font-bold text-ink mb-1.5">Date</span>
+          <div
+            className="flex items-center gap-2 px-3 rounded-[14px]"
+            style={{
+              minHeight: 54,
+              background: "var(--color-surface)",
+              border: "1px solid var(--color-hairline)",
+            }}
+          >
+            <svg
+              width="19" height="19" viewBox="0 0 24 24" fill="none"
+              stroke="var(--color-blueberry-600)" strokeWidth="1.75"
+              strokeLinecap="round" strokeLinejoin="round"
+              className="shrink-0" aria-hidden
+            >
+              <rect x="3.5" y="5" width="17" height="15.5" rx="2.5" />
+              <path d="M3.5 9.5h17M8 3.5V6M16 3.5V6" />
+            </svg>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="flex-1 min-w-0 bg-transparent text-callout font-medium text-ink focus:outline-none"
+              style={{ minHeight: 44 }}
+            />
+          </div>
+        </label>
+      </div>
+
+      {/* Reads as a sentence rather than a settings list — the two variable
+          parts are the tappable bits, so the line says what it is and what
+          you can change in the same breath. */}
       <div className="flex items-center flex-wrap gap-x-1.5 gap-y-1 mt-5 text-callout text-ink-muted">
         <span>Paid by</span>
         <button
@@ -580,7 +672,7 @@ export default function ExpenseComposer() {
             tapLight();
             setOverlay("payer");
           }}
-          className="pressable inline-flex items-center gap-1.5 px-2 rounded-[8px] font-semibold"
+          className="pressable-sm inline-flex items-center gap-1.5 px-2 rounded-[8px] font-semibold"
           style={{
             minHeight: 44,
             color: "var(--color-blueberry-600)",
@@ -604,7 +696,7 @@ export default function ExpenseComposer() {
             tapLight();
             setOverlay("split");
           }}
-          className="pressable inline-flex items-center px-2 rounded-[8px] font-semibold"
+          className="pressable-sm inline-flex items-center px-2 rounded-[8px] font-semibold"
           style={{
             minHeight: 44,
             color: "var(--color-blueberry-600)",
@@ -629,11 +721,7 @@ export default function ExpenseComposer() {
       <button
         onClick={() => {
           tapLight();
-          if (MOCK_SCAN_ENABLED) {
-            handleMockScan();
-            return;
-          }
-          document.getElementById("itreai-file")?.click();
+          setConfirmingScan(true);
         }}
         className="pressable fixed right-5 z-30 flex items-center gap-2 pl-3 pr-4 rounded-full text-white shadow-lg"
         style={{
@@ -649,6 +737,42 @@ export default function ExpenseComposer() {
         <SlothMark size={34} />
         <span className="text-callout font-semibold">ItreAI</span>
       </button>
+
+      <BottomSheet
+        open={pickingGroup}
+        onClose={() => setPickingGroup(false)}
+        label="Choose a group"
+      >
+        <h3 className="text-title2 font-bold text-ink mb-4">Group</h3>
+        <GroupList
+          groups={groups}
+          selectedGroupId={groupId}
+          onSelect={(id) => {
+            // Goes through the guard, so switching after a scan still asks
+            // before it throws the receipt away.
+            requestGroupChange(id);
+            setPickingGroup(false);
+          }}
+        />
+      </BottomSheet>
+
+      <ScanConfirmSheet
+        open={confirmingScan}
+        groups={groups}
+        selectedGroupId={groupId}
+        onGroupChange={requestGroupChange}
+        onClose={() => setConfirmingScan(false)}
+        onConfirm={() => {
+          setConfirmingScan(false);
+          if (MOCK_SCAN_ENABLED) {
+            handleMockScan();
+            return;
+          }
+          // The sheet's exit animation and the file picker both want the main
+          // thread; let the sheet finish before the camera takes over.
+          setTimeout(() => document.getElementById("itreai-file")?.click(), 220);
+        }}
+      />
 
       <input
         id="itreai-file"
@@ -668,8 +792,6 @@ export default function ExpenseComposer() {
           open
           initialValue={amount}
           title="Amount"
-          date={date}
-          onDateChange={setDate}
           onConfirm={(v) => {
             setAmount(v);
             // Keep an even split in step with the new total.
@@ -680,6 +802,25 @@ export default function ExpenseComposer() {
           }}
         />
       )}
+
+      {/* Destructive variant, so it can't be dismissed by a stray swipe or a
+          backdrop tap — losing a receipt to a mis-flick is the thing this
+          exists to prevent. */}
+      <ConfirmDialog
+        open={pendingGroupId !== null}
+        variant="danger"
+        title="Clear the scanned receipt?"
+        message={`Moving this to ${
+          groups.find((g: any) => g.id === pendingGroupId)?.name ?? "another group"
+        } clears the scanned items and everything assigned so far — the people you picked aren't in that group. You'd need to scan and assign it again.`}
+        confirmLabel="Change group"
+        cancelLabel="Keep this receipt"
+        onConfirm={() => {
+          if (pendingGroupId) setGroupId(pendingGroupId);
+          setPendingGroupId(null);
+        }}
+        onCancel={() => setPendingGroupId(null)}
+      />
 
       <ErrorDialog
         open={!!dialogError}

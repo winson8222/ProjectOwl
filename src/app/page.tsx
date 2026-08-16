@@ -114,16 +114,19 @@ export default function HomePage() {
             return (
               <>
                 {/* Hero number card with animated background */}
+                <div className="flex items-center justify-between mb-2.5 px-0.5">
+                  <h2 className="text-caption font-bold text-ink-muted uppercase tracking-wider">
+                    Your balance
+                  </h2>
+                </div>
+
                 <div
-                  className={`rounded-2xl p-6 text-center mb-4 relative overflow-hidden border ${
-                    balance.netBalance >= 0 ? 'border-hairline' : 'border-negative-soft'
-                  }`}
-                  style={{
-                    background: balance.netBalance >= 0
-                      ? 'var(--color-surface)'
-                      : 'linear-gradient(135deg, rgba(254,226,226,0.4) 0%, rgba(253,242,242,0.3) 100%)',
-                    boxShadow: '0 1px 2px color-mix(in srgb, var(--color-blueberry-900) 5%, transparent)'
-                  }}
+                  className="card-lift px-5 py-6 mb-6 relative overflow-hidden"
+                  style={
+                    balance.netBalance < 0
+                      ? { borderColor: "var(--color-negative-soft)" }
+                      : undefined
+                  }
                 >
                   {/* Ambient state: cash rains when you're up, Gandhi falls
                       when you're down. Genuinely square gets the PAID
@@ -148,33 +151,118 @@ export default function HomePage() {
                     </div>
                   ) : null}
 
-                  <p className="text-sm text-ink-muted uppercase tracking-wider mb-2 relative z-10">
+                  {/* Eyebrow, figure, ratio bar, then the two sides.
+                      Left-aligned: a column of left edges is easier to scan
+                      than three centred lines of different widths. */}
+                  <p className="text-footnote font-bold text-ink-muted uppercase tracking-widest relative z-10">
                     {isSettled(balance)
-                      ? "ALL SQUARE"
+                      ? "All square"
                       : balance.netBalance >= 0
-                      ? "UP GOOD"
-                      : "DOWN BAD"}
+                      ? "You\u2019re up"
+                      : "You\u2019re down"}
                   </p>
-                  <p className={`text-4xl font-bold ${balance.netBalance >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]"} relative z-10`}>
-                    {balance.netBalance >= 0 ? "+" : "-"}${Math.abs(balance.netBalance).toFixed(2)}
+
+                  {/* Full cents at full size. Demoting them made the figure
+                      prettier but harder to read at a glance, and this is the
+                      number people open the app for. */}
+                  <p
+                    className="tabular font-bold relative z-10 mt-1"
+                    style={{
+                      fontSize: "2.9rem",
+                      lineHeight: 1.05,
+                      letterSpacing: "-1.5px",
+                      color:
+                        balance.netBalance >= 0
+                          ? "var(--color-positive)"
+                          : "var(--color-negative)",
+                    }}
+                  >
+                    {balance.netBalance >= 0 ? "+" : "\u2212"}$
+                    {Math.abs(balance.netBalance).toFixed(2)}
                   </p>
-                  {/* Net zero but debts open both ways — one transfer from
-                      done, and the only state where the headline number lies. */}
-                  {isNetZeroButOpen(balance) && (
-                    <p className="text-footnote text-ink-muted mt-1.5 relative z-10">
-                      ${(balance.totalOwed ?? 0).toFixed(2)} in, $
-                      {(balance.totalOwe ?? 0).toFixed(2)} out — settle up to clear it
-                    </p>
+
+                  {/* The split as a shape: how much of your position is money
+                      coming to you versus money going out. The net figure
+                      above can't show that \u2014 $0 net looks identical whether
+                      nothing is outstanding or $500 is owed each way. */}
+                  {(balance.totalOwed > 0.005 || balance.totalOwe > 0.005) && (
+                    <div className="flex gap-1.5 mt-4 relative z-10" aria-hidden>
+                      {balance.totalOwed > 0.005 && (
+                        <span
+                          className="h-1.5 rounded-full"
+                          style={{
+                            flexGrow: balance.totalOwed,
+                            // A $2 side against a $500 one would otherwise
+                            // round to nothing and read as "no debt at all".
+                            minWidth: 10,
+                            background: "var(--color-positive)",
+                          }}
+                        />
+                      )}
+                      {balance.totalOwe > 0.005 && (
+                        <span
+                          className="h-1.5 rounded-full"
+                          style={{
+                            flexGrow: balance.totalOwe,
+                            minWidth: 10,
+                            background: "var(--color-negative)",
+                          }}
+                        />
+                      )}
+                    </div>
                   )}
 
-                  {/* Breakdown sentence */}
-                  <div className="text-center text-sm relative z-10">
-                    You are owed <span className="text-[var(--success)] font-bold">
-                      ${balance.totalOwed.toFixed(2)}
-                    </span>, and you owe <span className="text-[var(--danger)] font-bold">
-                      ${balance.totalOwe.toFixed(2)}
-                    </span>.
+                  {/* Arrows carry the direction, so the labels don't have to
+                      work as hard: in to you, out from you. */}
+                  <div className="flex items-center justify-between gap-3 mt-3 relative z-10">
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <svg
+                        width="15" height="15" viewBox="0 0 24 24" fill="none"
+                        stroke="var(--color-positive)" strokeWidth="2.5"
+                        strokeLinecap="round" strokeLinejoin="round"
+                        className="shrink-0" aria-hidden
+                      >
+                        <path d="M17 7 7 17M7 17h7M7 17v-7" />
+                      </svg>
+                      <span className="text-subhead text-ink-muted truncate">
+                        Owed to you
+                      </span>
+                      <span className="text-subhead font-bold text-ink tabular">
+                        ${balance.totalOwed.toFixed(2)}
+                      </span>
+                    </span>
+
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <svg
+                        width="15" height="15" viewBox="0 0 24 24" fill="none"
+                        stroke={
+                          balance.totalOwe > 0.005
+                            ? "var(--color-negative)"
+                            : "var(--color-ink-muted)"
+                        }
+                        strokeWidth="2.5"
+                        strokeLinecap="round" strokeLinejoin="round"
+                        className="shrink-0" aria-hidden
+                      >
+                        <path d="M7 17 17 7M17 7h-7M17 7v7" />
+                      </svg>
+                      <span className="text-subhead text-ink-muted truncate">
+                        You owe
+                      </span>
+                      <span className="text-subhead font-bold text-ink tabular">
+                        ${balance.totalOwe.toFixed(2)}
+                      </span>
+                    </span>
                   </div>
+
+                  {/* Net zero with debts open both ways \u2014 the one state where
+                      the headline figure lies. The bar above already shows two
+                      equal halves; this says what to do about it. */}
+                  {isNetZeroButOpen(balance) && (
+                    <p className="text-footnote text-ink-muted mt-3 relative z-10">
+                      Settle up to clear both sides.
+                    </p>
+                  )}
                 </div>
               </>
             );
@@ -184,18 +272,14 @@ export default function HomePage() {
 
       {/* Most down bad ranking */}
       <div className="mb-6">
-        <div className="flex items-center justify-between mb-1">
-          <h2 className="text-lg font-bold text-ink">Down Bad Leaderboard</h2>
+        <div className="flex items-center justify-between mb-2.5 px-0.5">
+          <h2 className="text-caption font-bold text-ink-muted uppercase tracking-wider">
+            Down bad leaderboard
+          </h2>
         </div>
 
         {groups.length === 0 ? (
-          <div
-            className="border border-hairline rounded-xl px-5 py-8 text-center backdrop-blur-sm"
-            style={{
-              background: 'var(--color-surface)',
-              boxShadow: '0 1px 2px rgba(0,0,0,0.04), 0 2px 4px rgba(0,0,0,0.02)'
-            }}
-          >
+          <div className="card-lift px-5 py-8 text-center">
             <p className="text-sm text-ink-muted mb-2">You&apos;re not in any group yet</p>
             <Link href="/groups" className="text-sm font-medium text-[var(--primary)]">
               Create your first group →
