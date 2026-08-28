@@ -1,5 +1,68 @@
 # ProjectOwl — Devlog
 
+## 2026-08-28 — The calculator had two Clear buttons and no obvious commit
+
+Reported as issue #58: the keypad shows two "Clear" buttons. It did — a red
+`C` in the operator column and a wide grey `Clear` across the bottom row.
+
+### The two were genuinely the same button
+Both were wired to the identical `handleClear` (`setExpression("")`) — no
+clear-entry vs. clear-all distinction, nothing behind the duplication. So one
+of them could go without costing anything.
+
+### Fixed
+- **The wide bottom `Clear` is now the commit key**, carrying a stroked check
+  and wired to `handleClose`: evaluate the expression, hand it to `onConfirm`,
+  let the caller close the pad. It is `--color-positive` green, so the pad's
+  three coloured keys each carry a distinct job: red `C` destroys, Blueberry `+`
+  operates, green ✓ confirms. White on it measures 6.44:1. All four call sites
+  (`ExpenseComposer` ×3, `ItemAssigner`) already commit-and-close on
+  `onConfirm`, so nothing outside the component changed.
+- **The red `C` stays** as the pad's one clear. Removing the *duplicate* is
+  what the issue asked for; removing clearing altogether would have left a long
+  expression to be dismantled one backspace at a time.
+- **The header's text `Done` was removed.** With the check key present it was a
+  second commit affordance, which is the same complaint the issue was filed
+  about wearing a different word.
+- **The footer said "Tap outside or press ✕ to save"** and there has been no ✕
+  since the bottom-sheet rework. Now "Tap the check or outside the keypad to
+  save".
+
+Nothing else moved: 64px keys, 12px gaps, `C` / `⌫` / `+` down the operator
+column, `0` and `.` on the bottom row. An earlier pass had also re-laid the
+grid out and shrunk the keys; that was reverted as scope that the issue never
+asked for.
+
+### Green on a confirm key, against the standing rule
+The 2026-08-06 entry reserves green and red for owed/owing and says never to
+spend them on chrome. This spends green. The exception is deliberate and
+narrow: that rule exists so a *screen* doesn't grow a second identity competing
+with Blueberry, and there is no balance figure anywhere on the keypad for the
+colour to be misread against. Blueberry 900 was tried first — next to the `+`'s
+600 the two saturated keys still read as one button. The palette has no second
+accent, so hue had to come from the semantics or not at all.
+
+### Why a check and not the word
+The word is what the reporter suggested, and it was tried first. A check reads
+faster on a key that sits under a thumb, and it keeps the pad free of the only
+word among fourteen glyphs. The name survives where it has to: `aria-label` is
+still `Done`, and the footer line names it.
+
+### Verification
+Real browser against `npm run testmode`. The `aria-label` sweep returns
+`7 8 9 Clear 4 5 6 Backspace 1 2 3 Plus 0 "Decimal point" Done` — one clear,
+one commit. `99` then `C` empties the display; `12.50+8` previews `= $20.50`
+and the check (154×64) closes the pad and writes **$20.50** into the amount
+card. `tsc --noEmit` clean; simplify 13/13, allocation 18/18, settlement 10/10,
+security 35/35.
+
+Not verified: the share/payer keypads inside a real group — this machine's
+local `projectowl` database predates migration `0005`, so `/api/groups` 500s on
+a missing `transaction_payers`. Same component; only `title`/`unit`/
+`initialValue` differ. Also unverified through AO's own browser panel: its
+click and screenshot calls failed for the whole session, so the run above was
+driven against local Chrome over CDP instead.
+
 ## 2026-08-15 — UI pass: surfaces inverted, swipe paging fixed, one mascot
 
 A round of visual and interaction work off the back of reference screens the
