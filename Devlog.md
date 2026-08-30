@@ -20,6 +20,29 @@ proportionally: the 14px create-group field gets 12.6px, the 16px description
 field 14.4px, the payment screen's 36px amount 32.4px. `opacity: 1` because
 Firefox dims placeholders on its own and the tone should be ours.
 
+Colour is a new `--color-ink-placeholder` (#68634f): the lightest warm tone
+that still clears **4.5:1 on every surface these fields appear on**, measured
+rather than assumed — 6.0:1 on the #FFFAEB card, 6.0:1 on the members sheet's
+white, 5.3:1 on Cream Sode at login, and 4.7:1 on the payment screen's
+blueberry-100, which is the binding one.
+
+An earlier revision took this down to 3.5:1 on the reasoning that a labelled
+field's hint may sit under the body-text bar. Review rejected that: form
+guidance is text and holds the normal requirement. Recession is carried by
+**size and weight** instead, which cost nothing in contrast.
+
+Worth recording, because it changes what "just put it back" means: the previous
+`--color-ink-muted` never met 4.5:1 on that payment card either — it measures
+5.5:1 on the card but **4.44:1** on blueberry-100. Restoring it would have left
+one field non-compliant. #68634f is fractionally darker than ink-muted for
+exactly that reason, which is also why the token isn't called `-faint`: a name
+implying "lighter than muted" would be a lie to the next reader.
+
+The three surviving `placeholder:text-ink-muted` utilities had to go with it.
+A Tailwind utility outranks a base-layer rule, so leaving them would have
+pinned those three fields at the darker tone while the other three lightened —
+the same opt-in inconsistency this rule exists to remove.
+
 The iOS 16px auto-zoom floor a few lines below is unaffected — that applies to
 the *field's* font-size, which is what governs zoom, so a sub-16px placeholder
 is safe.
