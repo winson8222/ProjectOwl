@@ -273,6 +273,22 @@ body {
   padding-bottom: var(--nav-clearance);
 }
 
+/* Placeholders are hints, not content. One rule, so a field can't opt out by
+   forgetting a utility class — the create-group input had, and fell back to
+   Tailwind preflight's `currentColor` at 50% alpha: a cold near-black wash that
+   on a warm ground reads as dirty grey rather than as a quiet hint. The token
+   is warm and chosen. Sized in `em` so it steps down proportionally whether the
+   field is body text or the payment screen's 36px amount. The iOS 16px floor
+   below applies to the field, not to this — it is the field's own font-size
+   that governs auto-zoom, so a sub-16px placeholder is safe. */
+input::placeholder,
+textarea::placeholder {
+  font-size: 0.9em;
+  font-weight: 400;
+  color: var(--color-ink-muted);
+  opacity: 1; /* Firefox dims placeholders by default; we set the tone ourselves. */
+}
+
 /* iOS Safari auto-zooms into any input/select/textarea with a font-size
    under 16px. Force 16px on form fields (iOS Safari only, via the
    -webkit-touch-callout feature check) without changing their Tailwind

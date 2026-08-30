@@ -575,7 +575,7 @@ export default function ExpenseComposer() {
           type="text"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="Ramen in Shinjuku"
+          placeholder="e.g. Ramen in Shinjuku"
           className="w-full px-4 rounded-[14px] text-callout text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-blueberry-500"
           style={{
             minHeight: 54,

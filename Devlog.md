@@ -1,5 +1,61 @@
 # ProjectOwl — Devlog
 
+## 2026-08-30 — Placeholders were competing with what people typed
+
+Issue #76: placeholder text reads as content rather than as a hint. Two things
+were wrong, and only one of them was styling.
+
+### Styling — one rule, not six utilities
+There was **no `::placeholder` rule anywhere in the app**. Every field either
+carried a `placeholder:text-ink-muted` utility or silently fell back to
+Tailwind preflight's default, which is `currentColor` at 50% alpha — measured
+on the create-group input as `oklab(0.221 … / 0.5)`, a cold near-black wash. On
+a warm cream ground that reads as dirty grey rather than as a quiet hint, and
+it is the exact failure mode of styling by opt-in: the one field that forgot
+the class is the one that looked wrong.
+
+`input::placeholder, textarea::placeholder` now sets size, weight, colour and
+opacity in one place. Sized at `0.9em` rather than a fixed px so it steps down
+proportionally: the 14px create-group field gets 12.6px, the 16px description
+field 14.4px, the payment screen's 36px amount 32.4px. `opacity: 1` because
+Firefox dims placeholders on its own and the tone should be ours.
+
+The iOS 16px auto-zoom floor a few lines below is unaffected — that applies to
+the *field's* font-size, which is what governs zoom, so a sub-16px placeholder
+is safe.
+
+### Copy — a hint has to look like a hint
+`"Ramen in Shinjuku"` was indistinguishable from a description someone had
+already typed; that's the example the reporter cited. Prefixed with `e.g.`
+along with the member-invite field. `"e.g. Roommates, Japan Trip"` was already
+right and needed only the styling.
+
+### Fixed on the way past: two unlabelled fields
+The login screen's create-user inputs used `placeholder="Name"` and
+`"Email"` **as their only label** — there is no `<label>` and no `aria-label`
+on either. Converting those to examples would have left the fields nameless, so
+both gained an `aria-label` first. The placeholder-as-label pattern was already
+costing sighted users the field name the moment they typed; this makes the name
+permanent for assistive tech and keeps the visual form unchanged.
+
+The payment amount keeps `0.00` — a numeric hint, not a name — but at 32.4px
+non-bold muted it now reads as an empty field rather than as a value of zero.
+
+### Verification
+Measured `getComputedStyle(el, "::placeholder")` on every placeholder in the
+app, across five screens: compose, groups list, group members, payment, login.
+All six report `rgb(107, 102, 86)` (`--color-ink-muted`), weight 400, opacity 1,
+and 0.9× their field's size. Before/after taken on the same element by deleting
+the new rule from `document.styleSheets` at runtime and re-measuring, rather
+than trusting the diff: 14px/50%-alpha-ink → 12.6px/ink-muted.
+
+`tsc --noEmit` clean; simplify 13/13, allocation 18/18, settlement 10/10,
+security 35/35.
+
+Not verified: `next build`, skipped because it clobbers `.next` under a running
+dev server. The rule compiles — it is present in `document.styleSheets` at
+runtime, which is what the before/after toggle manipulated.
+
 ## 2026-08-15 — UI pass: surfaces inverted, swipe paging fixed, one mascot
 
 A round of visual and interaction work off the back of reference screens the
